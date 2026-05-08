@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.11" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.*" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Application\Vendorea.PartnerConnect.Application.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Contracts\Vendorea.PartnerConnect.Contracts.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Infrastructure\Vendorea.PartnerConnect.Infrastructure.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Persistence\Vendorea.PartnerConnect.Persistence.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Merchant360Connector\Vendorea.PartnerConnect.Merchant360Connector.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.PartnerAdapters\Vendorea.PartnerConnect.PartnerAdapters.csproj" />
+  </ItemGroup>
+
+</Project>
