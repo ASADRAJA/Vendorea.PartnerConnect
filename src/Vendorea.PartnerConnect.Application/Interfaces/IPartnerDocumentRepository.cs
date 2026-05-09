@@ -1,6 +1,6 @@
 using Vendorea.PartnerConnect.Domain.Entities;
 
-namespace Vendorea.PartnerConnect.Contracts.Interfaces;
+namespace Vendorea.PartnerConnect.Application.Interfaces;
 
 /// <summary>
 /// Repository interface for partner document operations.

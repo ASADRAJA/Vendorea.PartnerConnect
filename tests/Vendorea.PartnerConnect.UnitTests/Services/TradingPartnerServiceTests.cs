@@ -1,9 +1,9 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Application.Services;
 using Vendorea.PartnerConnect.Contracts.DTOs.IntegrationManagement;
-using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.UnitTests.Services;

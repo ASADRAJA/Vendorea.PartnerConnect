@@ -18,7 +18,11 @@ builder.Services.AddSerilog();
 // PartnerConnect services
 builder.Services.AddPartnerConnectServices();
 builder.Services.AddPartnerConnectInfrastructure();
-builder.Services.AddPartnerConnectPersistence();
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+builder.Services.AddPartnerConnectPersistence(connectionString);
+
 builder.Services.AddPartnerAdapters();
 
 // Merchant360 connector

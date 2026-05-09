@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.DTOs.IntegrationManagement;
-using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Application.Services;

@@ -1,27 +1,44 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vendorea.PartnerConnect.Contracts.Interfaces;
+using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Persistence.Repositories;
 
 namespace Vendorea.PartnerConnect.Persistence;
 
-/// <summary>
-/// Extension methods for registering persistence services.
-/// </summary>
 public static class DependencyInjection
 {
-    /// <summary>
-    /// Adds PartnerConnect persistence services (repositories, DbContext) to the service collection.
-    /// </summary>
-    public static IServiceCollection AddPartnerConnectPersistence(this IServiceCollection services)
+    public static IServiceCollection AddPartnerConnectPersistence(
+        this IServiceCollection services,
+        string connectionString)
     {
-        // In-memory repositories for development/testing
-        // Replace with actual database implementations in production
-        services.AddSingleton<ITradingPartnerRepository, InMemoryTradingPartnerRepository>();
+        services.AddDbContext<PartnerConnectDbContext>(options =>
+            options.UseSqlServer(connectionString, sqlOptions =>
+            {
+                sqlOptions.MigrationsAssembly(typeof(PartnerConnectDbContext).Assembly.FullName);
+                sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
+            }));
 
-        // TODO: Add other repository registrations
-        // services.AddScoped<IDealerPartnerConnectionRepository, DealerPartnerConnectionRepository>();
-        // services.AddScoped<IPartnerDocumentRepository, PartnerDocumentRepository>();
+        RegisterRepositories(services);
 
         return services;
+    }
+
+    public static IServiceCollection AddPartnerConnectPersistenceInMemory(
+        this IServiceCollection services,
+        string databaseName = "PartnerConnectTestDb")
+    {
+        services.AddDbContext<PartnerConnectDbContext>(options =>
+            options.UseInMemoryDatabase(databaseName));
+
+        RegisterRepositories(services);
+
+        return services;
+    }
+
+    private static void RegisterRepositories(IServiceCollection services)
+    {
+        services.AddScoped<ITradingPartnerRepository, TradingPartnerRepository>();
+        services.AddScoped<IDealerPartnerConnectionRepository, DealerPartnerConnectionRepository>();
+        services.AddScoped<IPartnerDocumentRepository, PartnerDocumentRepository>();
     }
 }

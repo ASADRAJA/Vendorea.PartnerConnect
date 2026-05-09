@@ -1,0 +1,46 @@
+Good start. Before adding more features, make the following architectural corrections:
+
+1. Retarget the entire solution from net9.0 to net8.0 so it matches Merchant360 exactly. If .NET 8 SDK is not installed, tell me and stop before making partial changes.
+
+2. Add a new project:
+   `Vendorea.PartnerConnect.Transport`
+   This project must own partner transport mechanics such as SFTP/file pickup, outbound delivery, polling abstractions, archive handling, and future AS2 support. Do not leave transport responsibilities buried inside workers or partner adapters.
+
+3. Refactor project boundaries:
+
+* Move repository interfaces out of `Vendorea.PartnerConnect.Contracts`
+* Keep `Contracts` focused on external DTOs, API contracts, and cross-service message payloads
+* Put persistence abstractions in `Application` or another appropriate internal abstraction location
+
+4. Replace the in-memory repository approach with a real EF Core persistence foundation using SQL Server:
+
+* Add DbContext
+* Add entity configurations
+* Add initial migrations
+* Keep it minimal but real
+* Create core tables for:
+
+  * TradingPartner
+  * DealerPartnerConnection
+  * PartnerCapabilityConfiguration
+  * PartnerDocument
+  * PriceFeedBatch
+  * InventoryFeedBatch
+  * ContentSyncJob
+
+5. Add foundational cross-cutting concerns:
+
+* service-to-service authentication placeholder
+* tenant/dealer context propagation
+* correlation ID middleware
+* audit logging skeleton
+
+6. Update the README to reflect the refined architecture.
+
+7. Build and test everything after changes.
+
+Before making changes, first show me:
+A) the revised architecture plan
+B) the exact project reference changes
+C) the database objects you plan to introduce
+Then execute.

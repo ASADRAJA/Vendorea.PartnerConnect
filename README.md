@@ -26,14 +26,15 @@ This solution is designed to work alongside Merchant360 but remains **completely
 Vendorea.PartnerConnect/
 ├── src/
 │   ├── Vendorea.PartnerConnect.API              # ASP.NET Core API (port 5010)
-│   ├── Vendorea.PartnerConnect.Application      # Application services and use cases
+│   ├── Vendorea.PartnerConnect.Application      # Application services, use cases, repository interfaces
 │   ├── Vendorea.PartnerConnect.BackgroundWorkers # Background processing workers
-│   ├── Vendorea.PartnerConnect.Contracts        # DTOs, interfaces, events
+│   ├── Vendorea.PartnerConnect.Contracts        # DTOs, external service interfaces, events
 │   ├── Vendorea.PartnerConnect.Domain           # Domain entities and business logic
-│   ├── Vendorea.PartnerConnect.Infrastructure   # DI registration, cross-cutting concerns
+│   ├── Vendorea.PartnerConnect.Infrastructure   # Cross-cutting concerns (correlation, tenant, auth)
 │   ├── Vendorea.PartnerConnect.Merchant360Connector # HTTP client for Merchant360 API
 │   ├── Vendorea.PartnerConnect.PartnerAdapters  # Partner-specific adapters (SPR, etc.)
-│   └── Vendorea.PartnerConnect.Persistence      # Repositories and database access
+│   ├── Vendorea.PartnerConnect.Persistence      # EF Core DbContext, repositories, migrations
+│   └── Vendorea.PartnerConnect.Transport        # SFTP/file transport abstractions
 ├── tests/
 │   ├── Vendorea.PartnerConnect.UnitTests
 │   └── Vendorea.PartnerConnect.IntegrationTests
@@ -48,33 +49,40 @@ Vendorea.PartnerConnect/
 The solution follows Clean Architecture principles:
 
 - **Domain**: Core business entities with no external dependencies
-- **Contracts**: Interface definitions and DTOs
-- **Application**: Use case orchestration, depends on Domain/Contracts
-- **Infrastructure/Persistence**: Technical implementations
+- **Contracts**: DTOs and external service interface definitions (IPartnerAdapter, IMerchant360Client)
+- **Application**: Use case orchestration, repository interfaces, depends on Domain/Contracts
+- **Infrastructure**: Cross-cutting concerns (correlation ID, tenant context, service auth)
+- **Persistence**: EF Core DbContext, entity configurations, repository implementations
+- **Transport**: SFTP and file system transport abstractions for partner file exchange
 - **API/BackgroundWorkers**: Entry points
 
-### Domain Placeholders
+### Key Architectural Decisions
 
-The following domain entities are scaffolded for multi-dealer support:
+1. **Repository interfaces in Application**: Repository interfaces (ITradingPartnerRepository, etc.) live in Application layer, not Contracts. This keeps the Application layer as the core use-case orchestrator.
+
+2. **Transport layer**: Dedicated Transport project for SFTP/file mechanics, keeping partner adapters focused on business logic.
+
+3. **Cross-cutting concerns**: Middleware for correlation ID, tenant context, and service authentication propagation across all requests.
+
+### Domain Entities
 
 | Entity | Purpose |
 |--------|---------|
 | `TradingPartner` | External partner (wholesaler, distributor) |
-| `DealerPartnerConnection` | Connection between a dealer and a partner |
+| `DealerPartnerConnection` | Connection between a dealer and a partner (multi-tenant) |
 | `PartnerCapabilityConfiguration` | Partner feature configuration |
 | `PartnerDocument` | Trading documents (price lists, inventory feeds) |
 | `PriceFeedBatch` | Batch of price updates from a partner |
 | `InventoryFeedBatch` | Batch of inventory updates |
 | `ContentSyncJob` | Product content synchronization job |
 
-### Placeholder Namespaces
-
-The following namespaces are scaffolded for future development:
+### Contract Namespaces
 
 - `Contracts.DTOs.TradingDocuments` - Price lists, POs, invoices
 - `Contracts.DTOs.CommercialData` - Inventory, availability
 - `Contracts.DTOs.ProductContent` - Product descriptions, images
 - `Contracts.DTOs.IntegrationManagement` - Partner and connection management
+- `Contracts.Interfaces` - External service contracts (IPartnerAdapter, IMerchant360Client)
 
 ## How to Run Locally
 
@@ -83,6 +91,16 @@ The following namespaces are scaffolded for future development:
 - .NET 8.0 SDK
 - SQL Server LocalDB (or SQL Server)
 - Merchant360 API running on `http://localhost:5003` (optional, for full integration)
+
+### Database Setup
+
+Create the database and apply migrations:
+
+```bash
+cd src/Vendorea.PartnerConnect.Persistence
+dotnet ef migrations add InitialCreate --startup-project ../Vendorea.PartnerConnect.API
+dotnet ef database update --startup-project ../Vendorea.PartnerConnect.API
+```
 
 ### Running the API
 
@@ -131,31 +149,45 @@ Key configuration sections:
 }
 ```
 
+### Cross-Cutting Headers
+
+The API supports the following request headers for context propagation:
+
+| Header | Purpose |
+|--------|---------|
+| `X-Correlation-ID` | Request correlation for distributed tracing |
+| `X-Dealer-ID` | Tenant/dealer identifier for multi-tenant operations |
+| `X-Dealer-Code` | Alternative tenant identifier |
+| `X-Service-Name` | Calling service name for service-to-service auth |
+| `X-API-Key` | API key for service authentication |
+
 ### Environment-Specific Configuration
 
 - `appsettings.Development.json` - Local development settings
 - Use user secrets or environment variables for sensitive values in production
 
-## What is Scaffolded vs Placeholder
+## Implementation Status
 
 ### Fully Implemented
 
 - Solution structure and project references
 - Build configuration (Directory.Build.props, .editorconfig)
-- API with Swagger, health endpoint, basic controller
+- API with Swagger, health endpoint, controllers
 - Background worker skeleton with Serilog logging
-- Domain entities (structure only, no persistence)
-- Service interfaces and one sample implementation
+- Domain entities with EF Core entity configurations
+- EF Core DbContext with SQL Server support
+- Repository interfaces and EF Core implementations
+- Cross-cutting concerns (correlation ID, tenant context, service auth middleware)
+- Transport layer (SFTP client, local file client)
 - Test project structure with sample tests
 
 ### Placeholder / TODO
 
-- Database context and migrations (Persistence)
-- Repository implementations
+- EF Core migrations (run `dotnet ef migrations add` to create)
 - Full feed processing logic
 - Partner adapter implementations (SPR adapter is a placeholder)
-- Authentication and authorization
 - Merchant360 API integration (client is scaffolded, endpoints need implementation)
+- Production authentication and authorization
 
 ## Development Conventions
 
@@ -165,14 +197,14 @@ This solution mirrors Merchant360's conventions:
 - **Logging**: Serilog with structured logging
 - **Testing**: xUnit + FluentAssertions + Moq
 - **API Documentation**: Swagger/OpenAPI
+- **ORM**: Entity Framework Core with SQL Server
 - **Code Style**: Enforced via .editorconfig
 - **Naming**: Interfaces prefixed with `I`, private fields with `_`
 
 ## Next Steps
 
-1. Implement database context and migrations
-2. Implement repository layer
-3. Complete SPR adapter for real partner integration
-4. Add authentication/authorization
-5. Implement full feed processing pipeline
-6. Set up CI/CD pipeline
+1. Create initial EF Core migration
+2. Complete SPR adapter for real partner integration
+3. Implement full feed processing pipeline
+4. Add production authentication/authorization
+5. Set up CI/CD pipeline

@@ -1,5 +1,6 @@
 using Serilog;
 using Vendorea.PartnerConnect.Infrastructure.DependencyInjection;
+using Vendorea.PartnerConnect.Infrastructure.Middleware;
 using Vendorea.PartnerConnect.Merchant360Connector;
 using Vendorea.PartnerConnect.PartnerAdapters;
 using Vendorea.PartnerConnect.Persistence;
@@ -39,7 +40,11 @@ builder.Services.AddSwaggerGen(options =>
 // PartnerConnect services
 builder.Services.AddPartnerConnectServices();
 builder.Services.AddPartnerConnectInfrastructure();
-builder.Services.AddPartnerConnectPersistence();
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+builder.Services.AddPartnerConnectPersistence(connectionString);
+
 builder.Services.AddPartnerAdapters();
 
 // Merchant360 connector
@@ -75,6 +80,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+app.UsePartnerConnectMiddleware();
 app.UseAuthorization();
 app.UseSerilogRequestLogging();
 
