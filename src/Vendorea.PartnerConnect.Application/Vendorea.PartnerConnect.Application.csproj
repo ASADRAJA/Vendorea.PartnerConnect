@@ -12,6 +12,7 @@
     <ProjectReference Include="..\Vendorea.PartnerConnect.Canonical\Vendorea.PartnerConnect.Canonical.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Storage\Vendorea.PartnerConnect.Storage.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Validation\Vendorea.PartnerConnect.Validation.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Metering\Vendorea.PartnerConnect.Metering.csproj" />
   </ItemGroup>
 
   <ItemGroup>
