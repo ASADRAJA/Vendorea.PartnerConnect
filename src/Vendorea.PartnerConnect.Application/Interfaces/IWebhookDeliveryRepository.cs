@@ -57,6 +57,23 @@ public interface IWebhookDeliveryRepository
     Task<WebhookDeliveryStatistics> GetStatisticsAsync(
         int? subscriptionId = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets deliveries for a dealer within a date range.
+    /// </summary>
+    Task<IReadOnlyList<WebhookDelivery>> GetByDealerIdAsync(
+        int dealerId,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets all deliveries within a date range.
+    /// </summary>
+    Task<IReadOnlyList<WebhookDelivery>> GetAllInRangeAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

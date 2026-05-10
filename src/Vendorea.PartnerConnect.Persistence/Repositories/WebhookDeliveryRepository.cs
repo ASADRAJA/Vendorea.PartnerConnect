@@ -147,4 +147,33 @@ public class WebhookDeliveryRepository : IWebhookDeliveryRepository
             SuccessRate = successRate
         };
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<WebhookDelivery>> GetByDealerIdAsync(
+        int dealerId,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.WebhookDeliveries
+            .Include(d => d.Subscription)
+            .Where(d => d.Subscription != null
+                && d.Subscription.DealerId == dealerId
+                && d.CreatedAt >= startDate
+                && d.CreatedAt <= endDate)
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<WebhookDelivery>> GetAllInRangeAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.WebhookDeliveries
+            .Where(d => d.CreatedAt >= startDate && d.CreatedAt <= endDate)
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
 }
