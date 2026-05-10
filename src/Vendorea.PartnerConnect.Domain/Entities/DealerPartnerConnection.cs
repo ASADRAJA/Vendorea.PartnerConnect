@@ -15,8 +15,11 @@ public class DealerPartnerConnection
     public DateTime ConnectedAt { get; set; }
     public DateTime? DisconnectedAt { get; set; }
     public DateTime? LastSyncAt { get; set; }
+    public DateTime? LastSuccessfulSyncAt { get; set; }
     public string? CredentialsJson { get; set; }
     public string? ConfigurationJson { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public TradingPartner? TradingPartner { get; set; }
     public ICollection<PartnerDocument> Documents { get; set; } = new List<PartnerDocument>();
@@ -26,6 +29,7 @@ public enum ConnectionStatus
 {
     Pending,
     Active,
+    Inactive,
     Suspended,
     Disconnected,
     Error

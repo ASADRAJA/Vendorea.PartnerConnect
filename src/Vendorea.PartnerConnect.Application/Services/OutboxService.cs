@@ -1,0 +1,329 @@
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Domain.Entities;
+
+namespace Vendorea.PartnerConnect.Application.Services;
+
+/// <summary>
+/// Service for managing outbox messages.
+/// </summary>
+public class OutboxService : IOutboxService
+{
+    private readonly IOutboxRepository _repository;
+    private readonly IOutboxMessageProcessor _messageProcessor;
+    private readonly ILogger<OutboxService> _logger;
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
+    public OutboxService(
+        IOutboxRepository repository,
+        IOutboxMessageProcessor messageProcessor,
+        ILogger<OutboxService> logger)
+    {
+        _repository = repository;
+        _messageProcessor = messageProcessor;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public async Task<Guid> EnqueueAsync<T>(
+        string messageType,
+        T payload,
+        string? destination = null,
+        string? correlationId = null,
+        int priority = 0,
+        CancellationToken cancellationToken = default) where T : class
+    {
+        var message = new OutboxMessage
+        {
+            MessageType = messageType,
+            Payload = JsonSerializer.Serialize(payload, _jsonOptions),
+            Destination = destination,
+            CorrelationId = correlationId,
+            Priority = priority
+        };
+
+        await _repository.AddAsync(message, cancellationToken);
+
+        _logger.LogDebug(
+            "Enqueued outbox message {MessageId} of type {MessageType}",
+            message.Id, messageType);
+
+        return message.Id;
+    }
+
+    /// <inheritdoc />
+    public async Task<Guid> EnqueueWebhookAsync(
+        string webhookUrl,
+        object payload,
+        string? correlationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await EnqueueAsync(
+            "WebhookDelivery",
+            payload,
+            destination: webhookUrl,
+            correlationId: correlationId,
+            priority: 5,
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Guid> EnqueueDocumentStateChangeAsync(
+        int documentId,
+        string previousState,
+        string newState,
+        string? correlationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new DocumentStateChangePayload
+        {
+            DocumentId = documentId,
+            PreviousState = previousState,
+            NewState = newState,
+            OccurredAt = DateTime.UtcNow
+        };
+
+        var message = new OutboxMessage
+        {
+            MessageType = "DocumentStateChanged",
+            Payload = JsonSerializer.Serialize(payload, _jsonOptions),
+            CorrelationId = correlationId,
+            RelatedEntityId = documentId,
+            RelatedEntityType = "PartnerDocument",
+            Priority = 10
+        };
+
+        await _repository.AddAsync(message, cancellationToken);
+
+        _logger.LogDebug(
+            "Enqueued document state change message {MessageId} for document {DocumentId}",
+            message.Id, documentId);
+
+        return message.Id;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> ProcessPendingAsync(
+        int batchSize = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var messages = await _repository.GetPendingAsync(batchSize, cancellationToken);
+        if (messages.Count == 0)
+        {
+            return 0;
+        }
+
+        _logger.LogDebug("Processing {Count} pending outbox messages", messages.Count);
+
+        var processed = 0;
+        foreach (var message in messages)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            try
+            {
+                await ProcessMessageAsync(message, cancellationToken);
+                processed++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error processing outbox message {MessageId}: {Error}",
+                    message.Id, ex.Message);
+            }
+        }
+
+        return processed;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> ProcessRetriesAsync(
+        int batchSize = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var messages = await _repository.GetRetryDueAsync(batchSize, cancellationToken);
+        if (messages.Count == 0)
+        {
+            return 0;
+        }
+
+        _logger.LogDebug("Processing {Count} retry outbox messages", messages.Count);
+
+        var processed = 0;
+        foreach (var message in messages)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            try
+            {
+                await ProcessMessageAsync(message, cancellationToken);
+                processed++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error processing retry outbox message {MessageId}: {Error}",
+                    message.Id, ex.Message);
+            }
+        }
+
+        return processed;
+    }
+
+    private async Task ProcessMessageAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        message.MarkProcessing();
+        await _repository.UpdateAsync(message, cancellationToken);
+
+        try
+        {
+            await _messageProcessor.ProcessAsync(message, cancellationToken);
+            message.MarkDelivered();
+            await _repository.UpdateAsync(message, cancellationToken);
+
+            _logger.LogDebug(
+                "Successfully delivered outbox message {MessageId}",
+                message.Id);
+        }
+        catch (Exception ex)
+        {
+            message.LastError = ex.Message;
+            message.ScheduleRetry();
+            await _repository.UpdateAsync(message, cancellationToken);
+
+            if (message.Status == OutboxMessageStatus.Failed)
+            {
+                _logger.LogWarning(
+                    "Outbox message {MessageId} failed after {RetryCount} retries: {Error}",
+                    message.Id, message.RetryCount, ex.Message);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "Outbox message {MessageId} scheduled for retry {RetryCount} at {NextRetryAt}",
+                    message.Id, message.RetryCount, message.NextRetryAt);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<OutboxStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _repository.GetStatisticsAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CleanupAsync(
+        TimeSpan olderThan,
+        CancellationToken cancellationToken = default)
+    {
+        var deleted = await _repository.CleanupDeliveredAsync(olderThan, cancellationToken);
+
+        if (deleted > 0)
+        {
+            _logger.LogInformation("Cleaned up {Count} delivered outbox messages", deleted);
+        }
+
+        return deleted;
+    }
+}
+
+/// <summary>
+/// Payload for document state change messages.
+/// </summary>
+public record DocumentStateChangePayload
+{
+    public int DocumentId { get; init; }
+    public string PreviousState { get; init; } = string.Empty;
+    public string NewState { get; init; } = string.Empty;
+    public DateTime OccurredAt { get; init; }
+}
+
+/// <summary>
+/// Interface for processing outbox messages.
+/// </summary>
+public interface IOutboxMessageProcessor
+{
+    /// <summary>
+    /// Processes an outbox message.
+    /// </summary>
+    Task ProcessAsync(OutboxMessage message, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Default implementation of outbox message processor.
+/// </summary>
+public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<DefaultOutboxMessageProcessor> _logger;
+
+    public DefaultOutboxMessageProcessor(
+        IHttpClientFactory httpClientFactory,
+        ILogger<DefaultOutboxMessageProcessor> logger)
+    {
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
+    }
+
+    public async Task ProcessAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    {
+        switch (message.MessageType)
+        {
+            case "WebhookDelivery":
+                await DeliverWebhookAsync(message, cancellationToken);
+                break;
+
+            case "DocumentStateChanged":
+                // Document state changes can trigger webhooks or other actions
+                await HandleDocumentStateChangeAsync(message, cancellationToken);
+                break;
+
+            default:
+                _logger.LogWarning(
+                    "Unknown message type {MessageType} for outbox message {MessageId}",
+                    message.MessageType, message.Id);
+                break;
+        }
+    }
+
+    private async Task DeliverWebhookAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(message.Destination))
+        {
+            throw new InvalidOperationException("Webhook message missing destination URL");
+        }
+
+        var client = _httpClientFactory.CreateClient("Webhook");
+        var content = new StringContent(
+            message.Payload,
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        var response = await client.PostAsync(message.Destination, content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private Task HandleDocumentStateChangeAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        // This could trigger webhook subscriptions, send notifications, etc.
+        // For now, just log the event
+        _logger.LogDebug(
+            "Document state change processed for message {MessageId}",
+            message.Id);
+
+        return Task.CompletedTask;
+    }
+}

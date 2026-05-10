@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Billing.Interfaces;
+using Vendorea.PartnerConnect.Persistence.Interceptors;
 using Vendorea.PartnerConnect.Persistence.Repositories;
+using Vendorea.PartnerConnect.Persistence.UnitOfWork;
+using Vendorea.PartnerConnect.Metering.Interfaces;
 
 namespace Vendorea.PartnerConnect.Persistence;
 
@@ -11,12 +15,21 @@ public static class DependencyInjection
         this IServiceCollection services,
         string connectionString)
     {
-        services.AddDbContext<PartnerConnectDbContext>(options =>
+        // Register the auditing interceptor
+        services.AddSingleton<AuditingInterceptor>();
+
+        services.AddDbContext<PartnerConnectDbContext>((sp, options) =>
+        {
             options.UseSqlServer(connectionString, sqlOptions =>
             {
                 sqlOptions.MigrationsAssembly(typeof(PartnerConnectDbContext).Assembly.FullName);
                 sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
-            }));
+            });
+
+            // Add the auditing interceptor
+            var auditingInterceptor = sp.GetRequiredService<AuditingInterceptor>();
+            options.AddInterceptors(auditingInterceptor);
+        });
 
         RegisterRepositories(services);
 
@@ -40,5 +53,32 @@ public static class DependencyInjection
         services.AddScoped<ITradingPartnerRepository, TradingPartnerRepository>();
         services.AddScoped<IDealerPartnerConnectionRepository, DealerPartnerConnectionRepository>();
         services.AddScoped<IPartnerDocumentRepository, PartnerDocumentRepository>();
+        services.AddScoped<IDocumentFingerprintRepository, DocumentFingerprintRepository>();
+        services.AddScoped<IPriceFeedBatchRepository, PriceFeedBatchRepository>();
+        services.AddScoped<IInventoryFeedBatchRepository, InventoryFeedBatchRepository>();
+        services.AddScoped<IContentSyncJobRepository, ContentSyncJobRepository>();
+        services.AddScoped<IDocumentStateHistoryRepository, DocumentStateHistoryRepository>();
+        services.AddScoped<IQuarantinedDocumentRepository, QuarantinedDocumentRepository>();
+        services.AddScoped<IOutboxRepository, OutboxRepository>();
+        services.AddScoped<IWebhookSubscriptionRepository, WebhookSubscriptionRepository>();
+        services.AddScoped<IWebhookDeliveryRepository, WebhookDeliveryRepository>();
+        services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+        services.AddScoped<IUsageRepository, UsageRepository>();
+        services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
+        services.AddScoped<IOnboardingRepository, OnboardingRepository>();
+        services.AddScoped<IExternalDealerRepository, ExternalDealerRepository>();
+
+        // RBAC
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRoleRepository, RoleRepository>();
+        services.AddScoped<IPermissionRepository, PermissionRepository>();
+
+        // Billing
+        services.AddScoped<IBillingPlanRepository, BillingPlanRepository>();
+        services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
+        services.AddScoped<IInvoiceRepository, InvoiceRepository>();
+
+        // Unit of Work
+        services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
     }
 }

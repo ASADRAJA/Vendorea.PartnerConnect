@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.PartnerAdapters.SPR;
+using Vendorea.PartnerConnect.PartnerAdapters.SPR.Parsers;
 
 namespace Vendorea.PartnerConnect.PartnerAdapters;
 
@@ -14,6 +15,10 @@ public static class DependencyInjection
     /// </summary>
     public static IServiceCollection AddPartnerAdapters(this IServiceCollection services)
     {
+        // Register SPR parsers
+        services.AddScoped<SprPriceFeedParser>();
+        services.AddScoped<SprInventoryFeedParser>();
+
         // Register SPR adapter
         services.AddScoped<SprAdapter>();
         services.AddScoped<IPartnerAdapter, SprAdapter>();

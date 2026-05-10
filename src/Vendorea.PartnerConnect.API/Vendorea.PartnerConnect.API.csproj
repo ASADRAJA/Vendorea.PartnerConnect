@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.*" />
     <PackageReference Include="Serilog.AspNetCore" Version="8.*" />
@@ -8,11 +14,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vendorea.PartnerConnect.Application\Vendorea.PartnerConnect.Application.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Billing\Vendorea.PartnerConnect.Billing.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Contracts\Vendorea.PartnerConnect.Contracts.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Infrastructure\Vendorea.PartnerConnect.Infrastructure.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Persistence\Vendorea.PartnerConnect.Persistence.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Merchant360Connector\Vendorea.PartnerConnect.Merchant360Connector.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.PartnerAdapters\Vendorea.PartnerConnect.PartnerAdapters.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Storage\Vendorea.PartnerConnect.Storage.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Transport\Vendorea.PartnerConnect.Transport.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Webhooks\Vendorea.PartnerConnect.Webhooks.csproj" />
   </ItemGroup>
 
 </Project>

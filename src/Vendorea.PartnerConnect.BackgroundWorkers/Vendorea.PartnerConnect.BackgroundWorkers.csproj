@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
     <UserSecretsId>dotnet-Vendorea.PartnerConnect.BackgroundWorkers-7fc485f6-7573-4dde-9e38-ebab828ce09c</UserSecretsId>
   </PropertyGroup>
 
@@ -16,5 +19,7 @@
     <ProjectReference Include="..\Vendorea.PartnerConnect.PartnerAdapters\Vendorea.PartnerConnect.PartnerAdapters.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Merchant360Connector\Vendorea.PartnerConnect.Merchant360Connector.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Contracts\Vendorea.PartnerConnect.Contracts.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Storage\Vendorea.PartnerConnect.Storage.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Transport\Vendorea.PartnerConnect.Transport.csproj" />
   </ItemGroup>
 </Project>

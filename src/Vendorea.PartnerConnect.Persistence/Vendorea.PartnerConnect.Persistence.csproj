@@ -1,9 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Vendorea.PartnerConnect.Application\Vendorea.PartnerConnect.Application.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Billing\Vendorea.PartnerConnect.Billing.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Domain\Vendorea.PartnerConnect.Domain.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Contracts\Vendorea.PartnerConnect.Contracts.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Metering\Vendorea.PartnerConnect.Metering.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -14,6 +22,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.2.0" />
   </ItemGroup>
 
 </Project>
