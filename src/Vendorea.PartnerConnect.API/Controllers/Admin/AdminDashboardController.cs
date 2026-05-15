@@ -131,7 +131,7 @@ public class AdminDashboardController : ControllerBase
     [HttpGet("merchants")]
     public async Task<IActionResult> GetMerchants(CancellationToken cancellationToken)
     {
-        var merchants = await _merchant360Client.GetMerchantsAsync(cancellationToken);
+        var merchants = await _merchant360Client.GetMerchantsAsync(activeOnly: true, cancellationToken);
         return Ok(merchants);
     }
 }

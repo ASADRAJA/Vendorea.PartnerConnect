@@ -1,34 +1,68 @@
+using System.ComponentModel;
+
 namespace Vendorea.PartnerConnect.Contracts.Interfaces;
 
 /// <summary>
 /// Client interface for communicating with the Merchant360 API.
-/// Used to push processed data (prices, inventory, products) to merchants.
+/// Used to push processed data (prices, content) to merchants.
 /// </summary>
 public interface IMerchant360Client
 {
-    /// <summary>
-    /// Gets all merchants from Merchant360.
-    /// </summary>
-    Task<IReadOnlyList<Merchant360Merchant>> GetMerchantsAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Updates product prices in Merchant360 for a specific merchant.
-    /// Includes trading partner metadata for M360 to upsert partner record.
-    /// </summary>
-    Task<PriceUpdateResult> UpdatePricesAsync(int merchantId, TradingPartnerInfo tradingPartner, IEnumerable<PriceUpdateItem> items, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Updates inventory levels in Merchant360 for a specific merchant.
-    /// Includes trading partner metadata for M360 to upsert partner record.
-    /// </summary>
-    Task<InventoryUpdateResult> UpdateInventoryAsync(int merchantId, TradingPartnerInfo tradingPartner, IEnumerable<InventoryUpdateItem> items, CancellationToken cancellationToken = default);
-
     /// <summary>
     /// Tests connectivity to the Merchant360 API.
     /// </summary>
     Task<bool> TestConnectionAsync(CancellationToken cancellationToken = default);
 
-    // Subscription management
+    /// <summary>
+    /// Gets active merchants from Merchant360.
+    /// Used by PC admin UI to select which merchant receives a price upload.
+    /// </summary>
+    Task<IReadOnlyList<Merchant360Merchant>> GetMerchantsAsync(bool activeOnly = true, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets trading partners from Merchant360.
+    /// Used by PC to map its supplier/partner records to M360 trading partner IDs.
+    /// </summary>
+    Task<IReadOnlyList<Merchant360TradingPartner>> GetTradingPartnersAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes a batch of prices to Merchant360 for a specific merchant.
+    /// Price data is per-merchant.
+    /// </summary>
+    Task<PriceBatchResponse> PushPriceBatchAsync(
+        int merchantId,
+        PriceBatchRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes a batch of product content to Merchant360.
+    /// Content is shared across all merchants.
+    /// </summary>
+    Task<ContentBatchResponse> PushContentBatchAsync(
+        ContentBatchRequest request,
+        CancellationToken cancellationToken = default);
+
+    #region Phase 2 - Inventory (Disabled)
+
+    /// <summary>
+    /// Updates inventory levels in Merchant360 for a specific merchant.
+    /// </summary>
+    /// <remarks>Phase 2 - Not implemented in current release.</remarks>
+    [Obsolete("Inventory push is Phase 2. Do not use in Phase 1.")]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    Task<InventoryUpdateResult> UpdateInventoryAsync(
+        int merchantId,
+        int tradingPartnerId,
+        IEnumerable<InventoryUpdateItem> items,
+        CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Subscription Management (Stub for Phase 1)
+
+    // Subscription workflow is documented but not expanded in Phase 1.
+    // Future: M360 creates pending subscription → PC admin approves/denies → PC starts pushing data
+
     Task<SubscriptionListResult> GetSubscriptionsAsync(string? status, int? tenantId, int? tradingPartnerId, CancellationToken cancellationToken = default);
     Task<MerchantSubscriptionDto?> GetSubscriptionAsync(int id, CancellationToken cancellationToken = default);
     Task<MerchantSubscriptionDto?> CreateSubscriptionAsync(CreateSubscriptionDto request, CancellationToken cancellationToken = default);
@@ -36,43 +70,11 @@ public interface IMerchant360Client
     Task<bool> DenySubscriptionAsync(int id, DenySubscriptionDto request, CancellationToken cancellationToken = default);
     Task<bool> SuspendSubscriptionAsync(int id, SuspendSubscriptionDto request, CancellationToken cancellationToken = default);
     Task<bool> ReactivateSubscriptionAsync(int id, CancellationToken cancellationToken = default);
+
+    #endregion
 }
 
-/// <summary>
-/// Trading partner metadata included in push payloads for M360 to upsert.
-/// </summary>
-public record TradingPartnerInfo(
-    int PartnerConnectId,
-    string Code,
-    string Name,
-    string? Description,
-    string? LogoUrl);
-
-public record PriceUpdateItem(
-    string Sku,
-    decimal Cost,
-    decimal? ListPrice,
-    string? CurrencyCode);
-
-public record PriceUpdateResult(
-    bool Success,
-    int UpdatedCount,
-    int SkippedCount,
-    int ErrorCount,
-    IReadOnlyList<string>? Errors);
-
-public record InventoryUpdateItem(
-    string Sku,
-    int QuantityAvailable,
-    int? QuantityOnOrder,
-    string? WarehouseCode);
-
-public record InventoryUpdateResult(
-    bool Success,
-    int UpdatedCount,
-    int SkippedCount,
-    int ErrorCount,
-    IReadOnlyList<string>? Errors);
+#region Merchant & Trading Partner DTOs
 
 public record Merchant360Merchant(
     int Id,
@@ -80,7 +82,174 @@ public record Merchant360Merchant(
     string? Code,
     bool IsActive);
 
-// Subscription DTOs
+public record Merchant360TradingPartner(
+    int Id,
+    string Code,
+    string Name,
+    bool IsActive);
+
+#endregion
+
+#region Price Batch DTOs (Per-Merchant)
+
+/// <summary>
+/// Request to push a batch of prices to M360 for a specific merchant.
+/// </summary>
+public class PriceBatchRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public int SourceUploadId { get; set; }
+    public DateTime UploadedAt { get; set; }
+    public List<PriceBatchItem> Items { get; set; } = new();
+}
+
+/// <summary>
+/// Individual price item in a batch.
+/// </summary>
+public class PriceBatchItem
+{
+    public string StockNumber { get; set; } = string.Empty;
+    public string? ProductDescription { get; set; }
+    public decimal NetCost { get; set; }
+    public decimal? RetailListPrice { get; set; }
+    public string? Uom { get; set; }
+    public int? UomFactor { get; set; }
+    public string? CategoryCode { get; set; }
+    public string? SubcategoryCode { get; set; }
+    public string? BrandCode { get; set; }
+    public string? ManufacturerPartNumber { get; set; }
+    public string? UpcCode { get; set; }
+    public decimal? Weight { get; set; }
+    public decimal? Length { get; set; }
+    public decimal? Width { get; set; }
+    public decimal? Height { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+/// <summary>
+/// Response from M360 after pushing a price batch.
+/// </summary>
+public class PriceBatchResponse
+{
+    public bool Success { get; set; }
+    public int MerchantId { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? TradingPartnerCode { get; set; }
+    public int RecordsReceived { get; set; }
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+    public int? SyncLogId { get; set; }
+    public List<string>? Errors { get; set; }
+}
+
+#endregion
+
+#region Content Batch DTOs (Shared across merchants)
+
+/// <summary>
+/// Request to push a batch of product content to M360.
+/// Content is shared across all merchants.
+/// </summary>
+public class ContentBatchRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string ContentVersion { get; set; } = string.Empty;
+    public string Locale { get; set; } = "EN_US";
+    public int SourceUploadId { get; set; }
+    public List<ContentBatchProduct> Products { get; set; } = new();
+}
+
+/// <summary>
+/// Individual product content in a batch.
+/// </summary>
+public class ContentBatchProduct
+{
+    public string StockNumber { get; set; } = string.Empty;
+    public string? ProductName { get; set; }
+    public string? ShortDescription { get; set; }
+    public string? LongDescription { get; set; }
+    public string? BrandName { get; set; }
+    public string? ManufacturerName { get; set; }
+    public string? ManufacturerPartNumber { get; set; }
+    public string? UpcCode { get; set; }
+    public string? CategoryPath { get; set; }
+    public string? ImageUrl225 { get; set; }
+    public string? ImageUrl75 { get; set; }
+    public decimal? Weight { get; set; }
+    public decimal? Length { get; set; }
+    public decimal? Width { get; set; }
+    public decimal? Height { get; set; }
+    public List<ContentSpecification> Specifications { get; set; } = new();
+    public List<ContentFeature> Features { get; set; } = new();
+    public List<ContentRelatedProduct> RelatedProducts { get; set; } = new();
+}
+
+public class ContentSpecification
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Value { get; set; }
+    public string? Group { get; set; }
+}
+
+public class ContentFeature
+{
+    public string? Headline { get; set; }
+    public string? Description { get; set; }
+}
+
+public class ContentRelatedProduct
+{
+    public string StockNumber { get; set; } = string.Empty;
+    public string? RelationshipType { get; set; }
+}
+
+/// <summary>
+/// Response from M360 after pushing a content batch.
+/// </summary>
+public class ContentBatchResponse
+{
+    public bool Success { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? TradingPartnerCode { get; set; }
+    public string? ContentVersion { get; set; }
+    public string? Locale { get; set; }
+    public int RecordsReceived { get; set; }
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+    public int SpecificationsProcessed { get; set; }
+    public int FeaturesProcessed { get; set; }
+    public int RelationshipsProcessed { get; set; }
+    public int? SyncLogId { get; set; }
+    public List<string>? Errors { get; set; }
+}
+
+#endregion
+
+#region Inventory DTOs (Phase 2 - Disabled)
+
+[Obsolete("Inventory is Phase 2. Do not use in Phase 1.")]
+public record InventoryUpdateItem(
+    string StockNumber,
+    int QuantityAvailable,
+    int? QuantityOnOrder,
+    string? WarehouseCode);
+
+[Obsolete("Inventory is Phase 2. Do not use in Phase 1.")]
+public record InventoryUpdateResult(
+    bool Success,
+    int UpdatedCount,
+    int SkippedCount,
+    int ErrorCount,
+    IReadOnlyList<string>? Errors);
+
+#endregion
+
+#region Subscription DTOs (Stub for Phase 1)
+
 public enum SubscriptionStatus
 {
     Pending,
@@ -144,3 +313,5 @@ public class SuspendSubscriptionDto
 {
     public string? Notes { get; set; }
 }
+
+#endregion

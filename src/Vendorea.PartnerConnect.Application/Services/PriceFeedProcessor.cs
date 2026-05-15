@@ -37,18 +37,19 @@ public class PriceFeedProcessor : IPriceFeedProcessor
     /// </summary>
     public async Task<PriceFeedProcessResult> ProcessAsync(
         IReadOnlyList<PriceUpdate> priceUpdates,
-        int dealerId,
+        int merchantId,
         int documentId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Processing {Count} price updates for dealer {DealerId}",
-            priceUpdates.Count, dealerId);
+            "Processing {Count} price updates for merchant {MerchantId}, partner {PartnerCode}",
+            priceUpdates.Count, merchantId, tradingPartnerCode);
 
         var validItems = new List<PriceUpdate>();
         var invalidItems = new List<PriceUpdateError>();
-        var context = new ValidationContext { DealerId = dealerId };
+        var context = new ValidationContext { DealerId = merchantId };
 
         // Validate each item
         foreach (var priceUpdate in priceUpdates)
@@ -72,7 +73,8 @@ public class PriceFeedProcessor : IPriceFeedProcessor
             validItems.Count, invalidItems.Count);
 
         // Push valid items to Merchant360
-        var pushResult = await PushToMerchant360Async(validItems, dealerId, tradingPartnerInfo, cancellationToken);
+        var pushResult = await PushToMerchant360Async(
+            validItems, merchantId, documentId, tradingPartnerId, tradingPartnerCode, cancellationToken);
 
         // Update document status
         var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
@@ -113,11 +115,14 @@ public class PriceFeedProcessor : IPriceFeedProcessor
 
     /// <summary>
     /// Pushes validated price updates to Merchant360.
+    /// Uses the Phase 1 contract: POST /merchants/{merchantId}/prices/batch
     /// </summary>
     public async Task<PushResult> PushToMerchant360Async(
         IReadOnlyList<PriceUpdate> priceUpdates,
-        int dealerId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int merchantId,
+        int sourceUploadId,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default)
     {
         if (priceUpdates.Count == 0)
@@ -125,27 +130,52 @@ public class PriceFeedProcessor : IPriceFeedProcessor
             return new PushResult(0, 0);
         }
 
-        var items = priceUpdates.Select(p => new PriceUpdateItem(
-            Sku: p.PartnerSku,
-            Cost: p.Cost,
-            ListPrice: p.ListPrice,
-            CurrencyCode: p.Currency.ToString()
-        )).ToList();
+        // Build batch request per Phase 1 contract
+        // PriceUpdate model contains basic fields - additional fields can be added via extended mapping
+        var batchRequest = new PriceBatchRequest
+        {
+            TradingPartnerId = tradingPartnerId,
+            TradingPartnerCode = tradingPartnerCode,
+            SourceUploadId = sourceUploadId,
+            UploadedAt = DateTime.UtcNow,
+            Items = priceUpdates.Select(p => new PriceBatchItem
+            {
+                StockNumber = p.PartnerSku,
+                NetCost = p.Cost,
+                RetailListPrice = p.ListPrice,
+                UpcCode = p.Upc,
+                ManufacturerPartNumber = p.ManufacturerPartNumber,
+                IsActive = p.Status != CanonicalStatus.Failed
+            }).ToList()
+        };
 
         try
         {
-            var result = await _merchant360Client.UpdatePricesAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
+            var response = await _merchant360Client.PushPriceBatchAsync(merchantId, batchRequest, cancellationToken);
 
-            _logger.LogInformation(
-                "Pushed {SuccessCount} prices to Merchant360, {ErrorCount} failed",
-                items.Count - result.ErrorCount, result.ErrorCount);
+            if (response.Success)
+            {
+                _logger.LogInformation(
+                    "Pushed price batch to Merchant360 for merchant {MerchantId}: " +
+                    "received={RecordsReceived}, created={RecordsCreated}, updated={RecordsUpdated}, skipped={RecordsSkipped}, syncLogId={SyncLogId}",
+                    merchantId, response.RecordsReceived, response.RecordsCreated,
+                    response.RecordsUpdated, response.RecordsSkipped, response.SyncLogId);
 
-            return new PushResult(items.Count - result.ErrorCount, result.ErrorCount);
+                return new PushResult(response.RecordsCreated + response.RecordsUpdated, response.RecordsSkipped);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Merchant360 returned errors for merchant {MerchantId}: {Errors}",
+                    merchantId, string.Join("; ", response.Errors ?? new List<string>()));
+
+                return new PushResult(0, priceUpdates.Count);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to push prices to Merchant360 for dealer {DealerId}", dealerId);
-            return new PushResult(0, items.Count);
+            _logger.LogError(ex, "Failed to push prices to Merchant360 for merchant {MerchantId}", merchantId);
+            return new PushResult(0, priceUpdates.Count);
         }
     }
 
@@ -162,11 +192,11 @@ public class PriceFeedProcessor : IPriceFeedProcessor
         {
             DealerId = dealerId,
             TradingPartnerCode = tradingPartnerCode,
-            PartnerSku = rawData.GetValueOrDefault("sku") ?? string.Empty,
-            Upc = rawData.GetValueOrDefault("upc"),
-            ManufacturerPartNumber = rawData.GetValueOrDefault("mpn"),
-            Cost = decimal.TryParse(rawData.GetValueOrDefault("cost"), out var cost) ? cost : 0,
-            ListPrice = decimal.TryParse(rawData.GetValueOrDefault("listPrice"), out var list) ? list : null,
+            PartnerSku = rawData.GetValueOrDefault("stockNumber") ?? rawData.GetValueOrDefault("sku") ?? string.Empty,
+            Upc = rawData.GetValueOrDefault("upcCode") ?? rawData.GetValueOrDefault("upc"),
+            ManufacturerPartNumber = rawData.GetValueOrDefault("manufacturerPartNumber") ?? rawData.GetValueOrDefault("mpn"),
+            Cost = decimal.TryParse(rawData.GetValueOrDefault("netCost") ?? rawData.GetValueOrDefault("cost"), out var cost) ? cost : 0,
+            ListPrice = decimal.TryParse(rawData.GetValueOrDefault("retailListPrice") ?? rawData.GetValueOrDefault("listPrice"), out var list) ? list : null,
             MapPrice = decimal.TryParse(rawData.GetValueOrDefault("mapPrice"), out var map) ? map : null,
             Currency = CurrencyCode.USD,
             EffectiveDate = DateTime.UtcNow,
@@ -184,9 +214,10 @@ public interface IPriceFeedProcessor
 {
     Task<PriceFeedProcessResult> ProcessAsync(
         IReadOnlyList<PriceUpdate> priceUpdates,
-        int dealerId,
+        int merchantId,
         int documentId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default);
 
     Task<ValidationResult> ValidateAsync(
@@ -195,8 +226,10 @@ public interface IPriceFeedProcessor
 
     Task<PushResult> PushToMerchant360Async(
         IReadOnlyList<PriceUpdate> priceUpdates,
-        int dealerId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int merchantId,
+        int sourceUploadId,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default);
 }
 

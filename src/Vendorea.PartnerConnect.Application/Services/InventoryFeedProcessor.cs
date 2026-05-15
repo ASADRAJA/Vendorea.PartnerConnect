@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Canonical.Enums;
@@ -13,6 +14,11 @@ namespace Vendorea.PartnerConnect.Application.Services;
 /// <summary>
 /// Processor for inventory feed operations including validation, transformation, and push to Merchant360.
 /// </summary>
+/// <remarks>
+/// Phase 2 - Inventory push to Merchant360 is not implemented in Phase 1.
+/// This processor is retained for internal validation and future use.
+/// </remarks>
+[Obsolete("Inventory push is Phase 2. Do not use for Merchant360 integration in Phase 1.")]
 public class InventoryFeedProcessor : IInventoryFeedProcessor
 {
     private readonly IDocumentValidator<InventoryUpdate> _validator;
@@ -35,22 +41,26 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
     /// <summary>
     /// Processes a batch of inventory updates.
     /// </summary>
+    /// <remarks>Phase 2 - Merchant360 push is disabled.</remarks>
+    [Obsolete("Inventory push is Phase 2. Do not use for Merchant360 integration in Phase 1.")]
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public async Task<InventoryFeedProcessResult> ProcessAsync(
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
-        int dealerId,
+        int merchantId,
         int documentId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "Processing {Count} inventory updates for dealer {DealerId}",
-            inventoryUpdates.Count, dealerId);
+        _logger.LogWarning(
+            "Inventory push is Phase 2. Processing {Count} inventory updates locally without Merchant360 push.",
+            inventoryUpdates.Count);
 
         var validItems = new List<InventoryUpdate>();
         var invalidItems = new List<InventoryUpdateError>();
-        var context = new ValidationContext { DealerId = dealerId };
+        var context = new ValidationContext { DealerId = merchantId };
 
-        // Validate each item
+        // Validate each item (validation still works, just no push)
         foreach (var inventoryUpdate in inventoryUpdates)
         {
             var validationResult = await _validator.ValidateAsync(inventoryUpdate, context, cancellationToken);
@@ -68,19 +78,16 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
         }
 
         _logger.LogInformation(
-            "Validation complete: {ValidCount} valid, {InvalidCount} invalid",
+            "Validation complete: {ValidCount} valid, {InvalidCount} invalid (no Merchant360 push - Phase 2)",
             validItems.Count, invalidItems.Count);
 
-        // Push valid items to Merchant360
-        var pushResult = await PushToMerchant360Async(validItems, dealerId, tradingPartnerInfo, cancellationToken);
-
-        // Update document status
+        // Update document status (no Merchant360 push in Phase 1)
         var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
         if (document != null)
         {
             document.ProcessedCount = validItems.Count;
-            document.ErrorCount = invalidItems.Count + pushResult.FailedCount;
-            document.Status = invalidItems.Count == 0 && pushResult.FailedCount == 0
+            document.ErrorCount = invalidItems.Count;
+            document.Status = invalidItems.Count == 0
                 ? DocumentStatus.Completed
                 : DocumentStatus.PartiallyCompleted;
             document.ProcessingCompletedAt = DateTime.UtcNow;
@@ -93,10 +100,10 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
             TotalItems = inventoryUpdates.Count,
             ValidatedItems = validItems.Count,
             InvalidItems = invalidItems.Count,
-            PushedItems = pushResult.SuccessCount,
-            FailedPushItems = pushResult.FailedCount,
+            PushedItems = 0, // No push in Phase 1
+            FailedPushItems = 0,
             ValidationErrors = invalidItems,
-            Success = invalidItems.Count == 0 && pushResult.FailedCount == 0
+            Success = invalidItems.Count == 0
         };
     }
 
@@ -114,39 +121,22 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
     /// <summary>
     /// Pushes validated inventory updates to Merchant360.
     /// </summary>
-    public async Task<InventoryPushResult> PushToMerchant360Async(
+    /// <remarks>Phase 2 - Not implemented. Always returns failure result.</remarks>
+    [Obsolete("Inventory push is Phase 2. Do not use for Merchant360 integration in Phase 1.")]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public Task<InventoryPushResult> PushToMerchant360Async(
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
-        int dealerId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int merchantId,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default)
     {
-        if (inventoryUpdates.Count == 0)
-        {
-            return new InventoryPushResult(0, 0);
-        }
+        _logger.LogWarning(
+            "Inventory push to Merchant360 is disabled in Phase 1. Skipping {Count} items.",
+            inventoryUpdates.Count);
 
-        var items = inventoryUpdates.Select(i => new InventoryUpdateItem(
-            Sku: i.PartnerSku,
-            QuantityAvailable: i.QuantityAvailable,
-            QuantityOnOrder: i.QuantityOnOrder,
-            WarehouseCode: i.WarehouseCode
-        )).ToList();
-
-        try
-        {
-            var result = await _merchant360Client.UpdateInventoryAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
-
-            _logger.LogInformation(
-                "Pushed {SuccessCount} inventory items to Merchant360, {ErrorCount} failed",
-                items.Count - result.ErrorCount, result.ErrorCount);
-
-            return new InventoryPushResult(items.Count - result.ErrorCount, result.ErrorCount);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to push inventory to Merchant360 for dealer {DealerId}", dealerId);
-            return new InventoryPushResult(0, items.Count);
-        }
+        // Return success with 0 pushed - inventory is simply not pushed in Phase 1
+        return Task.FromResult(new InventoryPushResult(0, 0));
     }
 
     /// <summary>
@@ -162,12 +152,12 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
         {
             DealerId = dealerId,
             TradingPartnerCode = tradingPartnerCode,
-            PartnerSku = rawData.GetValueOrDefault("sku") ?? string.Empty,
-            Upc = rawData.GetValueOrDefault("upc"),
-            ManufacturerPartNumber = rawData.GetValueOrDefault("mpn"),
+            PartnerSku = rawData.GetValueOrDefault("stockNumber") ?? rawData.GetValueOrDefault("sku") ?? string.Empty,
+            Upc = rawData.GetValueOrDefault("upcCode") ?? rawData.GetValueOrDefault("upc"),
+            ManufacturerPartNumber = rawData.GetValueOrDefault("manufacturerPartNumber") ?? rawData.GetValueOrDefault("mpn"),
             QuantityAvailable = int.TryParse(rawData.GetValueOrDefault("qty"), out var qty) ? qty : 0,
             QuantityOnOrder = int.TryParse(rawData.GetValueOrDefault("qtyOnOrder"), out var qtyOo) ? qtyOo : null,
-            WarehouseCode = rawData.GetValueOrDefault("warehouse"),
+            WarehouseCode = rawData.GetValueOrDefault("warehouseCode") ?? rawData.GetValueOrDefault("warehouse"),
             AvailabilityStatus = AvailabilityStatus.InStock,
             ReceivedAt = DateTime.UtcNow,
             SourceDocumentId = sourceDocumentId,
@@ -196,23 +186,29 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
 /// <summary>
 /// Interface for inventory feed processing.
 /// </summary>
+/// <remarks>Phase 2 - Inventory push is not implemented in Phase 1.</remarks>
+[Obsolete("Inventory push is Phase 2. Do not use for Merchant360 integration in Phase 1.")]
 public interface IInventoryFeedProcessor
 {
+    [Obsolete("Inventory push is Phase 2. Do not use for Merchant360 integration in Phase 1.")]
     Task<InventoryFeedProcessResult> ProcessAsync(
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
-        int dealerId,
+        int merchantId,
         int documentId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default);
 
     Task<ValidationResult> ValidateAsync(
         InventoryUpdate inventoryUpdate,
         CancellationToken cancellationToken = default);
 
+    [Obsolete("Inventory push is Phase 2. Do not use for Merchant360 integration in Phase 1.")]
     Task<InventoryPushResult> PushToMerchant360Async(
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
-        int dealerId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int merchantId,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         CancellationToken cancellationToken = default);
 }
 

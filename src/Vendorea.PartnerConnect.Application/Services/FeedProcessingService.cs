@@ -343,54 +343,75 @@ public class FeedProcessingService : IFeedProcessingService
 
     /// <summary>
     /// Processes and pushes price updates to Merchant360.
+    /// Uses Phase 1 contract: POST /merchants/{merchantId}/prices/batch
     /// </summary>
     public async Task<(int processed, int errors)> PushPriceUpdatesToMerchant360Async(
-        int dealerId,
-        TradingPartnerInfo tradingPartnerInfo,
+        int merchantId,
+        int tradingPartnerId,
+        string tradingPartnerCode,
+        int sourceUploadId,
         IEnumerable<PriceUpdate> priceUpdates,
         CancellationToken cancellationToken = default)
     {
-        var items = priceUpdates.Select(p => new PriceUpdateItem(
-            Sku: p.PartnerSku,
-            Cost: p.Cost,
-            ListPrice: p.ListPrice,
-            CurrencyCode: p.Currency.ToString()
-        )).ToList();
-
-        if (items.Count == 0)
+        var updatesList = priceUpdates.ToList();
+        if (updatesList.Count == 0)
         {
             return (0, 0);
         }
 
-        var result = await _merchant360Client.UpdatePricesAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
+        // Build batch request per Phase 1 contract
+        // PriceUpdate model contains basic fields; additional fields can be added via extended mapping
+        var batchRequest = new PriceBatchRequest
+        {
+            TradingPartnerId = tradingPartnerId,
+            TradingPartnerCode = tradingPartnerCode,
+            SourceUploadId = sourceUploadId,
+            UploadedAt = DateTime.UtcNow,
+            Items = updatesList.Select(p => new PriceBatchItem
+            {
+                StockNumber = p.PartnerSku,
+                NetCost = p.Cost,
+                RetailListPrice = p.ListPrice,
+                ManufacturerPartNumber = p.ManufacturerPartNumber,
+                UpcCode = p.Upc,
+                IsActive = p.Status != CanonicalStatus.Failed
+            }).ToList()
+        };
 
-        return (items.Count - result.ErrorCount, result.ErrorCount);
+        var response = await _merchant360Client.PushPriceBatchAsync(merchantId, batchRequest, cancellationToken);
+
+        if (response.Success)
+        {
+            return (response.RecordsCreated + response.RecordsUpdated, response.RecordsSkipped);
+        }
+
+        _logger.LogWarning(
+            "Merchant360 price push failed for merchant {MerchantId}: {Errors}",
+            merchantId, string.Join("; ", response.Errors ?? new List<string>()));
+
+        return (0, updatesList.Count);
     }
 
     /// <summary>
     /// Processes and pushes inventory updates to Merchant360.
     /// </summary>
-    public async Task<(int processed, int errors)> PushInventoryUpdatesToMerchant360Async(
-        int dealerId,
-        TradingPartnerInfo tradingPartnerInfo,
+    /// <remarks>Phase 2 - Inventory push is disabled. This method logs a warning and returns success with 0 processed.</remarks>
+    [Obsolete("Inventory push is Phase 2. Do not use for Merchant360 integration in Phase 1.")]
+    public Task<(int processed, int errors)> PushInventoryUpdatesToMerchant360Async(
+        int merchantId,
+        int tradingPartnerId,
+        string tradingPartnerCode,
         IEnumerable<InventoryUpdate> inventoryUpdates,
         CancellationToken cancellationToken = default)
     {
-        var items = inventoryUpdates.Select(i => new InventoryUpdateItem(
-            Sku: i.PartnerSku,
-            QuantityAvailable: i.QuantityAvailable,
-            QuantityOnOrder: i.QuantityOnOrder,
-            WarehouseCode: i.WarehouseCode
-        )).ToList();
+        var count = inventoryUpdates.Count();
 
-        if (items.Count == 0)
-        {
-            return (0, 0);
-        }
+        _logger.LogWarning(
+            "Inventory push is Phase 2. Skipping {Count} inventory updates for merchant {MerchantId}.",
+            count, merchantId);
 
-        var result = await _merchant360Client.UpdateInventoryAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
-
-        return (items.Count - result.ErrorCount, result.ErrorCount);
+        // Phase 2 - Inventory is not pushed to M360 in Phase 1
+        return Task.FromResult((0, 0));
     }
 
     private IPriceFeedAdapter? FindPriceFeedAdapter(string? partnerCode)

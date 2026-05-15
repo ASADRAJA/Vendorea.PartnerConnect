@@ -370,26 +370,34 @@ public class PriceFeedService : IPriceFeedService
             // Get records for this upload
             var records = await _sprPriceRecordRepository.GetByUploadIdAsync(uploadId, cancellationToken);
 
-            // Convert to Merchant360 format
-            var priceItems = records.Select(r => new PriceUpdateItem(
-                r.StockNumber,
-                r.NetCostNonCcp,
-                r.RetailListPrice,
-                "USD"
-            )).ToList();
+            // Build price batch request per Phase 1 contract
+            var batchRequest = new PriceBatchRequest
+            {
+                TradingPartnerId = upload.TradingPartnerId,
+                TradingPartnerCode = upload.TradingPartner?.Code ?? "UNKNOWN",
+                SourceUploadId = upload.Id,
+                UploadedAt = upload.UploadedAt,
+                Items = records.Select(r => new PriceBatchItem
+                {
+                    StockNumber = r.StockNumber,
+                    ProductDescription = r.ProductDescription,
+                    NetCost = r.NetCostNonCcp,
+                    RetailListPrice = r.RetailListPrice,
+                    Uom = r.SellingUnitOfMeasure,
+                    CategoryCode = r.CategoryCode,
+                    ManufacturerPartNumber = r.MpcNumber,
+                    UpcCode = r.Upc,
+                    Weight = r.WeightLbs,
+                    Length = r.LengthInches,
+                    Width = r.WidthInches,
+                    Height = r.HeightInches,
+                    IsActive = r.ProductStatus != "D" // 'D' typically means discontinued
+                }).ToList()
+            };
 
-            // Build trading partner info for M360 to upsert
-            var tradingPartnerInfo = new TradingPartnerInfo(
-                PartnerConnectId: upload.TradingPartnerId,
-                Code: upload.TradingPartner?.Code ?? "UNKNOWN",
-                Name: upload.TradingPartner?.Name ?? "Unknown Partner",
-                Description: upload.TradingPartner?.Description,
-                LogoUrl: upload.TradingPartner?.LogoUrl
-            );
-
-            // Push to Merchant360
-            var pushResult = await _merchant360Client.UpdatePricesAsync(
-                upload.DealerId, tradingPartnerInfo, priceItems, cancellationToken);
+            // Push to Merchant360 using Phase 1 contract
+            var pushResult = await _merchant360Client.PushPriceBatchAsync(
+                upload.DealerId, batchRequest, cancellationToken);
 
             if (pushResult.Success)
             {
@@ -397,12 +405,17 @@ public class PriceFeedService : IPriceFeedService
                 upload.PushedToMerchant360At = DateTime.UtcNow;
                 await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
-                return new PushToMerchant360Result(true, pushResult.UpdatedCount);
+                _logger.LogInformation(
+                    "Pushed price batch to Merchant360: received={RecordsReceived}, created={RecordsCreated}, updated={RecordsUpdated}, skipped={RecordsSkipped}, syncLogId={SyncLogId}",
+                    pushResult.RecordsReceived, pushResult.RecordsCreated,
+                    pushResult.RecordsUpdated, pushResult.RecordsSkipped, pushResult.SyncLogId);
+
+                return new PushToMerchant360Result(true, pushResult.RecordsCreated + pushResult.RecordsUpdated);
             }
             else
             {
                 upload.Status = PriceFeedUploadStatus.PushFailed;
-                upload.ErrorMessage = string.Join(", ", pushResult.Errors ?? Array.Empty<string>());
+                upload.ErrorMessage = string.Join(", ", pushResult.Errors ?? new List<string>());
                 await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
                 return new PushToMerchant360Result(false, 0, upload.ErrorMessage);
