@@ -114,15 +114,15 @@
                                         </td>
                                         <td>@sub.RequestedAt.ToLocalTime().ToString("g")</td>
                                         <td>
-                                            @if (sub.Status == SubscriptionStatus.Approved && sub.ApprovedAt.HasValue)
+                                            @if (sub.Status == "Approved" && sub.ApprovedAt.HasValue)
                                             {
                                                 <span title="@sub.ApprovedByUserName">@sub.ApprovedAt.Value.ToLocalTime().ToString("g")</span>
                                             }
-                                            else if (sub.Status == SubscriptionStatus.Denied)
+                                            else if (sub.Status == "Denied")
                                             {
                                                 <span class="text-danger" title="@sub.DenialReason">Denied</span>
                                             }
-                                            else if (sub.Status == SubscriptionStatus.Suspended && sub.SuspendedAt.HasValue)
+                                            else if (sub.Status == "Suspended" && sub.SuspendedAt.HasValue)
                                             {
                                                 <span class="text-warning" title="@sub.SuspendedByUserName">@sub.SuspendedAt.Value.ToLocalTime().ToString("g")</span>
                                             }
@@ -132,7 +132,7 @@
                                             }
                                         </td>
                                         <td>
-                                            @if (sub.Status == SubscriptionStatus.Pending)
+                                            @if (sub.Status == "Pending")
                                             {
                                                 <button class="btn btn-sm btn-success me-1" @onclick="() => ShowApproveModal(sub)" title="Approve">
                                                     <span class="oi oi-check"></span>
@@ -141,19 +141,19 @@
                                                     <span class="oi oi-x"></span>
                                                 </button>
                                             }
-                                            else if (sub.Status == SubscriptionStatus.Approved)
+                                            else if (sub.Status == "Approved")
                                             {
                                                 <button class="btn btn-sm btn-warning" @onclick="() => ShowSuspendModal(sub)" title="Suspend">
                                                     <span class="oi oi-ban"></span>
                                                 </button>
                                             }
-                                            else if (sub.Status == SubscriptionStatus.Suspended)
+                                            else if (sub.Status == "Suspended")
                                             {
                                                 <button class="btn btn-sm btn-success" @onclick="() => ReactivateSubscription(sub.Id)" title="Reactivate">
                                                     <span class="oi oi-action-redo"></span>
                                                 </button>
                                             }
-                                            else if (sub.Status == SubscriptionStatus.Denied)
+                                            else if (sub.Status == "Denied")
                                             {
                                                 <button class="btn btn-sm btn-outline-success" @onclick="() => ShowApproveModal(sub)" title="Approve">
                                                     <span class="oi oi-check"></span>
@@ -432,8 +432,8 @@
 
     private List<MerchantSubscriptionDto> filteredSubscriptions => activeTab switch
     {
-        "pending" => subscriptionResult.Items.Where(s => s.Status == SubscriptionStatus.Pending).ToList(),
-        "active" => subscriptionResult.Items.Where(s => s.Status == SubscriptionStatus.Approved).ToList(),
+        "pending" => subscriptionResult.Items.Where(s => s.Status == "Pending").ToList(),
+        "active" => subscriptionResult.Items.Where(s => s.Status == "Approved").ToList(),
         _ => subscriptionResult.Items
     };
 
@@ -615,12 +615,12 @@
         }
     }
 
-    private static string GetStatusBadgeClass(SubscriptionStatus status) => status switch
+    private static string GetStatusBadgeClass(string status) => status switch
     {
-        SubscriptionStatus.Pending => "bg-warning text-dark",
-        SubscriptionStatus.Approved => "bg-success",
-        SubscriptionStatus.Denied => "bg-danger",
-        SubscriptionStatus.Suspended => "bg-secondary",
+        "Pending" => "bg-warning text-dark",
+        "Approved" => "bg-success",
+        "Denied" => "bg-danger",
+        "Suspended" => "bg-secondary",
         _ => "bg-light text-dark"
     };
 }

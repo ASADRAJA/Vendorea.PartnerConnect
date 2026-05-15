@@ -324,7 +324,7 @@ public class MerchantSubscriptionDto
     public string? TradingPartnerCode { get; set; }
     public string? TradingPartnerName { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
-    public SubscriptionStatus Status { get; set; }
+    public string Status { get; set; } = string.Empty;
     public DateTime RequestedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public int? ApprovedByUserId { get; set; }
