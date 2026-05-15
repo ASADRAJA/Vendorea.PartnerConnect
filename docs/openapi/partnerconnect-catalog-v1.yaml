@@ -1,0 +1,272 @@
+openapi: 3.0.3
+info:
+  title: PartnerConnect Partner Catalog API
+  description: |
+    API for retrieving the trading partner catalog from PartnerConnect.
+
+    This API is consumed by Merchant360 to:
+    - Display available trading partners for merchant subscriptions
+    - Sync the partner catalog on a scheduled basis (every 6 hours)
+    - Lazy-load partner data in the subscription UI (30 min cache)
+
+    ## Data Availability Flags
+    - `hasPriceData`: Indicates if PartnerConnect has pricing data loaded for this partner
+    - `hasEnhancedContent`: Indicates if PartnerConnect has enhanced product content for this partner
+
+    These flags help Merchant360 display which data types are available for each partner.
+  version: 1.0.0
+  contact:
+    name: PartnerConnect Team
+    email: partnerconnect@vendorea.com
+
+servers:
+  - url: https://partnerconnect.vendorea.com
+    description: Production
+  - url: https://partnerconnect-staging.vendorea.com
+    description: Staging
+  - url: http://localhost:5000
+    description: Local Development
+
+security:
+  - ApiKeyAuth: []
+  - OAuth2: []
+
+paths:
+  /api/v1/partners:
+    get:
+      operationId: getPartnerCatalog
+      summary: Get available trading partners
+      description: |
+        Returns all active trading partners with data availability information.
+
+        Used by Merchant360 to display the partner catalog for merchant subscriptions.
+        Results include flags indicating whether price data and enhanced content are available.
+      tags:
+        - Partner Catalog
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: []
+      responses:
+        '200':
+          description: List of active trading partners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TradingPartner'
+              example:
+                - id: 1
+                  code: "SPR"
+                  name: "S.P. Richards"
+                  description: "Leading office products wholesaler"
+                  logoUrl: "https://cdn.partnerconnect.com/logos/spr.png"
+                  hasPriceData: true
+                  hasEnhancedContent: true
+                  isActive: true
+                - id: 2
+                  code: "UNITED"
+                  name: "United Stationers"
+                  description: "Office products and supplies distributor"
+                  logoUrl: "https://cdn.partnerconnect.com/logos/united.png"
+                  hasPriceData: true
+                  hasEnhancedContent: false
+                  isActive: true
+        '401':
+          description: Unauthorized - Invalid or missing authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Unauthorized"
+                message: "Invalid or missing API key"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "InternalServerError"
+                message: "An unexpected error occurred"
+
+  /api/v1/partners/{id}:
+    get:
+      operationId: getPartnerById
+      summary: Get a specific trading partner
+      description: |
+        Returns details for a specific trading partner by ID.
+
+        Includes data availability flags for price data and enhanced content.
+      tags:
+        - Partner Catalog
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The unique identifier of the trading partner
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          example: 1
+      responses:
+        '200':
+          description: Trading partner details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradingPartner'
+              example:
+                id: 1
+                code: "SPR"
+                name: "S.P. Richards"
+                description: "Leading office products wholesaler"
+                logoUrl: "https://cdn.partnerconnect.com/logos/spr.png"
+                hasPriceData: true
+                hasEnhancedContent: true
+                isActive: true
+        '401':
+          description: Unauthorized - Invalid or missing authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Unauthorized"
+                message: "Invalid or missing API key"
+        '404':
+          description: Trading partner not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "NotFound"
+                message: "Trading partner with ID 999 not found"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "InternalServerError"
+                message: "An unexpected error occurred"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: |
+        API key authentication for service-to-service communication.
+
+        Obtain an API key from the PartnerConnect admin portal.
+    OAuth2:
+      type: oauth2
+      description: |
+        OAuth2 Client Credentials flow for Merchant360 integration.
+
+        Request a token from the PartnerConnect OAuth2 token endpoint.
+      flows:
+        clientCredentials:
+          tokenUrl: /oauth2/token
+          scopes:
+            partnerconnect.partners.read: Read access to partner catalog
+
+  schemas:
+    TradingPartner:
+      type: object
+      description: Trading partner with data availability information
+      required:
+        - id
+        - code
+        - name
+        - isActive
+        - hasPriceData
+        - hasEnhancedContent
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: Unique identifier for the trading partner
+          example: 1
+        code:
+          type: string
+          description: Short code identifying the trading partner (e.g., "SPR")
+          example: "SPR"
+          minLength: 1
+          maxLength: 20
+        name:
+          type: string
+          description: Display name of the trading partner
+          example: "S.P. Richards"
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          nullable: true
+          description: Optional description of the trading partner
+          example: "Leading office products wholesaler"
+          maxLength: 1000
+        logoUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to the trading partner's logo image
+          example: "https://cdn.partnerconnect.com/logos/spr.png"
+        hasPriceData:
+          type: boolean
+          description: |
+            Indicates if PartnerConnect has pricing data loaded for this partner.
+            When true, merchants can subscribe to receive price updates.
+          example: true
+        hasEnhancedContent:
+          type: boolean
+          description: |
+            Indicates if PartnerConnect has enhanced product content (descriptions,
+            images, specifications) loaded for this partner.
+          example: true
+        isActive:
+          type: boolean
+          description: |
+            Indicates if the trading partner is currently active.
+            Only active partners should be displayed for new subscriptions.
+          example: true
+
+    ErrorResponse:
+      type: object
+      description: Standard error response
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type/code
+          example: "NotFound"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Trading partner not found"
+        details:
+          type: object
+          nullable: true
+          description: Additional error details (optional)
+          additionalProperties: true
+
+tags:
+  - name: Partner Catalog
+    description: |
+      Endpoints for retrieving the trading partner catalog.
+
+      Merchant360 uses these endpoints to:
+      - Populate the partner selection UI for merchant subscriptions
+      - Periodically sync the partner catalog (recommended: every 6 hours)
+      - Cache partner data for UI performance (recommended: 30 minute TTL)
