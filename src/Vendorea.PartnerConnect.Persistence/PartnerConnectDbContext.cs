@@ -57,6 +57,9 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceLineItem> InvoiceLineItems => Set<InvoiceLineItem>();
 
+    // Merchant Subscription Requests (from M360)
+    public DbSet<MerchantSubscriptionRequest> MerchantSubscriptionRequests => Set<MerchantSubscriptionRequest>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
