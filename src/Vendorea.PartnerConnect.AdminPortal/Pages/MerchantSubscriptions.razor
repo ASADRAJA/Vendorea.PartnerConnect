@@ -1,0 +1,626 @@
+@page "/subscriptions"
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Merchant Subscriptions - PartnerConnect Admin</PageTitle>
+
+<h1>Merchant Subscriptions</h1>
+<p class="text-muted">Manage merchant access to trading partner content and pricing</p>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <ul class="nav nav-tabs card-header-tabs">
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "pending" ? "active" : "")" @onclick="SetTabPending">
+                            <span class="oi oi-clock me-1"></span> Pending
+                            @if (subscriptionResult.PendingCount > 0)
+                            {
+                                <span class="badge bg-warning text-dark ms-1">@subscriptionResult.PendingCount</span>
+                            }
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "active" ? "active" : "")" @onclick="SetTabActive">
+                            <span class="oi oi-check me-1"></span> Active
+                            <span class="badge bg-success ms-1">@subscriptionResult.ApprovedCount</span>
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "all" ? "active" : "")" @onclick="SetTabAll">
+                            <span class="oi oi-list me-1"></span> All
+                            <span class="badge bg-secondary ms-1">@subscriptionResult.Total</span>
+                        </button>
+                    </li>
+                </ul>
+                <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
+                    <span class="oi oi-plus me-1"></span> New Subscription
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Filter by Merchant</label>
+                        <select class="form-select form-select-sm" @bind="filterTenantId" @bind:after="LoadSubscriptions">
+                            <option value="0">All Merchants</option>
+                            @foreach (var merchant in merchants)
+                            {
+                                <option value="@merchant.Id">@merchant.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Filter by Trading Partner</label>
+                        <select class="form-select form-select-sm" @bind="filterTradingPartnerId" @bind:after="LoadSubscriptions">
+                            <option value="0">All Partners</option>
+                            @foreach (var partner in tradingPartners)
+                            {
+                                <option value="@partner.Id">@partner.Name (@partner.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadSubscriptions">
+                            <span class="oi oi-reload me-1"></span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2">Loading subscriptions...</p>
+                    </div>
+                }
+                else if (filteredSubscriptions.Count == 0)
+                {
+                    <div class="text-center py-4 text-muted">
+                        <span class="oi oi-inbox" style="font-size: 3rem;"></span>
+                        <p class="mt-2">No subscriptions found</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Merchant</th>
+                                    <th>Trading Partner</th>
+                                    <th>Account #</th>
+                                    <th>Status</th>
+                                    <th>Requested</th>
+                                    <th>Approved/Denied</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var sub in filteredSubscriptions)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@sub.TenantName</strong>
+                                            <br><small class="text-muted">@sub.TenantCode</small>
+                                        </td>
+                                        <td>
+                                            @sub.TradingPartnerName
+                                            <br><small class="text-muted">@sub.TradingPartnerCode</small>
+                                        </td>
+                                        <td><code>@sub.AccountNumber</code></td>
+                                        <td>
+                                            <span class="badge @GetStatusBadgeClass(sub.Status)">@sub.Status</span>
+                                        </td>
+                                        <td>@sub.RequestedAt.ToLocalTime().ToString("g")</td>
+                                        <td>
+                                            @if (sub.Status == SubscriptionStatus.Approved && sub.ApprovedAt.HasValue)
+                                            {
+                                                <span title="@sub.ApprovedByUserName">@sub.ApprovedAt.Value.ToLocalTime().ToString("g")</span>
+                                            }
+                                            else if (sub.Status == SubscriptionStatus.Denied)
+                                            {
+                                                <span class="text-danger" title="@sub.DenialReason">Denied</span>
+                                            }
+                                            else if (sub.Status == SubscriptionStatus.Suspended && sub.SuspendedAt.HasValue)
+                                            {
+                                                <span class="text-warning" title="@sub.SuspendedByUserName">@sub.SuspendedAt.Value.ToLocalTime().ToString("g")</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (sub.Status == SubscriptionStatus.Pending)
+                                            {
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ShowApproveModal(sub)" title="Approve">
+                                                    <span class="oi oi-check"></span>
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" @onclick="() => ShowDenyModal(sub)" title="Deny">
+                                                    <span class="oi oi-x"></span>
+                                                </button>
+                                            }
+                                            else if (sub.Status == SubscriptionStatus.Approved)
+                                            {
+                                                <button class="btn btn-sm btn-warning" @onclick="() => ShowSuspendModal(sub)" title="Suspend">
+                                                    <span class="oi oi-ban"></span>
+                                                </button>
+                                            }
+                                            else if (sub.Status == SubscriptionStatus.Suspended)
+                                            {
+                                                <button class="btn btn-sm btn-success" @onclick="() => ReactivateSubscription(sub.Id)" title="Reactivate">
+                                                    <span class="oi oi-action-redo"></span>
+                                                </button>
+                                            }
+                                            else if (sub.Status == SubscriptionStatus.Denied)
+                                            {
+                                                <button class="btn btn-sm btn-outline-success" @onclick="() => ShowApproveModal(sub)" title="Approve">
+                                                    <span class="oi oi-check"></span>
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-info ms-1" @onclick="() => ShowDetailsModal(sub)" title="Details">
+                                                <span class="oi oi-eye"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Create Subscription Modal *@
+@if (showCreateModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Subscription</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Merchant</label>
+                        <select class="form-select" @bind="createRequest.TenantId">
+                            <option value="0">Select Merchant...</option>
+                            @foreach (var merchant in merchants)
+                            {
+                                <option value="@merchant.Id">@merchant.Name (@merchant.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Trading Partner</label>
+                        <select class="form-select" @bind="createRequest.TradingPartnerId">
+                            <option value="0">Select Trading Partner...</option>
+                            @foreach (var partner in tradingPartners)
+                            {
+                                <option value="@partner.Id">@partner.Name (@partner.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account Number</label>
+                        <input type="text" class="form-control" @bind="createRequest.AccountNumber" placeholder="Merchant's account with supplier" />
+                        <small class="text-muted">The merchant's account number with the trading partner</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes (optional)</label>
+                        <textarea class="form-control" rows="2" @bind="createRequest.Notes"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateSubscription" disabled="@(!CanCreate || isSubmitting)">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Approve Modal *@
+@if (showApproveModal && selectedSubscription != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title">Approve Subscription</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Approve access for <strong>@selectedSubscription.TenantName</strong> to <strong>@selectedSubscription.TradingPartnerName</strong>?</p>
+                    <dl class="row">
+                        <dt class="col-sm-4">Account #</dt>
+                        <dd class="col-sm-8"><code>@selectedSubscription.AccountNumber</code></dd>
+                        <dt class="col-sm-4">Requested</dt>
+                        <dd class="col-sm-8">@selectedSubscription.RequestedAt.ToLocalTime().ToString("g")</dd>
+                    </dl>
+                    <div class="mb-3">
+                        <label class="form-label">Notes (optional)</label>
+                        <textarea class="form-control" rows="2" @bind="approveRequest.Notes"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-success" @onclick="ApproveSubscription" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Approve
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Deny Modal *@
+@if (showDenyModal && selectedSubscription != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Deny Subscription</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Deny access for <strong>@selectedSubscription.TenantName</strong> to <strong>@selectedSubscription.TradingPartnerName</strong>?</p>
+                    <div class="mb-3">
+                        <label class="form-label">Reason for denial <span class="text-danger">*</span></label>
+                        <textarea class="form-control" rows="2" @bind="denyRequest.DenialReason" placeholder="e.g., Invalid account number, No business relationship"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Additional Notes (optional)</label>
+                        <textarea class="form-control" rows="2" @bind="denyRequest.Notes"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="DenySubscription" disabled="@(string.IsNullOrWhiteSpace(denyRequest.DenialReason) || isSubmitting)">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Deny
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Suspend Modal *@
+@if (showSuspendModal && selectedSubscription != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title">Suspend Subscription</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Suspend access for <strong>@selectedSubscription.TenantName</strong> to <strong>@selectedSubscription.TradingPartnerName</strong>?</p>
+                    <p class="text-muted">The merchant will lose access to this partner's content and pricing until reactivated.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Notes (optional)</label>
+                        <textarea class="form-control" rows="2" @bind="suspendRequest.Notes" placeholder="e.g., Non-payment, Account review"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-warning" @onclick="SuspendSubscription" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Suspend
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Details Modal *@
+@if (showDetailsModal && selectedSubscription != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Subscription Details</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <dl>
+                                <dt>Merchant</dt>
+                                <dd>@selectedSubscription.TenantName <br><small class="text-muted">@selectedSubscription.TenantCode</small></dd>
+                                <dt>Trading Partner</dt>
+                                <dd>@selectedSubscription.TradingPartnerName <br><small class="text-muted">@selectedSubscription.TradingPartnerCode</small></dd>
+                                <dt>Account Number</dt>
+                                <dd><code>@selectedSubscription.AccountNumber</code></dd>
+                            </dl>
+                        </div>
+                        <div class="col-md-6">
+                            <dl>
+                                <dt>Status</dt>
+                                <dd><span class="badge @GetStatusBadgeClass(selectedSubscription.Status)">@selectedSubscription.Status</span></dd>
+                                <dt>Requested At</dt>
+                                <dd>@selectedSubscription.RequestedAt.ToLocalTime().ToString("F")</dd>
+                                @if (selectedSubscription.ApprovedAt.HasValue)
+                                {
+                                    <dt>Approved At</dt>
+                                    <dd>@selectedSubscription.ApprovedAt.Value.ToLocalTime().ToString("F")</dd>
+                                    <dt>Approved By</dt>
+                                    <dd>@(selectedSubscription.ApprovedByUserName ?? "Unknown")</dd>
+                                }
+                                @if (selectedSubscription.SuspendedAt.HasValue)
+                                {
+                                    <dt>Suspended At</dt>
+                                    <dd>@selectedSubscription.SuspendedAt.Value.ToLocalTime().ToString("F")</dd>
+                                    <dt>Suspended By</dt>
+                                    <dd>@(selectedSubscription.SuspendedByUserName ?? "Unknown")</dd>
+                                }
+                            </dl>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(selectedSubscription.DenialReason))
+                    {
+                        <div class="alert alert-danger">
+                            <strong>Denial Reason:</strong> @selectedSubscription.DenialReason
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(selectedSubscription.Notes))
+                    {
+                        <div class="alert alert-info">
+                            <strong>Notes:</strong> @selectedSubscription.Notes
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MerchantDto> merchants = new();
+    private List<TradingPartnerDto> tradingPartners = new();
+    private SubscriptionListResult subscriptionResult = new();
+
+    private string activeTab = "pending";
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+
+    private int filterTenantId = 0;
+    private int filterTradingPartnerId = 0;
+
+    // Modals
+    private bool showCreateModal = false;
+    private bool showApproveModal = false;
+    private bool showDenyModal = false;
+    private bool showSuspendModal = false;
+    private bool showDetailsModal = false;
+
+    private MerchantSubscriptionDto? selectedSubscription;
+    private CreateSubscriptionRequest createRequest = new();
+    private ApproveSubscriptionRequest approveRequest = new();
+    private DenySubscriptionRequest denyRequest = new();
+    private SuspendSubscriptionRequest suspendRequest = new();
+
+    private bool CanCreate => createRequest.TenantId > 0 && createRequest.TradingPartnerId > 0 && !string.IsNullOrWhiteSpace(createRequest.AccountNumber);
+
+    private List<MerchantSubscriptionDto> filteredSubscriptions => activeTab switch
+    {
+        "pending" => subscriptionResult.Items.Where(s => s.Status == SubscriptionStatus.Pending).ToList(),
+        "active" => subscriptionResult.Items.Where(s => s.Status == SubscriptionStatus.Approved).ToList(),
+        _ => subscriptionResult.Items
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var merchantsTask = Api.GetMerchantsAsync();
+        var partnersTask = Api.GetTradingPartnersAsync();
+        var subscriptionsTask = LoadSubscriptionsAsync();
+
+        await Task.WhenAll(merchantsTask, partnersTask, subscriptionsTask);
+
+        merchants = await merchantsTask;
+        tradingPartners = await partnersTask;
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        await LoadSubscriptionsAsync();
+    }
+
+    private async Task LoadSubscriptionsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            subscriptionResult = await Api.GetSubscriptionsAsync(
+                status: null,
+                tenantId: filterTenantId > 0 ? filterTenantId : null,
+                tradingPartnerId: filterTradingPartnerId > 0 ? filterTradingPartnerId : null
+            );
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void SetTabPending() => SetTab("pending");
+    private void SetTabActive() => SetTab("active");
+    private void SetTabAll() => SetTab("all");
+
+    private void ShowCreateModal()
+    {
+        createRequest = new CreateSubscriptionRequest();
+        showCreateModal = true;
+    }
+
+    private void ShowApproveModal(MerchantSubscriptionDto sub)
+    {
+        selectedSubscription = sub;
+        approveRequest = new ApproveSubscriptionRequest();
+        showApproveModal = true;
+    }
+
+    private void ShowDenyModal(MerchantSubscriptionDto sub)
+    {
+        selectedSubscription = sub;
+        denyRequest = new DenySubscriptionRequest();
+        showDenyModal = true;
+    }
+
+    private void ShowSuspendModal(MerchantSubscriptionDto sub)
+    {
+        selectedSubscription = sub;
+        suspendRequest = new SuspendSubscriptionRequest();
+        showSuspendModal = true;
+    }
+
+    private void ShowDetailsModal(MerchantSubscriptionDto sub)
+    {
+        selectedSubscription = sub;
+        showDetailsModal = true;
+    }
+
+    private void CloseModals()
+    {
+        showCreateModal = false;
+        showApproveModal = false;
+        showDenyModal = false;
+        showSuspendModal = false;
+        showDetailsModal = false;
+        selectedSubscription = null;
+    }
+
+    private async Task CreateSubscription()
+    {
+        if (!CanCreate) return;
+
+        isSubmitting = true;
+        try
+        {
+            var result = await Api.CreateSubscriptionAsync(createRequest);
+            if (result != null)
+            {
+                CloseModals();
+                await LoadSubscriptions();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task ApproveSubscription()
+    {
+        if (selectedSubscription == null) return;
+
+        isSubmitting = true;
+        try
+        {
+            var success = await Api.ApproveSubscriptionAsync(selectedSubscription.Id, approveRequest);
+            if (success)
+            {
+                CloseModals();
+                await LoadSubscriptions();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task DenySubscription()
+    {
+        if (selectedSubscription == null || string.IsNullOrWhiteSpace(denyRequest.DenialReason)) return;
+
+        isSubmitting = true;
+        try
+        {
+            var success = await Api.DenySubscriptionAsync(selectedSubscription.Id, denyRequest);
+            if (success)
+            {
+                CloseModals();
+                await LoadSubscriptions();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task SuspendSubscription()
+    {
+        if (selectedSubscription == null) return;
+
+        isSubmitting = true;
+        try
+        {
+            var success = await Api.SuspendSubscriptionAsync(selectedSubscription.Id, suspendRequest);
+            if (success)
+            {
+                CloseModals();
+                await LoadSubscriptions();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task ReactivateSubscription(int id)
+    {
+        var success = await Api.ReactivateSubscriptionAsync(id);
+        if (success)
+        {
+            await LoadSubscriptions();
+        }
+    }
+
+    private static string GetStatusBadgeClass(SubscriptionStatus status) => status switch
+    {
+        SubscriptionStatus.Pending => "bg-warning text-dark",
+        SubscriptionStatus.Approved => "bg-success",
+        SubscriptionStatus.Denied => "bg-danger",
+        SubscriptionStatus.Suspended => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+}

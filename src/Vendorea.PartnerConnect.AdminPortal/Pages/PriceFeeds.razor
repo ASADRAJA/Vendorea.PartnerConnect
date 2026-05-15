@@ -1,0 +1,441 @@
+@page "/pricefeeds"
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Price Feeds - PartnerConnect Admin</PageTitle>
+
+<h1>Price Feed Management</h1>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <span class="oi oi-cloud-upload me-2"></span> Upload Price Feed
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Merchant</label>
+                        <select class="form-select" @bind="selectedMerchantId">
+                            <option value="0">Select Merchant...</option>
+                            @foreach (var merchant in merchants)
+                            {
+                                <option value="@merchant.Id">@merchant.Name (@merchant.Id)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Trading Partner</label>
+                        <select class="form-select" @bind="selectedPartnerCode">
+                            <option value="">Select Partner...</option>
+                            @foreach (var partner in tradingPartners)
+                            {
+                                <option value="@partner.Code">@partner.Name (@partner.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Price Feed File</label>
+                        <InputFile OnChange="OnFileSelected" class="form-control" accept=".csv,.txt" />
+                        @if (selectedFile != null)
+                        {
+                            <small class="text-muted">@selectedFile.Name (@FormatFileSize(selectedFile.Size))</small>
+                        }
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-primary w-100" @onclick="UploadFile" disabled="@(!CanUpload || isUploading)">
+                            @if (isUploading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                <span>Uploading...</span>
+                            }
+                            else
+                            {
+                                <span class="oi oi-cloud-upload me-1"></span>
+                                <span>Upload</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+
+                @if (uploadResult != null)
+                {
+                    <div class="mt-3">
+                        @if (uploadResult.Success)
+                        {
+                            <div class="alert alert-success">
+                                <strong>Upload Successful!</strong>
+                                <ul class="mb-0 mt-2">
+                                    <li>Records processed: @uploadResult.RecordCount</li>
+                                    <li>Errors: @uploadResult.ErrorCount</li>
+                                    <li>Parse time: @uploadResult.ParseDuration.TotalSeconds.ToString("F2")s</li>
+                                    <li>Upload ID: @uploadResult.UploadId</li>
+                                </ul>
+                            </div>
+                        }
+                        else if (uploadResult.IsDuplicate)
+                        {
+                            <div class="alert alert-warning">
+                                <strong>Duplicate File!</strong> @uploadResult.ErrorMessage
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-danger">
+                                <strong>Upload Failed!</strong> @uploadResult.ErrorMessage
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="oi oi-clock me-2"></span> Upload History</span>
+                <div class="d-flex align-items-center">
+                    <select class="form-select form-select-sm me-2" style="width: 200px;" @bind="historyMerchantId">
+                        <option value="0">Select Merchant...</option>
+                        @foreach (var merchant in merchants)
+                        {
+                            <option value="@merchant.Id">@merchant.Name (@merchant.Id)</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="LoadHistory">
+                        <span class="oi oi-reload"></span> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                @if (isLoadingHistory)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2">Loading history...</p>
+                    </div>
+                }
+                else if (uploadHistory.Count == 0)
+                {
+                    <p class="text-muted text-center py-4">No upload history found. Select a Merchant and click Refresh.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Partner</th>
+                                    <th>File</th>
+                                    <th>Status</th>
+                                    <th>Records</th>
+                                    <th>Errors</th>
+                                    <th>Uploaded</th>
+                                    <th>Pushed</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var upload in uploadHistory)
+                                {
+                                    <tr>
+                                        <td>@upload.Id</td>
+                                        <td>@upload.TradingPartnerCode</td>
+                                        <td title="@upload.FileName">@TruncateFileName(upload.FileName)</td>
+                                        <td>
+                                            <span class="badge @GetStatusBadgeClass(upload.Status)">@upload.Status</span>
+                                        </td>
+                                        <td>@upload.RecordCount.ToString("N0")</td>
+                                        <td>
+                                            @if (upload.ErrorCount > 0)
+                                            {
+                                                <span class="text-danger">@upload.ErrorCount</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">0</span>
+                                            }
+                                        </td>
+                                        <td>@upload.UploadedAt.ToLocalTime().ToString("g")</td>
+                                        <td>
+                                            @if (upload.PushedToMerchant360At.HasValue)
+                                            {
+                                                <span class="text-success" title="@upload.PushedToMerchant360At.Value.ToLocalTime().ToString("g")">
+                                                    <span class="oi oi-check"></span>
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ViewDetails(upload.Id)" title="View Details">
+                                                <span class="oi oi-eye"></span>
+                                            </button>
+                                            @if (upload.Status == "Completed" && !upload.PushedToMerchant360At.HasValue)
+                                            {
+                                                <button class="btn btn-sm btn-outline-success" @onclick="() => PushToMerchant360(upload.Id)"
+                                                        disabled="@(pushingUploadId == upload.Id)" title="Push to Merchant360">
+                                                    @if (pushingUploadId == upload.Id)
+                                                    {
+                                                        <span class="spinner-border spinner-border-sm"></span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="oi oi-share-boxed"></span>
+                                                    }
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (selectedUploadDetail != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Upload Details #@selectedUploadDetail.Id</h5>
+                    <button type="button" class="btn-close" @onclick="CloseDetails"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <dl>
+                                <dt>File Name</dt>
+                                <dd>@selectedUploadDetail.FileName</dd>
+                                <dt>Trading Partner</dt>
+                                <dd>@selectedUploadDetail.TradingPartnerCode</dd>
+                                <dt>File Size</dt>
+                                <dd>@FormatFileSize(selectedUploadDetail.FileSizeBytes)</dd>
+                                <dt>File Hash</dt>
+                                <dd><code>@selectedUploadDetail.FileHash</code></dd>
+                            </dl>
+                        </div>
+                        <div class="col-md-6">
+                            <dl>
+                                <dt>Status</dt>
+                                <dd><span class="badge @GetStatusBadgeClass(selectedUploadDetail.Status)">@selectedUploadDetail.Status</span></dd>
+                                <dt>Records</dt>
+                                <dd>@selectedUploadDetail.RecordCount.ToString("N0")</dd>
+                                <dt>Uploaded At</dt>
+                                <dd>@selectedUploadDetail.UploadedAt.ToLocalTime().ToString("F")</dd>
+                                <dt>Pushed to Merchant360</dt>
+                                <dd>@(selectedUploadDetail.PushedToMerchant360At?.ToLocalTime().ToString("F") ?? "Not yet pushed")</dd>
+                            </dl>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(selectedUploadDetail.ErrorMessage))
+                    {
+                        <div class="alert alert-danger">
+                            <strong>Error:</strong> @selectedUploadDetail.ErrorMessage
+                        </div>
+                    }
+
+                    @if (selectedUploadDetail.SampleRecords.Count > 0)
+                    {
+                        <h6 class="mt-3">Sample Records</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Stock Number</th>
+                                        <th>Description</th>
+                                        <th>Net Cost</th>
+                                        <th>List Price</th>
+                                        <th>Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var record in selectedUploadDetail.SampleRecords.Take(10))
+                                    {
+                                        <tr>
+                                            <td><code>@record.StockNumber</code></td>
+                                            <td>@TruncateDescription(record.ProductDescription)</td>
+                                            <td>@record.NetCost.ToString("C")</td>
+                                            <td>@record.RetailListPrice.ToString("C")</td>
+                                            <td>@record.CategoryCode</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    @if (selectedUploadDetail.Status == "Completed" && !selectedUploadDetail.PushedToMerchant360At.HasValue)
+                    {
+                        <button class="btn btn-success" @onclick="() => PushToMerchant360(selectedUploadDetail.Id)">
+                            <span class="oi oi-share-boxed me-1"></span> Push to Merchant360
+                        </button>
+                    }
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDetails">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<TradingPartnerDto> tradingPartners = new();
+    private List<MerchantDto> merchants = new();
+    private List<PriceFeedUploadDto> uploadHistory = new();
+
+    private int selectedMerchantId;
+    private string selectedPartnerCode = "";
+    private IBrowserFile? selectedFile;
+    private bool isUploading;
+    private PriceFeedUploadResult? uploadResult;
+
+    private int historyMerchantId;
+    private bool isLoadingHistory;
+
+    private PriceFeedUploadDetailDto? selectedUploadDetail;
+    private int? pushingUploadId;
+
+    private bool CanUpload => selectedMerchantId > 0 && !string.IsNullOrEmpty(selectedPartnerCode) && selectedFile != null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var partnersTask = Api.GetTradingPartnersAsync();
+        var merchantsTask = Api.GetMerchantsAsync();
+
+        await Task.WhenAll(partnersTask, merchantsTask);
+
+        tradingPartners = await partnersTask;
+        merchants = await merchantsTask;
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        uploadResult = null;
+    }
+
+    private async Task UploadFile()
+    {
+        if (!CanUpload || selectedFile == null) return;
+
+        isUploading = true;
+        uploadResult = null;
+
+        try
+        {
+            // Max 100MB file size
+            using var stream = selectedFile.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+            uploadResult = await Api.UploadPriceFeedAsync(selectedMerchantId, selectedPartnerCode, stream, selectedFile.Name);
+
+            if (uploadResult?.Success == true && historyMerchantId == selectedMerchantId)
+            {
+                await LoadHistory();
+            }
+        }
+        catch (Exception ex)
+        {
+            uploadResult = new PriceFeedUploadResult { Success = false, ErrorMessage = ex.Message };
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task LoadHistory()
+    {
+        if (historyMerchantId <= 0) return;
+
+        isLoadingHistory = true;
+        try
+        {
+            uploadHistory = await Api.GetPriceFeedHistoryAsync(historyMerchantId);
+        }
+        finally
+        {
+            isLoadingHistory = false;
+        }
+    }
+
+    private async Task ViewDetails(int uploadId)
+    {
+        selectedUploadDetail = await Api.GetPriceFeedDetailsAsync(uploadId);
+    }
+
+    private void CloseDetails()
+    {
+        selectedUploadDetail = null;
+    }
+
+    private async Task PushToMerchant360(int uploadId)
+    {
+        pushingUploadId = uploadId;
+        try
+        {
+            var result = await Api.PushToMerchant360Async(uploadId);
+            if (result?.Success == true)
+            {
+                await LoadHistory();
+                if (selectedUploadDetail?.Id == uploadId)
+                {
+                    selectedUploadDetail = await Api.GetPriceFeedDetailsAsync(uploadId);
+                }
+            }
+        }
+        finally
+        {
+            pushingUploadId = null;
+        }
+    }
+
+    private string GetStatusBadgeClass(string status) => status?.ToLower() switch
+    {
+        "pending" => "bg-warning text-dark",
+        "processing" => "bg-info",
+        "completed" => "bg-success",
+        "failed" => "bg-danger",
+        "pushedtomerchant360" => "bg-primary",
+        "pushfailed" => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len = len / 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    private static string TruncateFileName(string fileName, int maxLength = 30)
+    {
+        if (string.IsNullOrEmpty(fileName) || fileName.Length <= maxLength)
+            return fileName;
+        return fileName.Substring(0, maxLength - 3) + "...";
+    }
+
+    private static string TruncateDescription(string description, int maxLength = 40)
+    {
+        if (string.IsNullOrEmpty(description) || description.Length <= maxLength)
+            return description;
+        return description.Substring(0, maxLength - 3) + "...";
+    }
+}

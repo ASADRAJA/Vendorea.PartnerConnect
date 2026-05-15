@@ -16,8 +16,22 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<DealerPartnerConnection> DealerPartnerConnections => Set<DealerPartnerConnection>();
     public DbSet<PartnerCapabilityConfiguration> PartnerCapabilities => Set<PartnerCapabilityConfiguration>();
     public DbSet<PartnerDocument> PartnerDocuments => Set<PartnerDocument>();
+    public DbSet<EdiDocument> EdiDocuments => Set<EdiDocument>();
     public DbSet<PriceFeedBatch> PriceFeedBatches => Set<PriceFeedBatch>();
     public DbSet<InventoryFeedBatch> InventoryFeedBatches => Set<InventoryFeedBatch>();
+
+    // Price Feed Uploads and Records (per-supplier tables)
+    public DbSet<PriceFeedUpload> PriceFeedUploads => Set<PriceFeedUpload>();
+    public DbSet<SprPriceRecord> SprPriceRecords => Set<SprPriceRecord>();
+
+    // SPR Enhanced Content
+    public DbSet<SprCategory> SprCategories => Set<SprCategory>();
+    public DbSet<SprContentUpload> SprContentUploads => Set<SprContentUpload>();
+    public DbSet<SprProductContent> SprProductContent => Set<SprProductContent>();
+    public DbSet<SprProductSpecification> SprProductSpecifications => Set<SprProductSpecification>();
+    public DbSet<SprProductFeature> SprProductFeatures => Set<SprProductFeature>();
+    public DbSet<SprProductRelationship> SprProductRelationships => Set<SprProductRelationship>();
+    public DbSet<DealerContentSubscription> DealerContentSubscriptions => Set<DealerContentSubscription>();
     public DbSet<ContentSyncJob> ContentSyncJobs => Set<ContentSyncJob>();
     public DbSet<DocumentFingerprint> DocumentFingerprints => Set<DocumentFingerprint>();
     public DbSet<DocumentStateHistory> DocumentStateHistory => Set<DocumentStateHistory>();

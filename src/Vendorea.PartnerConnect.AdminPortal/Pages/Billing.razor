@@ -1,0 +1,79 @@
+@page "/billing"
+@inject ApiClient Api
+
+<PageTitle>Billing Plans - PartnerConnect Admin</PageTitle>
+
+<h1>Billing Plans</h1>
+
+<div class="mb-3">
+    <button class="btn btn-primary" @onclick="RefreshPlans">
+        <span class="oi oi-reload"></span> Refresh
+    </button>
+</div>
+
+@if (plans == null)
+{
+    <p><em>Loading billing plans...</em></p>
+}
+else if (!plans.Any())
+{
+    <div class="alert alert-info">
+        No billing plans found.
+    </div>
+}
+else
+{
+    <div class="row">
+        @foreach (var plan in plans)
+        {
+            <div class="col-md-6 col-lg-3 mb-4">
+                <div class="card h-100 @(plan.IsTrial ? "border-info" : "")">
+                    <div class="card-header @(plan.IsTrial ? "bg-info text-white" : "")">
+                        <h5 class="card-title mb-0">@plan.Name</h5>
+                        @if (plan.IsTrial)
+                        {
+                            <small>@plan.TrialDays-day free trial</small>
+                        }
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <span class="display-6">@plan.MonthlyPrice.ToString("C")</span>
+                            <span class="text-muted">/month</span>
+                        </div>
+                        @if (plan.AnnualPrice.HasValue)
+                        {
+                            <p class="text-center text-muted small">
+                                or @plan.AnnualPrice.Value.ToString("C")/year (save @(((1 - plan.AnnualPrice.Value / (plan.MonthlyPrice * 12)) * 100).ToString("F0"))%)
+                            </p>
+                        }
+                        <hr />
+                        <ul class="list-unstyled">
+                            <li><span class="oi oi-check text-success me-2"></span>@plan.IncludedDocuments.ToString("N0") documents</li>
+                            <li><span class="oi oi-check text-success me-2"></span>@plan.IncludedApiCalls.ToString("N0") API calls</li>
+                            <li><span class="oi oi-check text-success me-2"></span>@plan.IncludedStorageGb GB storage</li>
+                            <li><span class="oi oi-check text-success me-2"></span>@plan.MaxConnections connections</li>
+                            <li><span class="oi oi-check text-success me-2"></span>@plan.MaxWebhooks webhooks</li>
+                        </ul>
+                    </div>
+                    <div class="card-footer">
+                        <small class="text-muted">Code: <code>@plan.Code</code></small>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<BillingPlanDto>? plans;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshPlans();
+    }
+
+    private async Task RefreshPlans()
+    {
+        plans = await Api.GetBillingPlansAsync();
+    }
+}

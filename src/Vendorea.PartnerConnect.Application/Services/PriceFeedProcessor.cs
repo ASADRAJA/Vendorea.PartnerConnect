@@ -39,6 +39,7 @@ public class PriceFeedProcessor : IPriceFeedProcessor
         IReadOnlyList<PriceUpdate> priceUpdates,
         int dealerId,
         int documentId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
@@ -71,7 +72,7 @@ public class PriceFeedProcessor : IPriceFeedProcessor
             validItems.Count, invalidItems.Count);
 
         // Push valid items to Merchant360
-        var pushResult = await PushToMerchant360Async(validItems, dealerId, cancellationToken);
+        var pushResult = await PushToMerchant360Async(validItems, dealerId, tradingPartnerInfo, cancellationToken);
 
         // Update document status
         var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
@@ -116,6 +117,7 @@ public class PriceFeedProcessor : IPriceFeedProcessor
     public async Task<PushResult> PushToMerchant360Async(
         IReadOnlyList<PriceUpdate> priceUpdates,
         int dealerId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default)
     {
         if (priceUpdates.Count == 0)
@@ -132,7 +134,7 @@ public class PriceFeedProcessor : IPriceFeedProcessor
 
         try
         {
-            var result = await _merchant360Client.UpdatePricesAsync(dealerId, items, cancellationToken);
+            var result = await _merchant360Client.UpdatePricesAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
 
             _logger.LogInformation(
                 "Pushed {SuccessCount} prices to Merchant360, {ErrorCount} failed",
@@ -184,6 +186,7 @@ public interface IPriceFeedProcessor
         IReadOnlyList<PriceUpdate> priceUpdates,
         int dealerId,
         int documentId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default);
 
     Task<ValidationResult> ValidateAsync(
@@ -193,6 +196,7 @@ public interface IPriceFeedProcessor
     Task<PushResult> PushToMerchant360Async(
         IReadOnlyList<PriceUpdate> priceUpdates,
         int dealerId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default);
 }
 

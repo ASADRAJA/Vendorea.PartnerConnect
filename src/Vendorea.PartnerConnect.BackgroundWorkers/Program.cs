@@ -31,9 +31,15 @@ builder.Services.AddTransport();
 
 builder.Services.AddPartnerAdapters();
 
-// Merchant360 connector
-var merchant360BaseUrl = builder.Configuration.GetValue<string>("Merchant360:BaseUrl") ?? "http://localhost:5003";
-builder.Services.AddMerchant360Connector(merchant360BaseUrl);
+// Merchant360 connector with OAuth2 authentication
+builder.Services.AddMerchant360Connector(options =>
+{
+    var section = builder.Configuration.GetSection("Merchant360");
+    options.BaseUrl = section.GetValue<string>("BaseUrl") ?? "http://localhost:5003";
+    options.TokenEndpoint = section.GetValue<string>("TokenEndpoint") ?? "http://localhost:5003/oauth2/token";
+    options.ClientId = section.GetValue<string>("ClientId") ?? "";
+    options.ClientSecret = section.GetValue<string>("ClientSecret") ?? "";
+});
 
 // Configure outbox worker options
 builder.Services.Configure<OutboxWorkerOptions>(
@@ -45,6 +51,7 @@ builder.Services.AddHostedService<InventoryFeedSyncWorker>();
 builder.Services.AddHostedService<DocumentProcessingWorker>();
 builder.Services.AddHostedService<ContentSyncWorker>();
 builder.Services.AddHostedService<OutboxProcessorWorker>();
+builder.Services.AddHostedService<EdiDocumentSyncWorker>();
 
 try
 {

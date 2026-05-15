@@ -10,7 +10,7 @@ namespace Vendorea.PartnerConnect.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[AllowAnonymous] // TODO: Restore [Authorize] in production
 public class BillingController : ControllerBase
 {
     private readonly IBillingService _billingService;

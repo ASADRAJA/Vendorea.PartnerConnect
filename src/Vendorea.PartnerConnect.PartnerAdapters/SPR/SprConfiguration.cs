@@ -79,9 +79,86 @@ public class SprConfiguration
     public string? SprCustomerNumber { get; set; }
 
     /// <summary>
+    /// Pricing tier for this dealer (determines which cost column to use).
+    /// </summary>
+    public SprPricingTier PricingTier { get; set; } = SprPricingTier.Standard;
+
+    /// <summary>
     /// Warehouse code mappings (SPR code -> internal code).
     /// </summary>
     public Dictionary<string, string>? WarehouseCodeMappings { get; set; }
+
+    /// <summary>
+    /// Category code mappings (SPR code -> internal code).
+    /// </summary>
+    public Dictionary<string, string>? CategoryCodeMappings { get; set; }
+
+    // EDI Configuration
+
+    /// <summary>
+    /// Path to inbound EDI documents on the SFTP server.
+    /// </summary>
+    public string EdiInboundPath { get; set; } = "/edi/inbound";
+
+    /// <summary>
+    /// Path to outbound EDI documents on the SFTP server.
+    /// </summary>
+    public string EdiOutboundPath { get; set; } = "/edi/outbound";
+
+    /// <summary>
+    /// Path to archive processed EDI documents.
+    /// </summary>
+    public string EdiArchivePath { get; set; } = "/edi/archive";
+
+    /// <summary>
+    /// File patterns for EDI files (semicolon-separated).
+    /// </summary>
+    public string EdiFilePattern { get; set; } = "*.edi;*.x12;*.txt";
+
+    /// <summary>
+    /// Whether to automatically send 997 Functional Acknowledgments.
+    /// </summary>
+    public bool AutoSend997 { get; set; } = true;
+
+    /// <summary>
+    /// Whether to automatically send 855 PO Acknowledgments.
+    /// </summary>
+    public bool AutoSend855 { get; set; } = true;
+
+    /// <summary>
+    /// Interval in minutes for EDI document sync worker.
+    /// </summary>
+    public int EdiSyncIntervalMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// ISA sender ID qualifier (ISA05) for outbound documents.
+    /// </summary>
+    public string IsaSenderQualifier { get; set; } = "ZZ";
+
+    /// <summary>
+    /// ISA sender ID (ISA06) for outbound documents.
+    /// </summary>
+    public string IsaSenderId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// ISA receiver ID qualifier (ISA07) for outbound documents.
+    /// </summary>
+    public string IsaReceiverQualifier { get; set; } = "ZZ";
+
+    /// <summary>
+    /// ISA receiver ID (ISA08) for outbound documents.
+    /// </summary>
+    public string IsaReceiverId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// GS application sender code for outbound documents.
+    /// </summary>
+    public string GsApplicationSenderCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// GS application receiver code for outbound documents.
+    /// </summary>
+    public string GsApplicationReceiverCode { get; set; } = string.Empty;
 
     /// <summary>
     /// Deserializes configuration from JSON.
@@ -161,4 +238,25 @@ public class SprCredentials
             return new SprCredentials();
         }
     }
+}
+
+/// <summary>
+/// SPR pricing tier determines which dealer cost column to use from the price file.
+/// </summary>
+public enum SprPricingTier
+{
+    /// <summary>
+    /// Standard pricing (Net Cost for non-CCP Dealers - Column 78)
+    /// </summary>
+    Standard,
+
+    /// <summary>
+    /// CCP-3 program pricing (Column 79)
+    /// </summary>
+    Ccp3,
+
+    /// <summary>
+    /// CCP-4 program pricing (Column 80)
+    /// </summary>
+    Ccp4
 }

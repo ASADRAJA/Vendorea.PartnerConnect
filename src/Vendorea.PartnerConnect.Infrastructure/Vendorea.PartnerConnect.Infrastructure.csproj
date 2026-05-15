@@ -10,6 +10,9 @@
     <ProjectReference Include="..\Vendorea.PartnerConnect.Application\Vendorea.PartnerConnect.Application.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Domain\Vendorea.PartnerConnect.Domain.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Contracts\Vendorea.PartnerConnect.Contracts.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Edi\Vendorea.PartnerConnect.Edi.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.PartnerAdapters\Vendorea.PartnerConnect.PartnerAdapters.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.Transport\Vendorea.PartnerConnect.Transport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

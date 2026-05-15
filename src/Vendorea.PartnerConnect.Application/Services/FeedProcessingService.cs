@@ -346,6 +346,7 @@ public class FeedProcessingService : IFeedProcessingService
     /// </summary>
     public async Task<(int processed, int errors)> PushPriceUpdatesToMerchant360Async(
         int dealerId,
+        TradingPartnerInfo tradingPartnerInfo,
         IEnumerable<PriceUpdate> priceUpdates,
         CancellationToken cancellationToken = default)
     {
@@ -361,7 +362,7 @@ public class FeedProcessingService : IFeedProcessingService
             return (0, 0);
         }
 
-        var result = await _merchant360Client.UpdatePricesAsync(dealerId, items, cancellationToken);
+        var result = await _merchant360Client.UpdatePricesAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
 
         return (items.Count - result.ErrorCount, result.ErrorCount);
     }
@@ -371,6 +372,7 @@ public class FeedProcessingService : IFeedProcessingService
     /// </summary>
     public async Task<(int processed, int errors)> PushInventoryUpdatesToMerchant360Async(
         int dealerId,
+        TradingPartnerInfo tradingPartnerInfo,
         IEnumerable<InventoryUpdate> inventoryUpdates,
         CancellationToken cancellationToken = default)
     {
@@ -386,7 +388,7 @@ public class FeedProcessingService : IFeedProcessingService
             return (0, 0);
         }
 
-        var result = await _merchant360Client.UpdateInventoryAsync(dealerId, items, cancellationToken);
+        var result = await _merchant360Client.UpdateInventoryAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
 
         return (items.Count - result.ErrorCount, result.ErrorCount);
     }

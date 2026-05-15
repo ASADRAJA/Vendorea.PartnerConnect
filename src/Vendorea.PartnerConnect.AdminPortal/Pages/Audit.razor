@@ -1,0 +1,198 @@
+@page "/audit"
+@inject ApiClient Api
+
+<PageTitle>Audit Logs - PartnerConnect Admin</PageTitle>
+
+<h1>Audit Logs</h1>
+
+<div class="row mb-3">
+    <div class="col-md-3">
+        <label class="form-label">Action Filter</label>
+        <select class="form-select" @bind="actionFilter">
+            <option value="">All Actions</option>
+            <option value="Create">Create</option>
+            <option value="Update">Update</option>
+            <option value="Delete">Delete</option>
+            <option value="Login">Login</option>
+            <option value="Logout">Logout</option>
+            <option value="AccessDenied">Access Denied</option>
+            <option value="ConfigChange">Config Change</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Dealer ID</label>
+        <input type="number" class="form-control" @bind="dealerIdFilter" placeholder="All dealers" />
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-primary" @onclick="SearchLogs">
+            <span class="oi oi-magnifying-glass"></span> Search
+        </button>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">Statistics (Last 24 Hours)</div>
+            <div class="card-body">
+                @if (stats == null)
+                {
+                    <p><em>Loading stats...</em></p>
+                }
+                else
+                {
+                    <div class="row">
+                        <div class="col-md-3 text-center">
+                            <h4>@stats.TotalEvents</h4>
+                            <small class="text-muted">Total Events</small>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <h4>@stats.SuccessRate.ToString("F1")%</h4>
+                            <small class="text-muted">Success Rate</small>
+                        </div>
+                        <div class="col-md-6">
+                            @if (stats.ByAction != null)
+                            {
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var action in stats.ByAction.OrderByDescending(x => x.Value).Take(5))
+                                    {
+                                        <span class="badge bg-secondary">@action.Key: @action.Value</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <p><em>Loading audit logs...</em></p>
+}
+else if (logs == null || !logs.Results.Any())
+{
+    <div class="alert alert-info">
+        No audit logs found matching the criteria.
+    </div>
+}
+else
+{
+    <div class="mb-2">
+        <small class="text-muted">Showing @logs.Results.Count of @logs.Total logs</small>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover table-sm">
+            <thead class="table-dark">
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Action</th>
+                    <th>Entity</th>
+                    <th>User</th>
+                    <th>Dealer</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in logs.Results)
+                {
+                    <tr class="@(log.IsSuccess ? "" : "table-danger")">
+                        <td><small>@log.Timestamp.ToLocalTime().ToString("g")</small></td>
+                        <td><span class="badge @GetActionBadgeClass(log.Action)">@log.Action</span></td>
+                        <td><small>@log.EntityType/@log.EntityId</small></td>
+                        <td><small>@(log.UserName ?? log.UserId ?? "-")</small></td>
+                        <td>@(log.DealerId?.ToString() ?? "-")</td>
+                        <td>
+                            @if (log.IsSuccess)
+                            {
+                                <span class="badge bg-success">OK</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger" title="@log.ErrorMessage">Failed</span>
+                            }
+                        </td>
+                        <td><small>@(log.DurationMs?.ToString() ?? "-") ms</small></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav>
+        <ul class="pagination">
+            <li class="page-item @(currentPage == 0 ? "disabled" : "")">
+                <button class="page-link" @onclick="PreviousPage">Previous</button>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Page @(currentPage + 1)</span>
+            </li>
+            <li class="page-item @(logs.Results.Count < pageSize ? "disabled" : "")">
+                <button class="page-link" @onclick="NextPage">Next</button>
+            </li>
+        </ul>
+    </nav>
+}
+
+@code {
+    private AuditSearchResult? logs;
+    private AuditStats? stats;
+    private string actionFilter = "";
+    private int? dealerIdFilter;
+    private bool isLoading = true;
+    private int currentPage = 0;
+    private int pageSize = 25;
+
+    protected override async Task OnInitializedAsync()
+    {
+        stats = await Api.GetAuditStatsAsync(24);
+        await SearchLogs();
+    }
+
+    private async Task SearchLogs()
+    {
+        isLoading = true;
+        currentPage = 0;
+        logs = await Api.SearchAuditLogsAsync(
+            currentPage * pageSize,
+            pageSize,
+            dealerIdFilter,
+            string.IsNullOrEmpty(actionFilter) ? null : actionFilter);
+        isLoading = false;
+    }
+
+    private async Task PreviousPage()
+    {
+        if (currentPage > 0)
+        {
+            currentPage--;
+            isLoading = true;
+            logs = await Api.SearchAuditLogsAsync(currentPage * pageSize, pageSize, dealerIdFilter, string.IsNullOrEmpty(actionFilter) ? null : actionFilter);
+            isLoading = false;
+        }
+    }
+
+    private async Task NextPage()
+    {
+        currentPage++;
+        isLoading = true;
+        logs = await Api.SearchAuditLogsAsync(currentPage * pageSize, pageSize, dealerIdFilter, string.IsNullOrEmpty(actionFilter) ? null : actionFilter);
+        isLoading = false;
+    }
+
+    private string GetActionBadgeClass(string action) => action?.ToLower() switch
+    {
+        "create" => "bg-success",
+        "update" => "bg-primary",
+        "delete" => "bg-danger",
+        "login" => "bg-info",
+        "logout" => "bg-secondary",
+        "accessdenied" => "bg-warning text-dark",
+        "configchange" => "bg-warning text-dark",
+        _ => "bg-secondary"
+    };
+}

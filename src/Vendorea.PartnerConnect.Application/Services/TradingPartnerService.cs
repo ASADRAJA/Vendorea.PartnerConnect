@@ -60,6 +60,33 @@ public class TradingPartnerService : ITradingPartnerService
         return MapToDto(created);
     }
 
+    public async Task<TradingPartnerDto?> UpdateAsync(int id, UpdateTradingPartnerCommand command, CancellationToken cancellationToken = default)
+    {
+        var partner = await _repository.GetByIdAsync(id, cancellationToken);
+        if (partner == null) return null;
+
+        if (!string.IsNullOrWhiteSpace(command.Name))
+            partner.Name = command.Name;
+        if (!string.IsNullOrWhiteSpace(command.Description))
+            partner.Description = command.Description;
+        if (!string.IsNullOrWhiteSpace(command.PartnerType) &&
+            Enum.TryParse<TradingPartnerType>(command.PartnerType, true, out var partnerType))
+            partner.PartnerType = partnerType;
+        if (!string.IsNullOrWhiteSpace(command.ContactEmail))
+            partner.ContactEmail = command.ContactEmail;
+        if (!string.IsNullOrWhiteSpace(command.ContactPhone))
+            partner.ContactPhone = command.ContactPhone;
+        if (!string.IsNullOrWhiteSpace(command.WebsiteUrl))
+            partner.WebsiteUrl = command.WebsiteUrl;
+
+        partner.UpdatedAt = DateTime.UtcNow;
+
+        await _repository.UpdateAsync(partner, cancellationToken);
+        _logger.LogInformation("Updated trading partner {Id}", id);
+
+        return MapToDto(partner);
+    }
+
     public async Task UpdateStatusAsync(int id, TradingPartnerStatus status, CancellationToken cancellationToken = default)
     {
         var partner = await _repository.GetByIdAsync(id, cancellationToken)
@@ -70,6 +97,91 @@ public class TradingPartnerService : ITradingPartnerService
 
         await _repository.UpdateAsync(partner, cancellationToken);
         _logger.LogInformation("Updated trading partner {Id} status to {Status}", id, status);
+    }
+
+    public async Task<bool> ActivateAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var partner = await _repository.GetByIdAsync(id, cancellationToken);
+        if (partner == null) return false;
+
+        partner.Status = TradingPartnerStatus.Active;
+        partner.UpdatedAt = DateTime.UtcNow;
+
+        await _repository.UpdateAsync(partner, cancellationToken);
+        _logger.LogInformation("Activated trading partner {Id}", id);
+        return true;
+    }
+
+    public async Task<bool> DeactivateAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var partner = await _repository.GetByIdAsync(id, cancellationToken);
+        if (partner == null) return false;
+
+        partner.Status = TradingPartnerStatus.Inactive;
+        partner.UpdatedAt = DateTime.UtcNow;
+
+        await _repository.UpdateAsync(partner, cancellationToken);
+        _logger.LogInformation("Deactivated trading partner {Id}", id);
+        return true;
+    }
+
+    public async Task<PartnerCapabilityDetailDto?> AddCapabilityAsync(int partnerId, AddCapabilityRequest request, CancellationToken cancellationToken = default)
+    {
+        var partner = await _repository.GetByIdAsync(partnerId, cancellationToken);
+        if (partner == null) return null;
+
+        if (!Enum.TryParse<PartnerCapability>(request.Capability, true, out var capability))
+        {
+            throw new ArgumentException($"Invalid capability: {request.Capability}");
+        }
+
+        var config = new PartnerCapabilityConfiguration
+        {
+            TradingPartnerId = partnerId,
+            Capability = capability,
+            IsEnabled = request.IsEnabled,
+            AdapterType = request.AdapterType,
+            ProtocolType = request.ProtocolType,
+            FileFormat = request.FileFormat,
+            PollingIntervalMinutes = request.PollingIntervalMinutes,
+            ConfigurationJson = request.ConfigurationJson,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _repository.AddCapabilityAsync(config, cancellationToken);
+        _logger.LogInformation("Added capability {Capability} to partner {PartnerId}", capability, partnerId);
+
+        return new PartnerCapabilityDetailDto
+        {
+            Id = config.Id,
+            TradingPartnerId = partnerId,
+            Capability = capability.ToString(),
+            IsEnabled = config.IsEnabled,
+            AdapterType = config.AdapterType,
+            ProtocolType = config.ProtocolType,
+            FileFormat = config.FileFormat,
+            PollingIntervalMinutes = config.PollingIntervalMinutes,
+            CreatedAt = config.CreatedAt
+        };
+    }
+
+    public async Task<IReadOnlyList<PartnerCapabilityDetailDto>?> GetCapabilitiesAsync(int partnerId, CancellationToken cancellationToken = default)
+    {
+        var partner = await _repository.GetByIdAsync(partnerId, cancellationToken);
+        if (partner == null) return null;
+
+        return partner.Capabilities.Select(c => new PartnerCapabilityDetailDto
+        {
+            Id = c.Id,
+            TradingPartnerId = c.TradingPartnerId,
+            Capability = c.Capability.ToString(),
+            IsEnabled = c.IsEnabled,
+            AdapterType = c.AdapterType,
+            ProtocolType = c.ProtocolType,
+            FileFormat = c.FileFormat,
+            PollingIntervalMinutes = c.PollingIntervalMinutes,
+            CreatedAt = c.CreatedAt
+        }).ToList();
     }
 
     private static TradingPartnerDto MapToDto(TradingPartner partner)

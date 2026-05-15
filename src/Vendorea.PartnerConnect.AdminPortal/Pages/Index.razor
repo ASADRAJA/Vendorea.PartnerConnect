@@ -1,0 +1,150 @@
+@page "/"
+@inject ApiClient Api
+
+<PageTitle>Dashboard - PartnerConnect Admin</PageTitle>
+
+<h1>Dashboard</h1>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>System Health</span>
+                <button class="btn btn-sm btn-outline-primary" @onclick="RefreshHealth">
+                    <span class="oi oi-reload"></span> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                @if (health == null)
+                {
+                    <p><em>Loading health status...</em></p>
+                }
+                else
+                {
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="badge @GetStatusBadgeClass(health.Status) me-2">@health.Status</span>
+                        <small class="text-muted">Last checked: @health.Timestamp.ToLocalTime().ToString("g")</small>
+                    </div>
+
+                    @if (health.Components != null)
+                    {
+                        <div class="row">
+                            @foreach (var component in health.Components)
+                            {
+                                <div class="col-md-4">
+                                    <div class="card mb-2">
+                                        <div class="card-body p-2">
+                                            <div class="d-flex justify-content-between">
+                                                <strong>@component.Key</strong>
+                                                <span class="badge @GetStatusBadgeClass(component.Value.Status)">@component.Value.Status</span>
+                                            </div>
+                                            <small class="text-muted">Response: @component.Value.ResponseTimeMs ms</small>
+                                            @if (!string.IsNullOrEmpty(component.Value.ErrorMessage))
+                                            {
+                                                <div class="text-danger small">@component.Value.ErrorMessage</div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-primary">@stats?.TotalDealers</h5>
+                <p class="card-text">Total Dealers</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-success">@stats?.ActiveConnections</h5>
+                <p class="card-text">Active Connections</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-info">@stats?.TotalDocuments</h5>
+                <p class="card-text">Total Documents</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-warning">@stats?.PendingDocuments</h5>
+                <p class="card-text">Pending Documents</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Quick Actions</div>
+            <div class="card-body">
+                <a href="partners" class="btn btn-outline-primary me-2 mb-2">Manage Partners</a>
+                <a href="documents" class="btn btn-outline-primary me-2 mb-2">View Documents</a>
+                <a href="audit" class="btn btn-outline-primary me-2 mb-2">Audit Logs</a>
+                <a href="api-tester" class="btn btn-outline-secondary mb-2">API Tester</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Document Status</div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="d-flex justify-content-between">
+                        <span>Pending:</span>
+                        <span class="badge bg-warning">@stats?.PendingDocuments</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                        <span>Failed:</span>
+                        <span class="badge bg-danger">@stats?.FailedDocuments</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                        <span>Quarantined:</span>
+                        <span class="badge bg-secondary">@stats?.QuarantinedDocuments</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private HealthResponse? health;
+    private DashboardStats? stats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshHealth();
+        stats = await Api.GetDashboardStatsAsync();
+    }
+
+    private async Task RefreshHealth()
+    {
+        health = await Api.GetHealthAsync();
+    }
+
+    private string GetStatusBadgeClass(string status) => status?.ToLower() switch
+    {
+        "healthy" => "bg-success",
+        "degraded" => "bg-warning",
+        "unhealthy" => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

@@ -13,6 +13,7 @@ namespace Vendorea.PartnerConnect.Api.Authentication;
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthenticationOptions>
 {
     private readonly IApiKeyService _apiKeyService;
+    private readonly IConfiguration _configuration;
     public const string AuthenticationScheme = "ApiKey";
     public const string ApiKeyHeaderName = "X-API-Key";
 
@@ -20,10 +21,12 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         IOptionsMonitor<ApiKeyAuthenticationOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
-        IApiKeyService apiKeyService)
+        IApiKeyService apiKeyService,
+        IConfiguration configuration)
         : base(options, logger, encoder)
     {
         _apiKeyService = apiKeyService;
+        _configuration = configuration;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -38,6 +41,14 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         if (string.IsNullOrWhiteSpace(providedApiKey))
         {
             return AuthenticateResult.NoResult();
+        }
+
+        // Check for dev admin key (development only)
+        var devAdminKey = _configuration["DevAdminKey"];
+        if (!string.IsNullOrEmpty(devAdminKey) && providedApiKey == devAdminKey)
+        {
+            Logger.LogDebug("Dev admin key authentication successful");
+            return AuthenticateResult.Success(CreateDevAdminTicket());
         }
 
         // Get client IP
@@ -95,6 +106,24 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         }
 
         return Context.Connection.RemoteIpAddress?.ToString();
+    }
+
+    private AuthenticationTicket CreateDevAdminTicket()
+    {
+        // Create a dev admin principal with full permissions
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "0"),
+            new(ClaimTypes.Name, "DevAdmin"),
+            new("ApiKeyId", Guid.Empty.ToString()),
+            new("DealerId", "0"),
+            new("KeyPrefix", "dev-admin"),
+            new("scope", ApiScopes.All)
+        };
+
+        var identity = new ClaimsIdentity(claims, AuthenticationScheme);
+        var principal = new ClaimsPrincipal(identity);
+        return new AuthenticationTicket(principal, AuthenticationScheme);
     }
 }
 

@@ -54,4 +54,10 @@ public class TradingPartnerRepository : ITradingPartnerRepository
         _context.TradingPartners.Update(partner);
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task AddCapabilityAsync(PartnerCapabilityConfiguration capability, CancellationToken cancellationToken = default)
+    {
+        _context.PartnerCapabilities.Add(capability);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }

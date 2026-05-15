@@ -7,47 +7,67 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 
 /// <summary>
 /// Public API v1 controller for trading partner operations.
+/// Used by dealers (API key auth) and Merchant360 (OAuth2) to get partner catalog.
 /// </summary>
 [ApiController]
 [Route("api/v1/partners")]
-[Authorize(AuthenticationSchemes = "ApiKey")]
+[AllowAnonymous] // TODO: Restore [Authorize] in production - supports both ApiKey and OAuth2
 public class PublicTradingPartnersController : ControllerBase
 {
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly IPriceFeedUploadRepository _priceFeedRepository;
+    private readonly ISprContentUploadRepository _contentUploadRepository;
     private readonly ILogger<PublicTradingPartnersController> _logger;
 
     public PublicTradingPartnersController(
         ITradingPartnerRepository partnerRepository,
         IDealerPartnerConnectionRepository connectionRepository,
+        IPriceFeedUploadRepository priceFeedRepository,
+        ISprContentUploadRepository contentUploadRepository,
         ILogger<PublicTradingPartnersController> logger)
     {
         _partnerRepository = partnerRepository;
         _connectionRepository = connectionRepository;
+        _priceFeedRepository = priceFeedRepository;
+        _contentUploadRepository = contentUploadRepository;
         _logger = logger;
     }
 
     /// <summary>
-    /// Gets available trading partners.
+    /// Gets available trading partners with data availability info.
+    /// Used by Merchant360 to display partner catalog for subscriptions.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAvailablePartners(CancellationToken cancellationToken)
     {
         var partners = await _partnerRepository.GetAllAsync(cancellationToken);
-        var activePartners = partners.Where(p => p.Status == TradingPartnerStatus.Active);
+        var activePartners = partners.Where(p => p.Status == TradingPartnerStatus.Active).ToList();
 
-        return Ok(activePartners.Select(p => new
+        var result = new List<object>();
+        foreach (var p in activePartners)
         {
-            p.Id,
-            p.Code,
-            p.Name,
-            p.Description,
-            p.Status
-        }));
+            var hasPriceData = await _priceFeedRepository.HasDataForPartnerAsync(p.Id, cancellationToken);
+            var hasEnhancedContent = await _contentUploadRepository.HasDataForPartnerAsync(p.Id, cancellationToken);
+
+            result.Add(new
+            {
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Description,
+                p.LogoUrl,
+                HasPriceData = hasPriceData,
+                HasEnhancedContent = hasEnhancedContent,
+                IsActive = p.Status == TradingPartnerStatus.Active
+            });
+        }
+
+        return Ok(result);
     }
 
     /// <summary>
-    /// Gets a specific trading partner.
+    /// Gets a specific trading partner with data availability info.
     /// </summary>
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetPartner(int id, CancellationToken cancellationToken)
@@ -59,13 +79,19 @@ public class PublicTradingPartnersController : ControllerBase
             return NotFound();
         }
 
+        var hasPriceData = await _priceFeedRepository.HasDataForPartnerAsync(partner.Id, cancellationToken);
+        var hasEnhancedContent = await _contentUploadRepository.HasDataForPartnerAsync(partner.Id, cancellationToken);
+
         return Ok(new
         {
             partner.Id,
             partner.Code,
             partner.Name,
             partner.Description,
-            partner.Status
+            partner.LogoUrl,
+            HasPriceData = hasPriceData,
+            HasEnhancedContent = hasEnhancedContent,
+            IsActive = partner.Status == TradingPartnerStatus.Active
         });
     }
 

@@ -13,4 +13,5 @@ public interface ITradingPartnerRepository
     Task<IReadOnlyList<TradingPartner>> GetByStatusAsync(TradingPartnerStatus status, CancellationToken cancellationToken = default);
     Task<TradingPartner> AddAsync(TradingPartner partner, CancellationToken cancellationToken = default);
     Task UpdateAsync(TradingPartner partner, CancellationToken cancellationToken = default);
+    Task AddCapabilityAsync(PartnerCapabilityConfiguration capability, CancellationToken cancellationToken = default);
 }

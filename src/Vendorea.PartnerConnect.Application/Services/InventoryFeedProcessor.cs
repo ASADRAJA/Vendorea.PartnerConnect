@@ -39,6 +39,7 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
         int dealerId,
         int documentId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
@@ -71,7 +72,7 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
             validItems.Count, invalidItems.Count);
 
         // Push valid items to Merchant360
-        var pushResult = await PushToMerchant360Async(validItems, dealerId, cancellationToken);
+        var pushResult = await PushToMerchant360Async(validItems, dealerId, tradingPartnerInfo, cancellationToken);
 
         // Update document status
         var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
@@ -116,6 +117,7 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
     public async Task<InventoryPushResult> PushToMerchant360Async(
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
         int dealerId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default)
     {
         if (inventoryUpdates.Count == 0)
@@ -132,7 +134,7 @@ public class InventoryFeedProcessor : IInventoryFeedProcessor
 
         try
         {
-            var result = await _merchant360Client.UpdateInventoryAsync(dealerId, items, cancellationToken);
+            var result = await _merchant360Client.UpdateInventoryAsync(dealerId, tradingPartnerInfo, items, cancellationToken);
 
             _logger.LogInformation(
                 "Pushed {SuccessCount} inventory items to Merchant360, {ErrorCount} failed",
@@ -200,6 +202,7 @@ public interface IInventoryFeedProcessor
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
         int dealerId,
         int documentId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default);
 
     Task<ValidationResult> ValidateAsync(
@@ -209,6 +212,7 @@ public interface IInventoryFeedProcessor
     Task<InventoryPushResult> PushToMerchant360Async(
         IReadOnlyList<InventoryUpdate> inventoryUpdates,
         int dealerId,
+        TradingPartnerInfo tradingPartnerInfo,
         CancellationToken cancellationToken = default);
 }
 

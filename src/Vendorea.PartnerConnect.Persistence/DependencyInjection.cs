@@ -53,9 +53,19 @@ public static class DependencyInjection
         services.AddScoped<ITradingPartnerRepository, TradingPartnerRepository>();
         services.AddScoped<IDealerPartnerConnectionRepository, DealerPartnerConnectionRepository>();
         services.AddScoped<IPartnerDocumentRepository, PartnerDocumentRepository>();
+        services.AddScoped<IEdiDocumentRepository, EdiDocumentRepository>();
         services.AddScoped<IDocumentFingerprintRepository, DocumentFingerprintRepository>();
         services.AddScoped<IPriceFeedBatchRepository, PriceFeedBatchRepository>();
         services.AddScoped<IInventoryFeedBatchRepository, InventoryFeedBatchRepository>();
+        services.AddScoped<IPriceFeedUploadRepository, PriceFeedUploadRepository>();
+        services.AddScoped<ISprPriceRecordRepository, SprPriceRecordRepository>();
+
+        // SPR Enhanced Content
+        services.AddScoped<ISprContentUploadRepository, SprContentUploadRepository>();
+        services.AddScoped<ISprCategoryRepository, SprCategoryRepository>();
+        services.AddScoped<ISprProductContentRepository, SprProductContentRepository>();
+        services.AddScoped<IDealerContentSubscriptionRepository, DealerContentSubscriptionRepository>();
+
         services.AddScoped<IContentSyncJobRepository, ContentSyncJobRepository>();
         services.AddScoped<IDocumentStateHistoryRepository, DocumentStateHistoryRepository>();
         services.AddScoped<IQuarantinedDocumentRepository, QuarantinedDocumentRepository>();

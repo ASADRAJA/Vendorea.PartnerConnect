@@ -1,0 +1,563 @@
+using System.Net.Http.Json;
+using Vendorea.PartnerConnect.AdminPortal.Models;
+
+namespace Vendorea.PartnerConnect.AdminPortal.Services;
+
+public class ApiClient
+{
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<ApiClient> _logger;
+
+    public ApiClient(HttpClient httpClient, ILogger<ApiClient> logger)
+    {
+        _httpClient = httpClient;
+        _logger = logger;
+    }
+
+    // Dashboard endpoints
+    public async Task<HealthResponse?> GetHealthAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<HealthResponse>("/api/admin/dashboard/health");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get health status");
+            return null;
+        }
+    }
+
+    public async Task<DashboardStats?> GetDashboardStatsAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<DashboardStats>("/api/admin/dashboard/stats");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get dashboard stats");
+            return null;
+        }
+    }
+
+    // Trading Partners endpoints
+    public async Task<List<TradingPartnerDto>> GetTradingPartnersAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<TradingPartnerDto>>("/api/v1/partners") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get trading partners");
+            return new();
+        }
+    }
+
+    public async Task<TradingPartnerDto?> GetTradingPartnerAsync(int id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<TradingPartnerDto>($"/api/v1/partners/{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get trading partner {Id}", id);
+            return null;
+        }
+    }
+
+    // Connections endpoints
+    public async Task<List<ConnectionDto>> GetConnectionsAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<ConnectionDto>>("/api/v1/partners/connections") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get connections");
+            return new();
+        }
+    }
+
+    public async Task<bool> ActivateConnectionAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/v1/partners/connections/{id}/activate", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to activate connection {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> DeactivateConnectionAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/v1/partners/connections/{id}/deactivate", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deactivate connection {Id}", id);
+            return false;
+        }
+    }
+
+    // Documents endpoints
+    public async Task<DocumentPagedResult> GetDocumentsAsync(int skip = 0, int take = 50, string? status = null)
+    {
+        try
+        {
+            var url = $"/api/v1/documents?skip={skip}&take={take}";
+            if (!string.IsNullOrEmpty(status))
+                url += $"&status={status}";
+
+            return await _httpClient.GetFromJsonAsync<DocumentPagedResult>(url) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get documents");
+            return new();
+        }
+    }
+
+    public async Task<List<DocumentDto>> GetPendingDocumentsAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<DocumentDto>>("/api/admin/documents/pending") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get pending documents");
+            return new();
+        }
+    }
+
+    public async Task<DocumentDto?> GetDocumentAsync(int id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<DocumentDto>($"/api/admin/documents/{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get document {Id}", id);
+            return null;
+        }
+    }
+
+    public async Task<bool> RetryDocumentAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/documents/{id}/retry", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retry document {Id}", id);
+            return false;
+        }
+    }
+
+    // Audit endpoints
+    public async Task<AuditSearchResult> SearchAuditLogsAsync(int skip = 0, int take = 50, int? dealerId = null, string? action = null)
+    {
+        try
+        {
+            var url = $"/api/admin/audit/search?skip={skip}&take={take}";
+            if (dealerId.HasValue)
+                url += $"&dealerId={dealerId}";
+            if (!string.IsNullOrEmpty(action))
+                url += $"&action={action}";
+
+            return await _httpClient.GetFromJsonAsync<AuditSearchResult>(url) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to search audit logs");
+            return new();
+        }
+    }
+
+    public async Task<AuditStats?> GetAuditStatsAsync(int hours = 24)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<AuditStats>($"/api/admin/audit/stats?hours={hours}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get audit stats");
+            return null;
+        }
+    }
+
+    // Billing endpoints
+    public async Task<List<BillingPlanDto>> GetBillingPlansAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<BillingPlanDto>>("/api/billing/plans") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get billing plans");
+            return new();
+        }
+    }
+
+    // Metering endpoints
+    public async Task<UsageSummary?> GetDealerUsageSummaryAsync(int dealerId, int days = 30)
+    {
+        try
+        {
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddDays(-days);
+            return await _httpClient.GetFromJsonAsync<UsageSummary>(
+                $"/api/admin/metering/dealer/{dealerId}/summary?startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get dealer usage summary");
+            return null;
+        }
+    }
+
+    // Webhook endpoints
+    public async Task<List<WebhookSubscriptionDto>> GetWebhookSubscriptionsAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<WebhookSubscriptionDto>>("/api/v1/webhooks/subscriptions") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get webhook subscriptions");
+            return new();
+        }
+    }
+
+    // Price Feed endpoints
+    public async Task<PriceFeedUploadResult?> UploadPriceFeedAsync(int dealerId, string tradingPartnerCode, Stream fileStream, string fileName)
+    {
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(fileStream);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+            content.Add(fileContent, "file", fileName);
+
+            var response = await _httpClient.PostAsync(
+                $"/api/v1/pricefeeds/upload?dealerId={dealerId}&tradingPartnerCode={tradingPartnerCode}",
+                content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<PriceFeedUploadResult>();
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning("Price feed upload failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+            return new PriceFeedUploadResult { Success = false, ErrorMessage = errorContent };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upload price feed");
+            return new PriceFeedUploadResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<List<PriceFeedUploadDto>> GetPriceFeedHistoryAsync(int dealerId, string? tradingPartnerCode = null, int limit = 20)
+    {
+        try
+        {
+            var url = $"/api/v1/pricefeeds/history?dealerId={dealerId}&limit={limit}";
+            if (!string.IsNullOrEmpty(tradingPartnerCode))
+                url += $"&tradingPartnerCode={tradingPartnerCode}";
+
+            return await _httpClient.GetFromJsonAsync<List<PriceFeedUploadDto>>(url) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get price feed history");
+            return new();
+        }
+    }
+
+    public async Task<PriceFeedUploadDetailDto?> GetPriceFeedDetailsAsync(int uploadId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<PriceFeedUploadDetailDto>($"/api/v1/pricefeeds/{uploadId}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get price feed details for upload {UploadId}", uploadId);
+            return null;
+        }
+    }
+
+    public async Task<PushToMerchant360Result?> PushToMerchant360Async(int uploadId)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/v1/pricefeeds/{uploadId}/push-to-merchant360", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<PushToMerchant360Result>();
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync();
+            return new PushToMerchant360Result { Success = false, ErrorMessage = errorContent };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to push to Merchant360 for upload {UploadId}", uploadId);
+            return new PushToMerchant360Result { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<List<MerchantDto>> GetMerchantsAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<MerchantDto>>("/api/admin/dashboard/merchants") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get merchants");
+            return new();
+        }
+    }
+
+    // SPR Enhanced Content endpoints
+    // Content is supplier-specific but shared across all merchants
+    public async Task<ContentImportResultDto?> ImportContentAsync(
+        int tradingPartnerId,
+        string contentVersion,
+        string locale,
+        Stream fileStream,
+        string fileName)
+    {
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(fileStream);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
+            content.Add(fileContent, "file", fileName);
+
+            var url = $"/api/v1/admin/spr/content/imports?tradingPartnerId={tradingPartnerId}&contentVersion={Uri.EscapeDataString(contentVersion)}&locale={Uri.EscapeDataString(locale)}";
+            var response = await _httpClient.PostAsync(url, content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<ContentImportResultDto>();
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning("Content import failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+            return new ContentImportResultDto { Status = "Failed" };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to import content");
+            return new ContentImportResultDto { Status = "Failed" };
+        }
+    }
+
+    public async Task<List<ContentImportSummaryDto>> GetContentImportHistoryAsync(int limit = 20)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<ContentImportSummaryDto>>(
+                $"/api/v1/admin/spr/content/imports?limit={limit}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get content import history");
+            return new();
+        }
+    }
+
+    public async Task<ContentImportStatusDto?> GetContentImportStatusAsync(int uploadId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<ContentImportStatusDto>(
+                $"/api/v1/admin/spr/content/imports/{uploadId}/status");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get content import status for upload {UploadId}", uploadId);
+            return null;
+        }
+    }
+
+    public async Task<ContentStatisticsDto?> GetContentStatisticsAsync(string locale = "EN_US")
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<ContentStatisticsDto>(
+                $"/api/v1/admin/spr/content/stats?locale={Uri.EscapeDataString(locale)}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get content statistics");
+            return null;
+        }
+    }
+
+    public async Task<bool> CancelContentImportAsync(int uploadId)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync(
+                $"/api/v1/admin/spr/content/imports/{uploadId}/cancel", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cancel content import {UploadId}", uploadId);
+            return false;
+        }
+    }
+
+    public async Task<bool> DeleteContentImportAsync(int uploadId)
+    {
+        try
+        {
+            var response = await _httpClient.DeleteAsync(
+                $"/api/v1/admin/spr/content/imports/{uploadId}");
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete content import {UploadId}", uploadId);
+            return false;
+        }
+    }
+
+    // Merchant Subscription endpoints (calls Merchant360 via PartnerConnect API proxy)
+    public async Task<SubscriptionListResult> GetSubscriptionsAsync(SubscriptionStatus? status = null, int? tenantId = null, int? tradingPartnerId = null)
+    {
+        try
+        {
+            var url = "/api/admin/subscriptions?";
+            var queryParams = new List<string>();
+
+            if (status.HasValue)
+                queryParams.Add($"status={status}");
+            if (tenantId.HasValue)
+                queryParams.Add($"tenantId={tenantId}");
+            if (tradingPartnerId.HasValue)
+                queryParams.Add($"tradingPartnerId={tradingPartnerId}");
+
+            url += string.Join("&", queryParams);
+
+            return await _httpClient.GetFromJsonAsync<SubscriptionListResult>(url) ?? new SubscriptionListResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get subscriptions");
+            return new SubscriptionListResult();
+        }
+    }
+
+    public async Task<MerchantSubscriptionDto?> GetSubscriptionAsync(int id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<MerchantSubscriptionDto>($"/api/admin/subscriptions/{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get subscription {Id}", id);
+            return null;
+        }
+    }
+
+    public async Task<MerchantSubscriptionDto?> CreateSubscriptionAsync(CreateSubscriptionRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/subscriptions", request);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<MerchantSubscriptionDto>();
+            }
+            _logger.LogWarning("Failed to create subscription: {StatusCode}", response.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create subscription");
+            return null;
+        }
+    }
+
+    public async Task<bool> ApproveSubscriptionAsync(int id, ApproveSubscriptionRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/approve", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to approve subscription {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> DenySubscriptionAsync(int id, DenySubscriptionRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/deny", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deny subscription {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> SuspendSubscriptionAsync(int id, SuspendSubscriptionRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/suspend", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to suspend subscription {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> ReactivateSubscriptionAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/subscriptions/{id}/reactivate", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reactivate subscription {Id}", id);
+            return false;
+        }
+    }
+}

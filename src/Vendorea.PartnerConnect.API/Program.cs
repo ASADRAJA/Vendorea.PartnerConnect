@@ -1,4 +1,5 @@
 using Serilog;
+using Vendorea.PartnerConnect.Api.Authentication;
 using Vendorea.PartnerConnect.Api.Authorization;
 using Vendorea.PartnerConnect.Billing;
 using Vendorea.PartnerConnect.Infrastructure.DependencyInjection;
@@ -56,15 +57,25 @@ builder.Services.AddTransport();
 
 builder.Services.AddPartnerAdapters();
 
-// Merchant360 connector
-var merchant360BaseUrl = builder.Configuration.GetValue<string>("Merchant360:BaseUrl") ?? "http://localhost:5003";
-builder.Services.AddMerchant360Connector(merchant360BaseUrl);
+// Merchant360 connector with OAuth2 authentication
+builder.Services.AddMerchant360Connector(options =>
+{
+    var section = builder.Configuration.GetSection("Merchant360");
+    options.BaseUrl = section.GetValue<string>("BaseUrl") ?? "http://localhost:5003";
+    options.TokenEndpoint = section.GetValue<string>("TokenEndpoint") ?? "http://localhost:5003/oauth2/token";
+    options.ClientId = section.GetValue<string>("ClientId") ?? "";
+    options.ClientSecret = section.GetValue<string>("ClientSecret") ?? "";
+});
 
 // Webhooks
 builder.Services.AddWebhooks();
 
 // Billing
 builder.Services.AddBilling(builder.Configuration);
+
+// Authentication
+builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.AuthenticationScheme)
+    .AddApiKeyAuthentication();
 
 // Authorization with permissions
 builder.Services.AddPermissionAuthorization();
@@ -99,6 +110,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 app.UsePartnerConnectMiddleware();
+app.UseAuthentication();
 app.UseAuthorization();
 app.UseSerilogRequestLogging();
 

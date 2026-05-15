@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
 
 namespace Vendorea.PartnerConnect.Merchant360Connector;
@@ -9,7 +10,33 @@ namespace Vendorea.PartnerConnect.Merchant360Connector;
 public static class DependencyInjection
 {
     /// <summary>
-    /// Adds the Merchant360 API client to the service collection.
+    /// Adds the Merchant360 API client with OAuth2 authentication to the service collection.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Action to configure Merchant360 options.</param>
+    public static IServiceCollection AddMerchant360Connector(
+        this IServiceCollection services,
+        Action<Merchant360Options> configure)
+    {
+        services.Configure(configure);
+
+        // Register the OAuth2 token handler
+        services.AddTransient<OAuth2TokenHandler>();
+
+        // Register the HttpClient with the OAuth2 handler
+        services.AddHttpClient<IMerchant360Client, Merchant360ApiClient>((sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<Merchant360Options>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .AddHttpMessageHandler<OAuth2TokenHandler>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the Merchant360 API client to the service collection (without OAuth2, for testing).
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="baseUrl">The base URL of the Merchant360 API.</param>

@@ -1,0 +1,485 @@
+using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
+using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Contracts.Interfaces;
+using Vendorea.PartnerConnect.Domain.Entities;
+using Vendorea.PartnerConnect.Storage.Interfaces;
+using Vendorea.PartnerConnect.Storage.Models;
+
+namespace Vendorea.PartnerConnect.Application.Services;
+
+/// <summary>
+/// Service for managing price feed uploads and processing.
+/// </summary>
+public class PriceFeedService : IPriceFeedService
+{
+    private readonly IPriceFeedUploadRepository _uploadRepository;
+    private readonly ISprPriceRecordRepository _sprPriceRecordRepository;
+    private readonly ITradingPartnerRepository _tradingPartnerRepository;
+    private readonly IDocumentStorage _documentStorage;
+    private readonly ISprPriceFeedParser _sprParser;
+    private readonly IMerchant360Client _merchant360Client;
+    private readonly ILogger<PriceFeedService> _logger;
+
+    public PriceFeedService(
+        IPriceFeedUploadRepository uploadRepository,
+        ISprPriceRecordRepository sprPriceRecordRepository,
+        ITradingPartnerRepository tradingPartnerRepository,
+        IDocumentStorage documentStorage,
+        ISprPriceFeedParser sprParser,
+        IMerchant360Client merchant360Client,
+        ILogger<PriceFeedService> logger)
+    {
+        _uploadRepository = uploadRepository;
+        _sprPriceRecordRepository = sprPriceRecordRepository;
+        _tradingPartnerRepository = tradingPartnerRepository;
+        _documentStorage = documentStorage;
+        _sprParser = sprParser;
+        _merchant360Client = merchant360Client;
+        _logger = logger;
+    }
+
+    public async Task<PriceFeedUploadResult> UploadAsync(
+        int dealerId,
+        string tradingPartnerCode,
+        string fileName,
+        Stream fileStream,
+        string? uploadedByUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Processing price feed upload for dealer {DealerId}, partner {PartnerCode}, file {FileName}",
+            dealerId, tradingPartnerCode, fileName);
+
+        // Get trading partner
+        var tradingPartner = await _tradingPartnerRepository.GetByCodeAsync(tradingPartnerCode, cancellationToken);
+        if (tradingPartner == null)
+        {
+            return new PriceFeedUploadResult(
+                Success: false,
+                UploadId: 0,
+                RecordCount: 0,
+                ErrorCount: 0,
+                ErrorMessage: $"Trading partner '{tradingPartnerCode}' not found");
+        }
+
+        // Read file into memory for processing
+        using var memoryStream = new MemoryStream();
+        await fileStream.CopyToAsync(memoryStream, cancellationToken);
+        var fileBytes = memoryStream.ToArray();
+        var fileHash = ComputeHash(fileBytes);
+
+        // Check for duplicate
+        var isDuplicate = await _uploadRepository.ExistsByHashAsync(
+            dealerId, tradingPartner.Id, fileHash, cancellationToken);
+
+        if (isDuplicate)
+        {
+            _logger.LogWarning(
+                "Duplicate file detected for dealer {DealerId}, partner {PartnerCode}, hash {Hash}",
+                dealerId, tradingPartnerCode, fileHash);
+
+            return new PriceFeedUploadResult(
+                Success: false,
+                UploadId: 0,
+                RecordCount: 0,
+                ErrorCount: 0,
+                ErrorMessage: "This file has already been uploaded",
+                IsDuplicate: true);
+        }
+
+        // Create upload record
+        var upload = new PriceFeedUpload
+        {
+            DealerId = dealerId,
+            TradingPartnerId = tradingPartner.Id,
+            FileName = fileName,
+            FileHash = fileHash,
+            FileSizeBytes = fileBytes.Length,
+            Status = PriceFeedUploadStatus.Processing,
+            UploadedAt = DateTime.UtcNow,
+            UploadedByUserId = uploadedByUserId
+        };
+
+        await _uploadRepository.AddAsync(upload, cancellationToken);
+
+        try
+        {
+            // Store raw file
+            var storagePath = $"{tradingPartnerCode.ToLower()}/{dealerId}/prices/{DateTime.UtcNow:yyyy/MM/dd}/{upload.Id}_{fileName}";
+            var metadata = new StorageMetadata
+            {
+                OriginalFileName = fileName,
+                ContentType = "text/csv",
+                SizeBytes = fileBytes.Length,
+                ContentHash = fileHash,
+                DealerId = dealerId,
+                TradingPartnerCode = tradingPartnerCode,
+                DocumentType = "PriceList",
+                CorrelationId = upload.CorrelationId
+            };
+
+            await _documentStorage.StoreAsync(fileBytes, storagePath, metadata, cancellationToken);
+            upload.StoragePath = storagePath;
+
+            // Parse and store records based on partner type
+            int recordCount = 0;
+            int errorCount = 0;
+
+            if (tradingPartnerCode.Equals("SPR", StringComparison.OrdinalIgnoreCase))
+            {
+                (recordCount, errorCount) = await ProcessSprUploadAsync(
+                    upload, fileBytes, cancellationToken);
+            }
+            else
+            {
+                throw new NotSupportedException($"Partner '{tradingPartnerCode}' is not yet supported");
+            }
+
+            // Update upload status
+            upload.RecordCount = recordCount;
+            upload.ErrorCount = errorCount;
+            upload.Status = PriceFeedUploadStatus.Completed;
+            upload.ProcessedAt = DateTime.UtcNow;
+
+            await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+            _logger.LogInformation(
+                "Price feed upload completed: {RecordCount} records, {ErrorCount} errors",
+                recordCount, errorCount);
+
+            return new PriceFeedUploadResult(
+                Success: true,
+                UploadId: upload.Id,
+                RecordCount: recordCount,
+                ErrorCount: errorCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing price feed upload {UploadId}", upload.Id);
+
+            upload.Status = PriceFeedUploadStatus.Failed;
+            upload.ErrorMessage = ex.Message;
+            upload.ProcessedAt = DateTime.UtcNow;
+            await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+            return new PriceFeedUploadResult(
+                Success: false,
+                UploadId: upload.Id,
+                RecordCount: 0,
+                ErrorCount: 0,
+                ErrorMessage: ex.Message);
+        }
+    }
+
+    private async Task<(int RecordCount, int ErrorCount)> ProcessSprUploadAsync(
+        PriceFeedUpload upload,
+        byte[] fileBytes,
+        CancellationToken cancellationToken)
+    {
+        using var stream = new MemoryStream(fileBytes);
+        var parseResult = await _sprParser.ParseAsync(stream, cancellationToken);
+
+        // Convert parsed records to entities
+        var entities = parseResult.Records.Select(r => new SprPriceRecord
+        {
+            PriceFeedUploadId = upload.Id,
+            DealerId = upload.DealerId,
+            StockNumber = r.StockNumber,
+            StockNumberStripped = r.StockNumberStripped,
+            ProductDescription = r.ProductDescription,
+            ProductStatus = r.ProductStatus,
+            NewItemNumber = r.NewItemNumber,
+            SellingUnitOfMeasure = r.SellingUnitOfMeasure,
+            GeneralLineCatalogPage = r.GeneralLineCatalogPage,
+            SpecialFlyerCatalogPage = r.SpecialFlyerCatalogPage,
+            FurnitureCatalogPage = r.FurnitureCatalogPage,
+            PackingQuantity1 = r.PackingQuantity1,
+            PackingUom1 = r.PackingUom1,
+            PackedPerUom1 = r.PackedPerUom1,
+            PackingQuantity2 = r.PackingQuantity2,
+            PackingUom2 = r.PackingUom2,
+            PackedPerUom2 = r.PackedPerUom2,
+            PackingQuantity3 = r.PackingQuantity3,
+            PackingUom3 = r.PackingUom3,
+            PackedPerUom3 = r.PackedPerUom3,
+            WeightLbs = r.WeightLbs,
+            HeightInches = r.HeightInches,
+            LengthInches = r.LengthInches,
+            WidthInches = r.WidthInches,
+            CategoryCode = r.CategoryCode,
+            CountryOfOrigin = r.CountryOfOrigin,
+            IsReadyToAssemble = r.IsReadyToAssemble,
+            IsRecycled = r.IsRecycled,
+            CanShipUps = r.CanShipUps,
+            BrokenQuantitiesAllowed = r.BrokenQuantitiesAllowed,
+            RetailListPrice = r.RetailListPrice,
+            RetailUnitOfMeasure = r.RetailUnitOfMeasure,
+            RetailUnitsPerSuom = r.RetailUnitsPerSuom,
+            MsdsRequired = r.MsdsRequired,
+            RecommendedSubstitutions = r.RecommendedSubstitutions,
+            OldItemNumber = r.OldItemNumber,
+            CatalogListPrice = r.CatalogListPrice,
+            CatalogUom = r.CatalogUom,
+            MinorityVendorFlag = r.MinorityVendorFlag,
+            IsCustom = r.IsCustom,
+            IsDatedGoods = r.IsDatedGoods,
+            QuantityPerSuom = r.QuantityPerSuom,
+            IsNonReturnable = r.IsNonReturnable,
+            IsAlwaysNet = r.IsAlwaysNet,
+            IsSpecialOrder = r.IsSpecialOrder,
+            HarmonizedCode = r.HarmonizedCode,
+            FreightRestricted = r.FreightRestricted,
+            SingleUsePlastic = r.SingleUsePlastic,
+            Upc = r.Upc,
+            UnitedPrefixStockNumber = r.UnitedPrefixStockNumber,
+            MpcNumber = r.MpcNumber,
+            MoorePrefixStockNumber = r.MoorePrefixStockNumber,
+            UpcRetailPackFactor = r.UpcRetailPackFactor,
+            UpcRetailPack = r.UpcRetailPack,
+            UpcIntermediatePackFactor = r.UpcIntermediatePackFactor,
+            UpcIntermediatePack = r.UpcIntermediatePack,
+            UpcCasePackFactor = r.UpcCasePackFactor,
+            UpcCasePack = r.UpcCasePack,
+            BranchStockingStatus = r.BranchStockingStatus,
+            OldModel = r.OldModel,
+            NewModel = r.NewModel,
+            PricingProgramName = r.PricingProgramName,
+            PricingProgramCode = r.PricingProgramCode,
+            PricingStartDate = r.PricingStartDate,
+            PricingEndDate = r.PricingEndDate,
+            PricingFlyerPage = r.PricingFlyerPage,
+            MinimumSellingQuantity = r.MinimumSellingQuantity,
+            NetCostNonCcp = r.NetCostNonCcp,
+            NetCostCcp3 = r.NetCostCcp3,
+            NetCostCcp4 = r.NetCostCcp4,
+            VendorDropShipFlag = r.VendorDropShipFlag,
+            ShippingLeadTimeDays = r.ShippingLeadTimeDays,
+            AutoProcureFromVendor = r.AutoProcureFromVendor,
+            ProjectNumberRequired = r.ProjectNumberRequired,
+            PromoLevel1Quantity = r.PromoLevel1Quantity,
+            PromoLevel1Cost = r.PromoLevel1Cost,
+            PromoLevel2Quantity = r.PromoLevel2Quantity,
+            PromoLevel2Cost = r.PromoLevel2Cost,
+            PromoLevel3Quantity = r.PromoLevel3Quantity,
+            PromoLevel3Cost = r.PromoLevel3Cost,
+            ConsumerPrice1Quantity = r.ConsumerPrice1Quantity,
+            ConsumerPrice1 = r.ConsumerPrice1,
+            ConsumerPrice2Quantity = r.ConsumerPrice2Quantity,
+            ConsumerPrice2 = r.ConsumerPrice2,
+            ConsumerPrice3Quantity = r.ConsumerPrice3Quantity,
+            ConsumerPrice3 = r.ConsumerPrice3,
+            ShippingLeadTimeDescription = r.ShippingLeadTimeDescription,
+            ConsumerPriceInCatalog = r.ConsumerPriceInCatalog,
+            CatalogPriceUom = r.CatalogPriceUom,
+            PriceCodeIdentifier = r.PriceCodeIdentifier,
+            IsFirmCost = r.IsFirmCost,
+            IsNetCost = r.IsNetCost,
+            SourceLineNumber = r.SourceLineNumber,
+            CreatedAt = DateTime.UtcNow
+        }).ToList();
+
+        // Bulk insert
+        await _sprPriceRecordRepository.BulkInsertAsync(entities, cancellationToken);
+
+        return (entities.Count, parseResult.Errors.Count);
+    }
+
+    public async Task<IReadOnlyList<PriceFeedUploadDto>> GetUploadHistoryAsync(
+        int dealerId,
+        string? tradingPartnerCode = null,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<PriceFeedUpload> uploads;
+
+        if (!string.IsNullOrEmpty(tradingPartnerCode))
+        {
+            var partner = await _tradingPartnerRepository.GetByCodeAsync(tradingPartnerCode, cancellationToken);
+            if (partner == null)
+                return Array.Empty<PriceFeedUploadDto>();
+
+            uploads = await _uploadRepository.GetByDealerAndPartnerAsync(
+                dealerId, partner.Id, limit, cancellationToken);
+        }
+        else
+        {
+            uploads = await _uploadRepository.GetByDealerIdAsync(dealerId, limit, cancellationToken);
+        }
+
+        return uploads.Select(u => new PriceFeedUploadDto(
+            u.Id,
+            u.DealerId,
+            u.TradingPartner?.Code ?? "Unknown",
+            u.TradingPartner?.Name ?? "Unknown",
+            u.FileName,
+            u.Status,
+            u.RecordCount,
+            u.ErrorCount,
+            u.UploadedAt,
+            u.ProcessedAt,
+            u.PushedToMerchant360At
+        )).ToList();
+    }
+
+    public async Task<PriceFeedUploadDetailDto?> GetUploadDetailsAsync(
+        int uploadId,
+        CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+            return null;
+
+        return new PriceFeedUploadDetailDto(
+            upload.Id,
+            upload.DealerId,
+            upload.TradingPartner?.Code ?? "Unknown",
+            upload.TradingPartner?.Name ?? "Unknown",
+            upload.FileName,
+            upload.FileHash,
+            upload.FileSizeBytes,
+            upload.Status,
+            upload.RecordCount,
+            upload.ErrorCount,
+            upload.ErrorMessage,
+            upload.UploadedAt,
+            upload.UploadedByUserId,
+            upload.ProcessedAt,
+            upload.PushedToMerchant360At,
+            upload.CorrelationId
+        );
+    }
+
+    public async Task<PushToMerchant360Result> PushToMerchant360Async(
+        int uploadId,
+        CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+        {
+            return new PushToMerchant360Result(false, 0, "Upload not found");
+        }
+
+        if (upload.Status != PriceFeedUploadStatus.Completed)
+        {
+            return new PushToMerchant360Result(false, 0, "Upload has not been processed yet");
+        }
+
+        try
+        {
+            // Get records for this upload
+            var records = await _sprPriceRecordRepository.GetByUploadIdAsync(uploadId, cancellationToken);
+
+            // Convert to Merchant360 format
+            var priceItems = records.Select(r => new PriceUpdateItem(
+                r.StockNumber,
+                r.NetCostNonCcp,
+                r.RetailListPrice,
+                "USD"
+            )).ToList();
+
+            // Build trading partner info for M360 to upsert
+            var tradingPartnerInfo = new TradingPartnerInfo(
+                PartnerConnectId: upload.TradingPartnerId,
+                Code: upload.TradingPartner?.Code ?? "UNKNOWN",
+                Name: upload.TradingPartner?.Name ?? "Unknown Partner",
+                Description: upload.TradingPartner?.Description,
+                LogoUrl: upload.TradingPartner?.LogoUrl
+            );
+
+            // Push to Merchant360
+            var pushResult = await _merchant360Client.UpdatePricesAsync(
+                upload.DealerId, tradingPartnerInfo, priceItems, cancellationToken);
+
+            if (pushResult.Success)
+            {
+                upload.Status = PriceFeedUploadStatus.PushedToMerchant360;
+                upload.PushedToMerchant360At = DateTime.UtcNow;
+                await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+                return new PushToMerchant360Result(true, pushResult.UpdatedCount);
+            }
+            else
+            {
+                upload.Status = PriceFeedUploadStatus.PushFailed;
+                upload.ErrorMessage = string.Join(", ", pushResult.Errors ?? Array.Empty<string>());
+                await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+                return new PushToMerchant360Result(false, 0, upload.ErrorMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error pushing upload {UploadId} to Merchant360", uploadId);
+
+            upload.Status = PriceFeedUploadStatus.PushFailed;
+            upload.ErrorMessage = ex.Message;
+            await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+            return new PushToMerchant360Result(false, 0, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<PriceRecordDto>> GetCurrentPricesAsync(
+        int dealerId,
+        string tradingPartnerCode,
+        int? limit = null,
+        int? offset = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (tradingPartnerCode.Equals("SPR", StringComparison.OrdinalIgnoreCase))
+        {
+            var records = await _sprPriceRecordRepository.GetCurrentPricesAsync(
+                dealerId, limit, offset, cancellationToken);
+
+            return records.Select(r => new PriceRecordDto(
+                r.StockNumber,
+                r.Upc,
+                r.ProductDescription,
+                r.NetCostNonCcp,
+                r.RetailListPrice,
+                r.CategoryCode,
+                r.SellingUnitOfMeasure,
+                r.PricingStartDate,
+                r.PricingEndDate
+            )).ToList();
+        }
+
+        return Array.Empty<PriceRecordDto>();
+    }
+
+    public async Task<IReadOnlyList<PriceRecordDto>> SearchPricesAsync(
+        int dealerId,
+        string tradingPartnerCode,
+        string searchTerm,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (tradingPartnerCode.Equals("SPR", StringComparison.OrdinalIgnoreCase))
+        {
+            var records = await _sprPriceRecordRepository.SearchByDescriptionAsync(
+                dealerId, searchTerm, limit, cancellationToken);
+
+            return records.Select(r => new PriceRecordDto(
+                r.StockNumber,
+                r.Upc,
+                r.ProductDescription,
+                r.NetCostNonCcp,
+                r.RetailListPrice,
+                r.CategoryCode,
+                r.SellingUnitOfMeasure,
+                r.PricingStartDate,
+                r.PricingEndDate
+            )).ToList();
+        }
+
+        return Array.Empty<PriceRecordDto>();
+    }
+
+    private static string ComputeHash(byte[] data)
+    {
+        using var sha256 = SHA256.Create();
+        var hash = sha256.ComputeHash(data);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+}

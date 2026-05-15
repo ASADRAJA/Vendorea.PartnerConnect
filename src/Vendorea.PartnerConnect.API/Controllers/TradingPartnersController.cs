@@ -82,4 +82,90 @@ public class TradingPartnersController : ControllerBase
         var partner = await _tradingPartnerService.CreateAsync(command, cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = partner.Id }, partner);
     }
+
+    /// <summary>
+    /// Updates a trading partner.
+    /// </summary>
+    [HttpPut("{id:int}")]
+    [ProducesResponseType(typeof(TradingPartnerDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(
+        int id,
+        [FromBody] UpdateTradingPartnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var partner = await _tradingPartnerService.UpdateAsync(id, command, cancellationToken);
+        if (partner == null)
+        {
+            return NotFound();
+        }
+        return Ok(partner);
+    }
+
+    /// <summary>
+    /// Activates a trading partner.
+    /// </summary>
+    [HttpPost("{id:int}/activate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Activate(int id, CancellationToken cancellationToken)
+    {
+        var result = await _tradingPartnerService.ActivateAsync(id, cancellationToken);
+        if (!result)
+        {
+            return NotFound();
+        }
+        return Ok(new { Id = id, Status = "Active" });
+    }
+
+    /// <summary>
+    /// Deactivates a trading partner.
+    /// </summary>
+    [HttpPost("{id:int}/deactivate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Deactivate(int id, CancellationToken cancellationToken)
+    {
+        var result = await _tradingPartnerService.DeactivateAsync(id, cancellationToken);
+        if (!result)
+        {
+            return NotFound();
+        }
+        return Ok(new { Id = id, Status = "Inactive" });
+    }
+
+    /// <summary>
+    /// Adds a capability to a trading partner.
+    /// </summary>
+    [HttpPost("{id:int}/capabilities")]
+    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AddCapability(
+        int id,
+        [FromBody] AddCapabilityRequest command,
+        CancellationToken cancellationToken)
+    {
+        var capability = await _tradingPartnerService.AddCapabilityAsync(id, command, cancellationToken);
+        if (capability == null)
+        {
+            return NotFound();
+        }
+        return Created($"/api/v1/tradingpartners/{id}/capabilities/{capability.Id}", capability);
+    }
+
+    /// <summary>
+    /// Gets capabilities for a trading partner.
+    /// </summary>
+    [HttpGet("{id:int}/capabilities")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCapabilities(int id, CancellationToken cancellationToken)
+    {
+        var capabilities = await _tradingPartnerService.GetCapabilitiesAsync(id, cancellationToken);
+        if (capabilities == null)
+        {
+            return NotFound();
+        }
+        return Ok(capabilities);
+    }
 }

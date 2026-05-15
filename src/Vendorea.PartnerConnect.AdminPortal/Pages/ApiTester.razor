@@ -1,0 +1,251 @@
+@page "/api-tester"
+@inject IHttpClientFactory HttpClientFactory
+@inject IConfiguration Configuration
+
+<PageTitle>API Tester - PartnerConnect Admin</PageTitle>
+
+<h1>API Tester</h1>
+
+<p class="text-muted">Test any API endpoint directly. Base URL: <code>@baseUrl</code></p>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">Request</div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-2">
+                        <select class="form-select" @bind="method">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                            <option value="PATCH">PATCH</option>
+                        </select>
+                    </div>
+                    <div class="col-md-8">
+                        <input type="text" class="form-control" @bind="endpoint" placeholder="/api/v1/partners" />
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-primary w-100" @onclick="SendRequest" disabled="@isLoading">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm"></span>
+                            }
+                            else
+                            {
+                                <span>Send</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+
+                @if (method != "GET" && method != "DELETE")
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Request Body (JSON)</label>
+                        <textarea class="form-control font-monospace" rows="6" @bind="requestBody" placeholder='{"key": "value"}'></textarea>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Response</span>
+                @if (responseTime.HasValue)
+                {
+                    <small class="text-muted">@responseTime.Value ms</small>
+                }
+            </div>
+            <div class="card-body">
+                @if (response == null && !isLoading)
+                {
+                    <p class="text-muted">Send a request to see the response.</p>
+                }
+                else if (isLoading)
+                {
+                    <p><em>Loading...</em></p>
+                }
+                else
+                {
+                    <div class="mb-2">
+                        <span class="badge @GetStatusBadgeClass(statusCode)">@statusCode</span>
+                        <span class="ms-2">@statusText</span>
+                    </div>
+                    <pre class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow: auto;"><code>@response</code></pre>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Quick Endpoints</div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/admin/dashboard/health")'>
+                        <span>Health Check</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/admin/dashboard/stats")'>
+                        <span>Dashboard Stats</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/v1/partners")'>
+                        <span>Trading Partners</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/v1/partners/connections")'>
+                        <span>Connections</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/v1/documents")'>
+                        <span>Documents</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/admin/documents/pending")'>
+                        <span>Pending Documents</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/billing/plans")'>
+                        <span>Billing Plans</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/admin/audit/stats?hours=24")'>
+                        <span>Audit Stats</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/admin/audit/search")'>
+                        <span>Search Audit Logs</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/v1/webhooks/subscriptions")'>
+                        <span>Webhooks</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/v1/webhooks/event-types")'>
+                        <span>Webhook Event Types</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("GET", "/api/admin/metering/metric-types")'>
+                        <span>Metric Types</span>
+                        <span class="badge bg-success">GET</span>
+                    </button>
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between" @onclick='() => SetEndpoint("POST", "/api/admin/metering/flush")'>
+                        <span>Flush Metrics</span>
+                        <span class="badge bg-warning text-dark">POST</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string baseUrl = "";
+    private string method = "GET";
+    private string endpoint = "/api/admin/dashboard/health";
+    private string requestBody = "";
+    private string? response;
+    private int statusCode;
+    private string statusText = "";
+    private int? responseTime;
+    private bool isLoading;
+
+    protected override void OnInitialized()
+    {
+        baseUrl = Configuration["ApiBaseUrl"] ?? "http://localhost:5000";
+    }
+
+    private void SetEndpoint(string m, string e)
+    {
+        method = m;
+        endpoint = e;
+        requestBody = "";
+    }
+
+    private async Task SendRequest()
+    {
+        isLoading = true;
+        response = null;
+        responseTime = null;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient();
+            client.BaseAddress = new Uri(baseUrl);
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            HttpResponseMessage httpResponse;
+
+            switch (method)
+            {
+                case "GET":
+                    httpResponse = await client.GetAsync(endpoint);
+                    break;
+                case "POST":
+                    httpResponse = await client.PostAsync(endpoint,
+                        string.IsNullOrEmpty(requestBody) ? null :
+                        new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json"));
+                    break;
+                case "PUT":
+                    httpResponse = await client.PutAsync(endpoint,
+                        string.IsNullOrEmpty(requestBody) ? null :
+                        new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json"));
+                    break;
+                case "DELETE":
+                    httpResponse = await client.DeleteAsync(endpoint);
+                    break;
+                case "PATCH":
+                    httpResponse = await client.PatchAsync(endpoint,
+                        string.IsNullOrEmpty(requestBody) ? null :
+                        new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json"));
+                    break;
+                default:
+                    httpResponse = await client.GetAsync(endpoint);
+                    break;
+            }
+
+            stopwatch.Stop();
+            responseTime = (int)stopwatch.ElapsedMilliseconds;
+
+            statusCode = (int)httpResponse.StatusCode;
+            statusText = httpResponse.ReasonPhrase ?? "";
+
+            var content = await httpResponse.Content.ReadAsStringAsync();
+
+            // Try to format JSON
+            try
+            {
+                var json = System.Text.Json.JsonDocument.Parse(content);
+                response = System.Text.Json.JsonSerializer.Serialize(json, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+            }
+            catch
+            {
+                response = content;
+            }
+        }
+        catch (Exception ex)
+        {
+            statusCode = 0;
+            statusText = "Error";
+            response = ex.Message;
+        }
+
+        isLoading = false;
+    }
+
+    private string GetStatusBadgeClass(int code) => code switch
+    {
+        >= 200 and < 300 => "bg-success",
+        >= 300 and < 400 => "bg-info",
+        >= 400 and < 500 => "bg-warning text-dark",
+        >= 500 => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

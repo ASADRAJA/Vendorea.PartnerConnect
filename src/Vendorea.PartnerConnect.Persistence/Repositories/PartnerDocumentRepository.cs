@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
+using Vendorea.PartnerConnect.Domain.StateMachine;
 
 namespace Vendorea.PartnerConnect.Persistence.Repositories;
 
@@ -32,7 +33,7 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
     {
         return await _context.PartnerDocuments
             .Include(d => d.DealerPartnerConnection)
-            .Where(d => d.Status == DocumentStatus.Received || d.Status == DocumentStatus.Queued)
+            .Where(d => d.State == DocumentState.Received || d.State == DocumentState.Queued)
             .OrderBy(d => d.ReceivedAt)
             .ToListAsync(cancellationToken);
     }

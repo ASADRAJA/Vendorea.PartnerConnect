@@ -265,9 +265,9 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
 
         await _documentStorage.StoreAsync(memoryStream, storagePath, metadata, cancellationToken);
 
-        // Parse the file
+        // Parse the file to canonical format
         memoryStream.Position = 0;
-        var parseResult = await _priceFeedParser.ParseAsync(
+        var parseResult = await _priceFeedParser.ParseToCanonicalAsync(
             memoryStream,
             connection.DealerId,
             storagePath,

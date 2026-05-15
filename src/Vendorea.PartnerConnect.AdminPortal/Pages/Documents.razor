@@ -1,0 +1,228 @@
+@page "/documents"
+@inject ApiClient Api
+
+<PageTitle>Documents - PartnerConnect Admin</PageTitle>
+
+<h1>Documents</h1>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <select class="form-select" @bind="statusFilter">
+            <option value="">All Statuses</option>
+            <option value="Received">Received</option>
+            <option value="Validated">Validated</option>
+            <option value="Processing">Processing</option>
+            <option value="Completed">Completed</option>
+            <option value="Failed">Failed</option>
+            <option value="Quarantined">Quarantined</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-primary" @onclick="RefreshDocuments">
+            <span class="oi oi-reload"></span> Search
+        </button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <p><em>Loading documents...</em></p>
+}
+else if (documents == null || !documents.Results.Any())
+{
+    <div class="alert alert-info">
+        No documents found matching the criteria.
+    </div>
+}
+else
+{
+    <div class="mb-2">
+        <small class="text-muted">Showing @documents.Results.Count of @documents.Total documents</small>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Direction</th>
+                    <th>Status</th>
+                    <th>File Name</th>
+                    <th>Size</th>
+                    <th>Received</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var doc in documents.Results)
+                {
+                    <tr>
+                        <td>@doc.Id</td>
+                        <td><code>@doc.DocumentType</code></td>
+                        <td>
+                            <span class="badge @(doc.Direction == "Inbound" ? "bg-info" : "bg-primary")">
+                                @doc.Direction
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge @GetStatusBadgeClass(doc.Status)">@doc.Status</span>
+                        </td>
+                        <td>@(doc.FileName ?? "-")</td>
+                        <td>@FormatFileSize(doc.FileSizeBytes)</td>
+                        <td>@doc.ReceivedAt.ToLocalTime().ToString("g")</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-info" @onclick="() => ViewDocument(doc)">
+                                View
+                            </button>
+                            @if (doc.Status == "Failed")
+                            {
+                                <button class="btn btn-sm btn-outline-warning" @onclick="() => RetryDocument(doc.Id)">
+                                    Retry
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav>
+        <ul class="pagination">
+            <li class="page-item @(currentPage == 0 ? "disabled" : "")">
+                <button class="page-link" @onclick="PreviousPage">Previous</button>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Page @(currentPage + 1)</span>
+            </li>
+            <li class="page-item @(documents.Results.Count < pageSize ? "disabled" : "")">
+                <button class="page-link" @onclick="NextPage">Next</button>
+            </li>
+        </ul>
+    </nav>
+}
+
+@if (selectedDocument != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Document Details</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="row">
+                        <dt class="col-sm-4">ID</dt>
+                        <dd class="col-sm-8">@selectedDocument.Id</dd>
+                        <dt class="col-sm-4">Connection ID</dt>
+                        <dd class="col-sm-8">@selectedDocument.DealerPartnerConnectionId</dd>
+                        <dt class="col-sm-4">Document Type</dt>
+                        <dd class="col-sm-8"><code>@selectedDocument.DocumentType</code></dd>
+                        <dt class="col-sm-4">Direction</dt>
+                        <dd class="col-sm-8">@selectedDocument.Direction</dd>
+                        <dt class="col-sm-4">Status</dt>
+                        <dd class="col-sm-8">
+                            <span class="badge @GetStatusBadgeClass(selectedDocument.Status)">@selectedDocument.Status</span>
+                        </dd>
+                        <dt class="col-sm-4">File Name</dt>
+                        <dd class="col-sm-8">@(selectedDocument.FileName ?? "N/A")</dd>
+                        <dt class="col-sm-4">File Size</dt>
+                        <dd class="col-sm-8">@FormatFileSize(selectedDocument.FileSizeBytes)</dd>
+                        <dt class="col-sm-4">Content Hash</dt>
+                        <dd class="col-sm-8"><code>@(selectedDocument.ContentHash ?? "N/A")</code></dd>
+                        <dt class="col-sm-4">Storage Path</dt>
+                        <dd class="col-sm-8"><small>@(selectedDocument.StoragePath ?? "N/A")</small></dd>
+                        <dt class="col-sm-4">Received At</dt>
+                        <dd class="col-sm-8">@selectedDocument.ReceivedAt.ToLocalTime().ToString("F")</dd>
+                    </dl>
+                </div>
+                <div class="modal-footer">
+                    @if (selectedDocument.Status == "Failed")
+                    {
+                        <button type="button" class="btn btn-warning" @onclick="() => RetryDocument(selectedDocument.Id)">
+                            Retry Processing
+                        </button>
+                    }
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private DocumentPagedResult? documents;
+    private DocumentDto? selectedDocument;
+    private string statusFilter = "";
+    private bool isLoading = true;
+    private int currentPage = 0;
+    private int pageSize = 20;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshDocuments();
+    }
+
+    private async Task RefreshDocuments()
+    {
+        isLoading = true;
+        documents = await Api.GetDocumentsAsync(currentPage * pageSize, pageSize, string.IsNullOrEmpty(statusFilter) ? null : statusFilter);
+        isLoading = false;
+    }
+
+    private async Task PreviousPage()
+    {
+        if (currentPage > 0)
+        {
+            currentPage--;
+            await RefreshDocuments();
+        }
+    }
+
+    private async Task NextPage()
+    {
+        currentPage++;
+        await RefreshDocuments();
+    }
+
+    private void ViewDocument(DocumentDto doc)
+    {
+        selectedDocument = doc;
+    }
+
+    private async Task RetryDocument(int id)
+    {
+        var success = await Api.RetryDocumentAsync(id);
+        if (success)
+        {
+            await RefreshDocuments();
+            CloseModal();
+        }
+    }
+
+    private void CloseModal()
+    {
+        selectedDocument = null;
+    }
+
+    private string GetStatusBadgeClass(string status) => status?.ToLower() switch
+    {
+        "received" => "bg-info",
+        "validated" => "bg-primary",
+        "processing" => "bg-warning",
+        "completed" => "bg-success",
+        "failed" => "bg-danger",
+        "quarantined" => "bg-dark",
+        _ => "bg-secondary"
+    };
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes == 0) return "-";
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+}
