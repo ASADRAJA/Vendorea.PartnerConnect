@@ -36,6 +36,9 @@ public class MerchantSubscriptionRequestConfiguration : IEntityTypeConfiguration
         builder.Property(r => r.Notes)
             .HasMaxLength(1000);
 
+        builder.Property(r => r.SuspendedAt);
+        builder.Property(r => r.SuspendedByUserId);
+
         // Index for efficient queries
         builder.HasIndex(r => r.TenantId);
         builder.HasIndex(r => r.TradingPartnerId);

@@ -64,6 +64,16 @@ public class MerchantSubscriptionRequest
     public string? Notes { get; set; }
 
     /// <summary>
+    /// When the subscription was suspended (if suspended).
+    /// </summary>
+    public DateTime? SuspendedAt { get; set; }
+
+    /// <summary>
+    /// User ID who suspended the subscription.
+    /// </summary>
+    public int? SuspendedByUserId { get; set; }
+
+    /// <summary>
     /// Navigation property to the trading partner.
     /// </summary>
     public TradingPartner? TradingPartner { get; set; }
@@ -76,5 +86,6 @@ public enum SubscriptionRequestStatus
 {
     Pending,
     Approved,
-    Denied
+    Denied,
+    Suspended
 }
