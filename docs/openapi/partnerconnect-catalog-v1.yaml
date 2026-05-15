@@ -261,6 +261,284 @@ components:
           description: Additional error details (optional)
           additionalProperties: true
 
+    CreateSubscriptionRequest:
+      type: object
+      description: Request to create a subscription from M360
+      required:
+        - tenantId
+        - tradingPartnerId
+        - accountNumber
+      properties:
+        tenantId:
+          type: integer
+          description: The M360 tenant ID (merchant) requesting the subscription
+          example: 123
+        tradingPartnerId:
+          type: integer
+          description: The trading partner ID in PartnerConnect
+          example: 1
+        accountNumber:
+          type: string
+          description: The merchant's account number with the trading partner
+          example: "ACCT-001"
+          maxLength: 100
+
+    SubscriptionResponse:
+      type: object
+      description: Subscription request details
+      properties:
+        id:
+          type: integer
+          example: 1
+        tenantId:
+          type: integer
+          example: 123
+        tradingPartnerId:
+          type: integer
+          example: 1
+        tradingPartnerCode:
+          type: string
+          nullable: true
+          example: "SPR"
+        tradingPartnerName:
+          type: string
+          nullable: true
+          example: "S.P. Richards"
+        accountNumber:
+          type: string
+          example: "ACCT-001"
+        status:
+          type: string
+          enum: [Pending, Approved, Denied, Suspended]
+          example: "Pending"
+        requestedAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deniedAt:
+          type: string
+          format: date-time
+          nullable: true
+        denialReason:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+          description: Informational message about the request
+          example: "Subscription request created successfully"
+
+    SubscriptionListResponse:
+      type: object
+      description: List of subscription requests with counts
+      properties:
+        total:
+          type: integer
+          example: 10
+        pendingCount:
+          type: integer
+          example: 3
+        approvedCount:
+          type: integer
+          example: 5
+        deniedCount:
+          type: integer
+          example: 2
+        suspendedCount:
+          type: integer
+          example: 0
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionResponse'
+
+  /api/v1/trading-partner-subscriptions/request:
+    post:
+      operationId: createSubscriptionRequest
+      summary: Create a subscription request
+      description: |
+        Creates a new subscription request from Merchant360.
+
+        Called by M360 when a merchant wants to subscribe to a trading partner's data.
+        PartnerConnect stores the request with status "Pending" for admin approval.
+
+        **Idempotent**: If a subscription already exists for the tenant/partner combination:
+        - If Pending: Returns existing request
+        - If Approved: Returns existing approved subscription
+        - If Denied: Re-submits the request as Pending
+      tags:
+        - Subscriptions
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscriptionRequest'
+            example:
+              tenantId: 123
+              tradingPartnerId: 1
+              accountNumber: "ACCT-001"
+      responses:
+        '201':
+          description: Subscription request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+              example:
+                id: 1
+                tenantId: 123
+                tradingPartnerId: 1
+                tradingPartnerCode: "SPR"
+                tradingPartnerName: "S.P. Richards"
+                accountNumber: "ACCT-001"
+                status: "Pending"
+                requestedAt: "2026-05-15T10:00:00Z"
+                message: "Subscription request created successfully"
+        '200':
+          description: Subscription already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+        '400':
+          description: Invalid request (e.g., trading partner not found)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/trading-partner-subscriptions:
+    get:
+      operationId: getSubscriptions
+      summary: List subscription requests
+      description: |
+        Returns all subscription requests with optional status filter.
+      tags:
+        - Subscriptions
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: []
+      parameters:
+        - name: status
+          in: query
+          description: Filter by status (Pending, Approved, Denied, Suspended)
+          schema:
+            type: string
+            enum: [Pending, Approved, Denied, Suspended]
+      responses:
+        '200':
+          description: List of subscription requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionListResponse'
+
+  /api/v1/trading-partner-subscriptions/{id}:
+    get:
+      operationId: getSubscriptionById
+      summary: Get a subscription request by ID
+      tags:
+        - Subscriptions
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Subscription request details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+        '404':
+          description: Subscription not found
+
+  /api/v1/trading-partner-subscriptions/{id}/approve:
+    post:
+      operationId: approveSubscription
+      summary: Approve a subscription request
+      tags:
+        - Subscriptions
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Subscription approved
+        '400':
+          description: Invalid status for approval
+        '404':
+          description: Subscription not found
+
+  /api/v1/trading-partner-subscriptions/{id}/deny:
+    post:
+      operationId: denySubscription
+      summary: Deny a subscription request
+      tags:
+        - Subscriptions
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: Reason for denial
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Subscription denied
+        '400':
+          description: Invalid status for denial
+        '404':
+          description: Subscription not found
+
 tags:
   - name: Partner Catalog
     description: |
@@ -270,3 +548,13 @@ tags:
       - Populate the partner selection UI for merchant subscriptions
       - Periodically sync the partner catalog (recommended: every 6 hours)
       - Cache partner data for UI performance (recommended: 30 minute TTL)
+  - name: Subscriptions
+    description: |
+      Endpoints for managing trading partner subscription requests.
+
+      **PartnerConnect is the source of truth for subscriptions.**
+
+      Workflow:
+      1. M360 calls POST /request to create a subscription request
+      2. PC Admin approves or denies via Admin Portal
+      3. On approval, PC starts pushing data to M360

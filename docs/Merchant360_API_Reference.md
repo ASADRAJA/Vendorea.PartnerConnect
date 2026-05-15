@@ -115,53 +115,82 @@
 
 ---
 
-## Subscription Management (PC ↔ M360)
+## Subscription Management (M360 → PC)
 
-PC manages subscriptions by calling M360 APIs:
+**PartnerConnect is the source of truth for subscription requests.** M360 calls PC to create subscription requests, and PC Admin Portal manages approval/denial.
 
-| Method | M360 Endpoint | Purpose |
-|--------|---------------|---------|
-| `GET` | `/api/v1/partner-connect/subscriptions` | List subscriptions (filter by status, tenantId, tradingPartnerId) |
-| `GET` | `/api/v1/partner-connect/subscriptions/{id}` | Get subscription details |
-| `POST` | `/api/v1/partner-connect/subscriptions` | Create new subscription request |
-| `POST` | `/api/v1/partner-connect/subscriptions/{id}/approve` | Approve subscription |
-| `POST` | `/api/v1/partner-connect/subscriptions/{id}/deny` | Deny subscription |
-| `POST` | `/api/v1/partner-connect/subscriptions/{id}/suspend` | Suspend subscription |
-| `POST` | `/api/v1/partner-connect/subscriptions/{id}/reactivate` | Reactivate subscription |
+### M360 Creates Subscription Request
 
-### Subscription DTOs
+**M360 calls PC**: `POST /api/v1/trading-partner-subscriptions/request`
 
-**Create Subscription Request**:
+**Payload**:
 ```json
 {
   "tenantId": 123,
   "tradingPartnerId": 1,
-  "accountNumber": "ACCT-001",
-  "notes": "Optional notes"
+  "accountNumber": "ACCT-001"
 }
 ```
 
-**Subscription Response**:
+**Response** (201 Created):
 ```json
 {
   "id": 1,
   "tenantId": 123,
-  "tenantName": "ABC Dealer",
-  "tenantCode": "ABC",
   "tradingPartnerId": 1,
   "tradingPartnerCode": "SPR",
-  "tradingPartnerName": "SPR (Sports Parts Retailer)",
+  "tradingPartnerName": "S.P. Richards",
   "accountNumber": "ACCT-001",
-  "status": "Approved",
+  "status": "Pending",
   "requestedAt": "2026-05-15T10:00:00Z",
-  "approvedAt": "2026-05-15T12:00:00Z",
-  "approvedByUserId": 5,
-  "approvedByUserName": "Admin User",
+  "message": "Subscription request created successfully"
+}
+```
+
+### PC Subscription Endpoints (called by M360)
+
+| Method | PC Endpoint | Purpose |
+|--------|-------------|---------|
+| `POST` | `/api/v1/trading-partner-subscriptions/request` | Create subscription request |
+| `GET` | `/api/v1/trading-partner-subscriptions` | List all subscription requests |
+| `GET` | `/api/v1/trading-partner-subscriptions/{id}` | Get subscription request details |
+| `POST` | `/api/v1/trading-partner-subscriptions/{id}/approve` | Approve subscription |
+| `POST` | `/api/v1/trading-partner-subscriptions/{id}/deny` | Deny subscription |
+
+### Subscription Status Flow
+
+```
+M360 Request → [Pending] → PC Admin Approves → [Approved] → PC pushes data to M360
+                         → PC Admin Denies  → [Denied]
+
+[Approved] → PC Admin Suspends → [Suspended] → PC Admin Reactivates → [Approved]
+```
+
+### Subscription Response DTO
+
+```json
+{
+  "id": 1,
+  "tenantId": 123,
+  "tradingPartnerId": 1,
+  "tradingPartnerCode": "SPR",
+  "tradingPartnerName": "S.P. Richards",
+  "accountNumber": "ACCT-001",
+  "status": "Pending",
+  "requestedAt": "2026-05-15T10:00:00Z",
+  "approvedAt": null,
+  "deniedAt": null,
   "denialReason": null,
-  "notes": null,
-  "suspendedAt": null,
-  "suspendedByUserId": null,
-  "suspendedByUserName": null
+  "message": "Subscription request created successfully"
+}
+```
+
+### Deny Request DTO
+
+```json
+{
+  "reason": "Invalid account number",
+  "notes": "Optional notes"
 }
 ```
 
@@ -211,16 +240,21 @@ PC has `OAuth2TokenHandler` that automatically handles token refresh.
          │<─────────────────────────────────────│
          │  [partners with hasPriceData, etc.]  │
          │                                      │
+         │  Create Subscription Request         │
+         │─────────────────────────────────────>│
+         │  POST /api/v1/trading-partner-       │
+         │       subscriptions/request          │
+         │<─────────────────────────────────────│
+         │  { id: 1, status: "Pending" }        │
+         │                                      │
+         │        (PC Admin approves)           │
+         │                                      │
          │  TIER 2: Receive Data Pushes         │
          │<─────────────────────────────────────│
          │  POST .../prices/batch               │
          │  (includes tradingPartner block)     │
          │─────────────────────────────────────>│
          │  { success: true, ... }              │
-         │                                      │
-         │  Subscription Management             │
-         │<─────────────────────────────────────│
-         │  GET/POST .../subscriptions          │
          │                                      │
 ```
 
@@ -236,6 +270,14 @@ PC has `OAuth2TokenHandler` that automatically handles token refresh.
 
 4. **Subscription Workflow**:
    - Merchant requests subscription in M360 UI
-   - M360 calls PC to create subscription
-   - PC admin approves/denies
+   - M360 calls PC: `POST /api/v1/trading-partner-subscriptions/request`
+   - PC stores request with status "Pending" (PC is source of truth)
+   - PC admin approves/denies via Admin Portal
    - On approval, PC starts pushing data for that merchant/partner combo
+   - M360 can poll PC for subscription status or wait for webhook notification (TODO)
+
+5. **Subscription Request Endpoint**:
+   - URL: `POST /api/v1/trading-partner-subscriptions/request`
+   - Required fields: `tenantId`, `tradingPartnerId`, `accountNumber`
+   - Returns 201 with subscription details on success
+   - Returns 200 if subscription already exists (idempotent)
