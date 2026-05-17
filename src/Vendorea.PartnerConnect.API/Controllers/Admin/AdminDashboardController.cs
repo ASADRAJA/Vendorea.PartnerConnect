@@ -59,26 +59,23 @@ public class AdminDashboardController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetSystemStats(CancellationToken cancellationToken)
     {
-        var partners = await _partnerRepository.GetAllAsync(cancellationToken);
+        // Get dealers from M360
+        var merchants = await _merchant360Client.GetMerchantsAsync(activeOnly: false, cancellationToken);
+
+        // Get connections
         var connections = await _connectionRepository.GetActiveConnectionsAsync(cancellationToken);
-        var pendingDocs = await _documentRepository.GetPendingDocumentsAsync(cancellationToken);
+
+        // Get document stats
+        var documentStats = await _documentRepository.GetDocumentStatsAsync(cancellationToken);
 
         return Ok(new
         {
-            Timestamp = DateTime.UtcNow,
-            Partners = new
-            {
-                Total = partners.Count,
-                Active = partners.Count(p => p.Status == TradingPartnerStatus.Active)
-            },
-            Connections = new
-            {
-                Active = connections.Count
-            },
-            Documents = new
-            {
-                PendingCount = pendingDocs.Count
-            }
+            TotalDealers = merchants.Count,
+            ActiveConnections = connections.Count,
+            TotalDocuments = documentStats.Total,
+            PendingDocuments = documentStats.Pending,
+            FailedDocuments = documentStats.Failed,
+            QuarantinedDocuments = documentStats.Quarantined
         });
     }
 

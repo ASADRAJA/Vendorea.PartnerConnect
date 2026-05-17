@@ -50,4 +50,41 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
         _context.PartnerDocuments.Update(document);
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<DocumentStats> GetDocumentStatsAsync(CancellationToken cancellationToken = default)
+    {
+        var pendingStates = new[]
+        {
+            DocumentState.Received,
+            DocumentState.Validating,
+            DocumentState.Validated,
+            DocumentState.Mapping,
+            DocumentState.Mapped,
+            DocumentState.Queued,
+            DocumentState.Sending,
+            DocumentState.AwaitingAcknowledgment
+        };
+
+        var failedStates = new[]
+        {
+            DocumentState.ValidationFailed,
+            DocumentState.MapError,
+            DocumentState.SendError,
+            DocumentState.Rejected,
+            DocumentState.Cancelled
+        };
+
+        var total = await _context.PartnerDocuments.CountAsync(cancellationToken);
+        var pending = await _context.PartnerDocuments.CountAsync(d => pendingStates.Contains(d.State), cancellationToken);
+        var failed = await _context.PartnerDocuments.CountAsync(d => failedStates.Contains(d.State), cancellationToken);
+        var quarantined = await _context.PartnerDocuments.CountAsync(d => d.State == DocumentState.Quarantined, cancellationToken);
+
+        return new DocumentStats
+        {
+            Total = total,
+            Pending = pending,
+            Failed = failed,
+            Quarantined = quarantined
+        };
+    }
 }
