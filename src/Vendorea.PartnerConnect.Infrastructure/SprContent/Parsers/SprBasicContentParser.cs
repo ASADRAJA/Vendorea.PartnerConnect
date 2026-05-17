@@ -54,6 +54,7 @@ public class SprBasicContentParser : ISprBasicContentParser
 
     /// <summary>
     /// Parses basic content records from a stream.
+    /// SPR content files are comma-delimited CSV with no header row.
     /// </summary>
     public async IAsyncEnumerable<SprProductContent> ParseAsync(
         StreamReader reader,
@@ -64,7 +65,8 @@ public class SprBasicContentParser : ISprBasicContentParser
         int successCount = 0;
         int errorCount = 0;
 
-        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: true, cancellationToken: cancellationToken))
+        // SPR CSV files: comma-delimited, NO header row
+        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: false, delimiter: ',', cancellationToken: cancellationToken))
         {
             SprProductContent? product = null;
 
@@ -76,7 +78,11 @@ public class SprBasicContentParser : ISprBasicContentParser
             catch (Exception ex)
             {
                 errorCount++;
-                _logger.LogWarning(ex, "Failed to parse basic content at line {LineNumber}", record.LineNumber);
+                if (errorCount <= 10)
+                {
+                    _logger.LogWarning(ex, "Failed to parse basic content at line {LineNumber}: {Fields}",
+                        record.LineNumber, string.Join("|", record.Fields.Take(5)));
+                }
             }
 
             if (product != null)
@@ -90,48 +96,69 @@ public class SprBasicContentParser : ISprBasicContentParser
             successCount, errorCount);
     }
 
+    /// <summary>
+    /// Maps SPR EN_US_B_product.csv fields to entity.
+    /// SPR format columns:
+    /// 0: ProductId (e.g., "1011091205")
+    /// 1: CategoryId
+    /// 2: Flag
+    /// 3: SKU (e.g., "5218301")
+    /// 4: BrandId
+    /// 5: Flag
+    /// 6: Decimal value
+    /// 7: CreatedDate
+    /// 8: ModifiedDate
+    /// 9: ContentDate
+    /// </summary>
     private SprProductContent MapToEntity(ParsedRecord record, int contentUploadId, string localeId)
     {
-        var productId = record[Columns.ProductId];
-        if (string.IsNullOrWhiteSpace(productId))
-        {
-            // Fall back to positional if no header
-            productId = record[0];
-        }
+        // SPR CSV has no headers, use positional indices
+        var productId = record[0];
 
         if (string.IsNullOrWhiteSpace(productId))
         {
             throw new InvalidOperationException($"Missing ProductId at line {record.LineNumber}");
         }
 
+        // Truncate productId if too long (column is 50 chars)
+        if (productId.Length > 50)
+        {
+            _logger.LogWarning("ProductId truncated from {Length} chars at line {Line}", productId.Length, record.LineNumber);
+            productId = productId.Substring(0, 50);
+        }
+
+        var sku = record[3];
+        if (!string.IsNullOrEmpty(sku) && sku.Length > 100)
+            sku = sku.Substring(0, 100);
+
         return new SprProductContent
         {
             ContentUploadId = contentUploadId,
             ProductId = productId,
             LocaleId = localeId,
-            Sku = GetValue(record, Columns.Sku, 1),
-            Upc = GetValue(record, Columns.Upc, 2),
-            BrandName = GetValue(record, Columns.BrandName, 3) ?? "Unknown",
-            ProductType = GetValue(record, Columns.ProductType, 4) ?? "Unknown",
-            ProductLine = GetValue(record, Columns.ProductLine, 5),
-            ProductSeries = GetValue(record, Columns.ProductSeries, 6),
-            Description1 = GetValue(record, Columns.Description1, 7) ?? productId,
-            Description2 = GetValue(record, Columns.Description2, 8),
-            Description3 = GetValue(record, Columns.Description3, 9),
-            MarketingText = GetValue(record, Columns.MarketingText, 10),
-            ManufacturerId = GetValue(record, Columns.ManufacturerId, 11) ?? "UNK",
-            ManufacturerName = GetValue(record, Columns.ManufacturerName, 12) ?? "Unknown",
-            CountryOfOrigin = GetValue(record, Columns.CountryOfOrigin, 13),
-            UnspscCode = GetValue(record, Columns.UnspscCode, 14),
-            RecycledPercent = SprContentFileParser.ParseDecimal(GetValue(record, Columns.RecycledPercent, 15)),
-            SubClassName = GetValue(record, Columns.SubClass, 17),
-            ClassName = GetValue(record, Columns.Class, 18),
-            DepartmentName = GetValue(record, Columns.Department, 19),
-            MasterDepartmentName = GetValue(record, Columns.Master, 20),
-            ImageUrl225 = GetValue(record, Columns.ImageUrl225, 21),
-            ImageUrl75 = GetValue(record, Columns.ImageUrl75, 22),
-            Keywords = GetValue(record, Columns.Keywords, 23),
-            ContentVersionDate = SprContentFileParser.ParseDate(GetValue(record, Columns.ContentVersionDate, 24)) ?? DateTime.UtcNow,
+            Sku = sku,
+            Upc = null, // Will be populated from attributes if available
+            BrandName = "SPR", // Default, will be enriched from other files
+            ProductType = "Product",
+            ProductLine = null,
+            ProductSeries = null,
+            Description1 = $"Product {productId}", // Will be enriched from descriptions file
+            Description2 = null,
+            Description3 = null,
+            MarketingText = null,
+            ManufacturerId = record[4], // BrandId
+            ManufacturerName = "SPR",
+            CountryOfOrigin = null,
+            UnspscCode = null,
+            RecycledPercent = null,
+            SubClassName = null,
+            ClassName = null,
+            DepartmentName = null,
+            MasterDepartmentName = null,
+            ImageUrl225 = null,
+            ImageUrl75 = null,
+            Keywords = null,
+            ContentVersionDate = SprContentFileParser.ParseDate(record[9]) ?? DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow
         };
     }

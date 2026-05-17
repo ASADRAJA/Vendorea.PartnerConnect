@@ -101,6 +101,11 @@ public class SprContentUpload
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ProcessingStartedAt { get; set; }
     public DateTime? ProcessingCompletedAt { get; set; }
+
+    /// <summary>
+    /// When content was pushed to Merchant360.
+    /// </summary>
+    public DateTime? PushedToM360At { get; set; }
 }
 
 /// <summary>

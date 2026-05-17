@@ -122,4 +122,34 @@ public class PriceFeedUploadRepository : IPriceFeedUploadRepository
                           u.Status == PriceFeedUploadStatus.Completed,
                 cancellationToken);
     }
+
+    public async Task<IReadOnlyList<PriceFeedUpload>> GetAllAsync(
+        int? dealerId = null,
+        int? tradingPartnerId = null,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.PriceFeedUploads
+            .Include(u => u.TradingPartner)
+            .AsQueryable();
+
+        if (dealerId.HasValue)
+        {
+            query = query.Where(u => u.DealerId == dealerId.Value);
+        }
+
+        if (tradingPartnerId.HasValue)
+        {
+            query = query.Where(u => u.TradingPartnerId == tradingPartnerId.Value);
+        }
+
+        query = query.OrderByDescending(u => u.UploadedAt);
+
+        if (limit.HasValue)
+        {
+            query = query.Take(limit.Value);
+        }
+
+        return await query.ToListAsync(cancellationToken);
+    }
 }

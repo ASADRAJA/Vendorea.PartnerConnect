@@ -244,4 +244,16 @@ public class SprContentUploadRepository : ISprContentUploadRepository
                           (u.Status == ContentUploadStatus.Completed || u.Status == ContentUploadStatus.PartiallyCompleted),
                 cancellationToken);
     }
+
+    public async Task MarkPushedToM360Async(int uploadId, CancellationToken cancellationToken = default)
+    {
+        var upload = await _context.SprContentUploads.FindAsync(
+            new object[] { uploadId }, cancellationToken);
+
+        if (upload != null)
+        {
+            upload.PushedToM360At = DateTime.UtcNow;
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+    }
 }

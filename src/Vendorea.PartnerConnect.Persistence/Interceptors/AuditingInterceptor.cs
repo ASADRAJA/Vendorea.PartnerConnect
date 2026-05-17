@@ -26,7 +26,10 @@ public class AuditingInterceptor : SaveChangesInterceptor
         typeof(DealerPartnerConnection),
         typeof(PartnerDocument),
         typeof(WebhookSubscription),
-        typeof(QuarantinedDocument)
+        typeof(QuarantinedDocument),
+        typeof(MerchantSubscriptionRequest),
+        typeof(PriceFeedUpload),
+        typeof(SprContentUpload)
     };
 
     // Properties to exclude from audit (sensitive data)

@@ -266,6 +266,123 @@ public class TradingPartnerSubscriptionsController : ControllerBase
 
         return Ok(new { success = true, message = "Subscription request denied" });
     }
+
+    /// <summary>
+    /// Cancels a pending subscription request.
+    /// Called by M360 when a merchant wants to cancel their pending request.
+    /// </summary>
+    [HttpPost("{id:int}/cancel")]
+    public async Task<IActionResult> CancelSubscriptionRequest(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var subscriptionRequest = await _subscriptionRepository.GetByIdAsync(id, cancellationToken);
+        if (subscriptionRequest == null)
+            return NotFound();
+
+        if (subscriptionRequest.Status != SubscriptionRequestStatus.Pending)
+            return BadRequest(new { error = "InvalidStatus", message = "Can only cancel pending requests" });
+
+        subscriptionRequest.Status = SubscriptionRequestStatus.Cancelled;
+        subscriptionRequest.CancelledAt = DateTime.UtcNow;
+
+        await _subscriptionRepository.UpdateAsync(subscriptionRequest, cancellationToken);
+
+        _logger.LogInformation("Cancelled subscription request: Id={Id}, TenantId={TenantId}", id, subscriptionRequest.TenantId);
+
+        return Ok(new { success = true, message = "Subscription request cancelled" });
+    }
+
+    /// <summary>
+    /// Cancels a pending subscription request by tenant and trading partner.
+    /// Called by M360 when a merchant wants to cancel their pending request.
+    /// </summary>
+    [HttpPost("cancel")]
+    public async Task<IActionResult> CancelSubscriptionRequestByTenantAndPartner(
+        [FromBody] CancelSubscriptionRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var subscriptionRequest = await _subscriptionRepository.GetByTenantAndPartnerAsync(
+            request.TenantId, request.TradingPartnerId, cancellationToken);
+
+        if (subscriptionRequest == null)
+            return NotFound(new { error = "NotFound", message = "Subscription request not found" });
+
+        if (subscriptionRequest.Status != SubscriptionRequestStatus.Pending)
+            return BadRequest(new { error = "InvalidStatus", message = "Can only cancel pending requests" });
+
+        subscriptionRequest.Status = SubscriptionRequestStatus.Cancelled;
+        subscriptionRequest.CancelledAt = DateTime.UtcNow;
+
+        await _subscriptionRepository.UpdateAsync(subscriptionRequest, cancellationToken);
+
+        _logger.LogInformation("Cancelled subscription request: TenantId={TenantId}, TradingPartnerId={TradingPartnerId}",
+            request.TenantId, request.TradingPartnerId);
+
+        return Ok(new { success = true, message = "Subscription request cancelled" });
+    }
+
+    /// <summary>
+    /// Unsubscribes from an active subscription.
+    /// Called by M360 when a merchant wants to stop receiving data from a trading partner.
+    /// </summary>
+    [HttpPost("{id:int}/unsubscribe")]
+    public async Task<IActionResult> UnsubscribeById(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var subscriptionRequest = await _subscriptionRepository.GetByIdAsync(id, cancellationToken);
+        if (subscriptionRequest == null)
+            return NotFound();
+
+        if (subscriptionRequest.Status != SubscriptionRequestStatus.Approved &&
+            subscriptionRequest.Status != SubscriptionRequestStatus.Suspended)
+        {
+            return BadRequest(new { error = "InvalidStatus", message = "Can only unsubscribe from approved or suspended subscriptions" });
+        }
+
+        subscriptionRequest.Status = SubscriptionRequestStatus.Cancelled;
+        subscriptionRequest.CancelledAt = DateTime.UtcNow;
+
+        await _subscriptionRepository.UpdateAsync(subscriptionRequest, cancellationToken);
+
+        _logger.LogInformation("Unsubscribed: Id={Id}, TenantId={TenantId}, TradingPartnerId={TradingPartnerId}",
+            id, subscriptionRequest.TenantId, subscriptionRequest.TradingPartnerId);
+
+        return Ok(new { success = true, message = "Successfully unsubscribed" });
+    }
+
+    /// <summary>
+    /// Unsubscribes from an active subscription by tenant and trading partner.
+    /// Called by M360 when a merchant wants to stop receiving data from a trading partner.
+    /// </summary>
+    [HttpPost("unsubscribe")]
+    public async Task<IActionResult> UnsubscribeByTenantAndPartner(
+        [FromBody] UnsubscribeRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var subscriptionRequest = await _subscriptionRepository.GetByTenantAndPartnerAsync(
+            request.TenantId, request.TradingPartnerId, cancellationToken);
+
+        if (subscriptionRequest == null)
+            return NotFound(new { error = "NotFound", message = "Subscription not found" });
+
+        if (subscriptionRequest.Status != SubscriptionRequestStatus.Approved &&
+            subscriptionRequest.Status != SubscriptionRequestStatus.Suspended)
+        {
+            return BadRequest(new { error = "InvalidStatus", message = "Can only unsubscribe from approved or suspended subscriptions" });
+        }
+
+        subscriptionRequest.Status = SubscriptionRequestStatus.Cancelled;
+        subscriptionRequest.CancelledAt = DateTime.UtcNow;
+
+        await _subscriptionRepository.UpdateAsync(subscriptionRequest, cancellationToken);
+
+        _logger.LogInformation("Unsubscribed: TenantId={TenantId}, TradingPartnerId={TradingPartnerId}",
+            request.TenantId, request.TradingPartnerId);
+
+        return Ok(new { success = true, message = "Successfully unsubscribed" });
+    }
 }
 
 #region DTOs
@@ -307,6 +424,7 @@ public class SubscriptionRequestResponseDto
     public DateTime? ApprovedAt { get; set; }
     public DateTime? DeniedAt { get; set; }
     public string? DenialReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
     public string? Message { get; set; }
 }
 
@@ -325,6 +443,24 @@ public class DenyRequestDto
 {
     public string Reason { get; set; } = string.Empty;
     public string? Notes { get; set; }
+}
+
+/// <summary>
+/// Request to cancel a subscription by tenant and trading partner.
+/// </summary>
+public class CancelSubscriptionRequestDto
+{
+    public int TenantId { get; set; }
+    public int TradingPartnerId { get; set; }
+}
+
+/// <summary>
+/// Request to unsubscribe by tenant and trading partner.
+/// </summary>
+public class UnsubscribeRequestDto
+{
+    public int TenantId { get; set; }
+    public int TradingPartnerId { get; set; }
 }
 
 #endregion

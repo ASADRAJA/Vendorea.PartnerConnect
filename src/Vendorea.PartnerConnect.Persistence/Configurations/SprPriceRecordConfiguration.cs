@@ -149,7 +149,7 @@ public class SprPriceRecordConfiguration : IEntityTypeConfiguration<SprPriceReco
             .HasMaxLength(20);
 
         builder.Property(e => e.BranchStockingStatus)
-            .HasMaxLength(50);
+            .HasMaxLength(100);
 
         builder.Property(e => e.OldModel)
             .HasMaxLength(100);

@@ -310,6 +310,39 @@ public class PriceFeedService : IPriceFeedService
         return uploads.Select(u => new PriceFeedUploadDto(
             u.Id,
             u.DealerId,
+            null, // DealerName - populated by caller if needed
+            u.TradingPartner?.Code ?? "Unknown",
+            u.TradingPartner?.Name ?? "Unknown",
+            u.FileName,
+            u.Status,
+            u.RecordCount,
+            u.ErrorCount,
+            u.UploadedAt,
+            u.ProcessedAt,
+            u.PushedToMerchant360At
+        )).ToList();
+    }
+
+    public async Task<IReadOnlyList<PriceFeedUploadDto>> GetAllUploadHistoryAsync(
+        int? dealerId = null,
+        string? tradingPartnerCode = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        int? tradingPartnerId = null;
+
+        if (!string.IsNullOrEmpty(tradingPartnerCode))
+        {
+            var partner = await _tradingPartnerRepository.GetByCodeAsync(tradingPartnerCode, cancellationToken);
+            tradingPartnerId = partner?.Id;
+        }
+
+        var uploads = await _uploadRepository.GetAllAsync(dealerId, tradingPartnerId, limit, cancellationToken);
+
+        return uploads.Select(u => new PriceFeedUploadDto(
+            u.Id,
+            u.DealerId,
+            null, // DealerName - populated by caller if needed
             u.TradingPartner?.Code ?? "Unknown",
             u.TradingPartner?.Name ?? "Unknown",
             u.FileName,
@@ -354,6 +387,8 @@ public class PriceFeedService : IPriceFeedService
         int uploadId,
         CancellationToken cancellationToken = default)
     {
+        const int BatchSize = 10000; // M360 limit
+
         var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
         if (upload == null)
         {
@@ -370,56 +405,78 @@ public class PriceFeedService : IPriceFeedService
             // Get records for this upload
             var records = await _sprPriceRecordRepository.GetByUploadIdAsync(uploadId, cancellationToken);
 
-            // Build price batch request per Phase 1 contract
-            var batchRequest = new PriceBatchRequest
+            // Convert to batch items
+            var allItems = records.Select(r => new PriceBatchItem
             {
-                TradingPartnerId = upload.TradingPartnerId,
-                TradingPartnerCode = upload.TradingPartner?.Code ?? "UNKNOWN",
-                SourceUploadId = upload.Id,
-                UploadedAt = upload.UploadedAt,
-                Items = records.Select(r => new PriceBatchItem
+                StockNumber = r.StockNumber,
+                ProductDescription = r.ProductDescription,
+                NetCost = r.NetCostNonCcp,
+                RetailListPrice = r.RetailListPrice,
+                Uom = r.SellingUnitOfMeasure,
+                CategoryCode = r.CategoryCode,
+                ManufacturerPartNumber = r.MpcNumber,
+                UpcCode = r.Upc,
+                Weight = r.WeightLbs,
+                Length = r.LengthInches,
+                Width = r.WidthInches,
+                Height = r.HeightInches,
+                IsActive = r.ProductStatus != "D" // 'D' typically means discontinued
+            }).ToList();
+
+            // Push in batches
+            int totalCreated = 0;
+            int totalUpdated = 0;
+            int batchNumber = 0;
+            int totalBatches = (int)Math.Ceiling((double)allItems.Count / BatchSize);
+
+            _logger.LogInformation(
+                "Pushing {TotalRecords} records to Merchant360 in {TotalBatches} batches",
+                allItems.Count, totalBatches);
+
+            foreach (var batch in allItems.Chunk(BatchSize))
+            {
+                batchNumber++;
+                _logger.LogInformation("Pushing batch {BatchNumber}/{TotalBatches} ({BatchSize} records)",
+                    batchNumber, totalBatches, batch.Length);
+
+                var batchRequest = new PriceBatchRequest
                 {
-                    StockNumber = r.StockNumber,
-                    ProductDescription = r.ProductDescription,
-                    NetCost = r.NetCostNonCcp,
-                    RetailListPrice = r.RetailListPrice,
-                    Uom = r.SellingUnitOfMeasure,
-                    CategoryCode = r.CategoryCode,
-                    ManufacturerPartNumber = r.MpcNumber,
-                    UpcCode = r.Upc,
-                    Weight = r.WeightLbs,
-                    Length = r.LengthInches,
-                    Width = r.WidthInches,
-                    Height = r.HeightInches,
-                    IsActive = r.ProductStatus != "D" // 'D' typically means discontinued
-                }).ToList()
-            };
+                    TradingPartnerId = upload.TradingPartnerId,
+                    TradingPartnerCode = upload.TradingPartner?.Code ?? "UNKNOWN",
+                    SourceUploadId = upload.Id,
+                    UploadedAt = upload.UploadedAt,
+                    Items = batch.ToList()
+                };
 
-            // Push to Merchant360 using Phase 1 contract
-            var pushResult = await _merchant360Client.PushPriceBatchAsync(
-                upload.DealerId, batchRequest, cancellationToken);
+                var pushResult = await _merchant360Client.PushPriceBatchAsync(
+                    upload.DealerId, batchRequest, cancellationToken);
 
-            if (pushResult.Success)
-            {
-                upload.Status = PriceFeedUploadStatus.PushedToMerchant360;
-                upload.PushedToMerchant360At = DateTime.UtcNow;
-                await _uploadRepository.UpdateAsync(upload, cancellationToken);
+                if (!pushResult.Success)
+                {
+                    upload.Status = PriceFeedUploadStatus.PushFailed;
+                    upload.ErrorMessage = $"Batch {batchNumber}/{totalBatches} failed: {string.Join(", ", pushResult.Errors ?? new List<string>())}";
+                    await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+                    return new PushToMerchant360Result(false, totalCreated + totalUpdated, upload.ErrorMessage);
+                }
+
+                totalCreated += pushResult.RecordsCreated;
+                totalUpdated += pushResult.RecordsUpdated;
 
                 _logger.LogInformation(
-                    "Pushed price batch to Merchant360: received={RecordsReceived}, created={RecordsCreated}, updated={RecordsUpdated}, skipped={RecordsSkipped}, syncLogId={SyncLogId}",
-                    pushResult.RecordsReceived, pushResult.RecordsCreated,
-                    pushResult.RecordsUpdated, pushResult.RecordsSkipped, pushResult.SyncLogId);
-
-                return new PushToMerchant360Result(true, pushResult.RecordsCreated + pushResult.RecordsUpdated);
+                    "Batch {BatchNumber} completed: created={Created}, updated={Updated}",
+                    batchNumber, pushResult.RecordsCreated, pushResult.RecordsUpdated);
             }
-            else
-            {
-                upload.Status = PriceFeedUploadStatus.PushFailed;
-                upload.ErrorMessage = string.Join(", ", pushResult.Errors ?? new List<string>());
-                await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
-                return new PushToMerchant360Result(false, 0, upload.ErrorMessage);
-            }
+            upload.Status = PriceFeedUploadStatus.PushedToMerchant360;
+            upload.PushedToMerchant360At = DateTime.UtcNow;
+            await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+            _logger.LogInformation(
+                "All batches completed. Total: created={TotalCreated}, updated={TotalUpdated}",
+                totalCreated, totalUpdated);
+
+            return new PushToMerchant360Result(true, totalCreated + totalUpdated);
         }
         catch (Exception ex)
         {

@@ -65,6 +65,15 @@ public interface IPriceFeedUploadRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets all uploads with optional filters (admin).
+    /// </summary>
+    Task<IReadOnlyList<PriceFeedUpload>> GetAllAsync(
+        int? dealerId = null,
+        int? tradingPartnerId = null,
+        int? limit = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Checks if there's any completed price data for a trading partner.
     /// </summary>
     Task<bool> HasDataForPartnerAsync(int tradingPartnerId, CancellationToken cancellationToken = default);

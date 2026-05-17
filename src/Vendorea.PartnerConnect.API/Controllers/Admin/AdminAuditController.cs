@@ -61,8 +61,8 @@ public class AdminAuditController : ControllerBase
         }
         else
         {
-            // Default to recent logs - get by a high limit
-            logs = await _auditRepository.GetByDealerAsync(0, request.Limit, cancellationToken);
+            // Default to all recent logs
+            logs = await _auditRepository.GetRecentAsync(request.Limit, cancellationToken);
         }
 
         // Apply additional filters
@@ -212,7 +212,7 @@ public class AdminAuditController : ControllerBase
         }
         else
         {
-            logs = await _auditRepository.GetByDealerAsync(0, 1000, cancellationToken);
+            logs = await _auditRepository.GetRecentAsync(1000, cancellationToken);
         }
 
         var since = DateTime.UtcNow.AddHours(-hours);
@@ -268,7 +268,7 @@ public class AdminAuditController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         // Get recent logs and filter for security-related actions
-        var logs = await _auditRepository.GetByDealerAsync(0, 1000, cancellationToken);
+        var logs = await _auditRepository.GetRecentAsync(1000, cancellationToken);
 
         var since = DateTime.UtcNow.AddHours(-hours);
         var securityActions = new[]

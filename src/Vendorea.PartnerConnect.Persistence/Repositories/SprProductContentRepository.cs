@@ -331,4 +331,28 @@ public class SprProductContentRepository : ISprProductContentRepository
         return await _context.SprProductContent
             .AnyAsync(p => p.LocaleId == localeId, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<SprProductFeature>> GetFeaturesByProductIdsAsync(
+        IEnumerable<long> productContentIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = productContentIds.ToList();
+        return await _context.SprProductFeatures
+            .Where(f => ids.Contains(f.SprProductContentId))
+            .OrderBy(f => f.SprProductContentId)
+            .ThenBy(f => f.SortOrder)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SprProductRelationship>> GetRelationshipsByProductIdsAsync(
+        IEnumerable<long> productContentIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = productContentIds.ToList();
+        return await _context.SprProductRelationships
+            .Where(r => ids.Contains(r.SprProductContentId))
+            .OrderBy(r => r.SprProductContentId)
+            .ThenBy(r => r.SortOrder)
+            .ToListAsync(cancellationToken);
+    }
 }

@@ -57,11 +57,12 @@ builder.Services.AddTransport();
 
 builder.Services.AddPartnerAdapters();
 
-// Merchant360 connector with OAuth2 authentication
+// Merchant360 connector with API key or OAuth2 authentication
 builder.Services.AddMerchant360Connector(options =>
 {
     var section = builder.Configuration.GetSection("Merchant360");
     options.BaseUrl = section.GetValue<string>("BaseUrl") ?? "http://localhost:5003";
+    options.ApiKey = section.GetValue<string>("ApiKey");
     options.TokenEndpoint = section.GetValue<string>("TokenEndpoint") ?? "http://localhost:5003/oauth2/token";
     options.ClientId = section.GetValue<string>("ClientId") ?? "";
     options.ClientSecret = section.GetValue<string>("ClientSecret") ?? "";

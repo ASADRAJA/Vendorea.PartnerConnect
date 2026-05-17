@@ -38,6 +38,16 @@ public class ZipEntryInfo
     public long Length { get; set; }
     public long CompressedLength { get; set; }
     public SprContentFileType ContentType { get; set; }
+
+    /// <summary>
+    /// True if this entry is inside a nested zip file.
+    /// </summary>
+    public bool IsNested { get; set; }
+
+    /// <summary>
+    /// Name of the parent zip if this is a nested entry.
+    /// </summary>
+    public string? ParentZipName { get; set; }
 }
 
 /// <summary>

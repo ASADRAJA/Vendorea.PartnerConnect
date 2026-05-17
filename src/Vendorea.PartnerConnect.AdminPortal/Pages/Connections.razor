@@ -5,10 +5,35 @@
 
 <h1>Dealer-Partner Connections</h1>
 
-<div class="mb-3">
-    <button class="btn btn-primary" @onclick="RefreshConnections">
-        <span class="oi oi-reload"></span> Refresh
-    </button>
+<div class="row mb-3">
+    <div class="col-md-3">
+        <label class="form-label">Filter by Dealer</label>
+        <select class="form-select" value="@selectedDealerId" @onchange="OnDealerFilterChanged">
+            <option value="">All Dealers</option>
+            @foreach (var dealer in dealers)
+            {
+                <option value="@dealer.Key">@dealer.Value</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Filter by Partner</label>
+        <select class="form-select" value="@selectedPartnerId" @onchange="OnPartnerFilterChanged">
+            <option value="">All Partners</option>
+            @foreach (var partner in partners)
+            {
+                <option value="@partner.Key">@partner.Value</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-primary me-2" @onclick="RefreshConnections">
+            <span class="oi oi-reload"></span> Refresh
+        </button>
+        <button class="btn btn-outline-secondary" @onclick="ClearFilters">
+            Clear Filters
+        </button>
+    </div>
 </div>
 
 @if (connections == null)
@@ -28,6 +53,7 @@ else
             <thead class="table-dark">
                 <tr>
                     <th>ID</th>
+                    <th>Dealer</th>
                     <th>Partner</th>
                     <th>Status</th>
                     <th>Last Successful Sync</th>
@@ -41,10 +67,11 @@ else
                 {
                     <tr>
                         <td>@conn.Id</td>
+                        <td>@(conn.DealerName ?? $"Dealer #{conn.DealerId}")</td>
                         <td>@(conn.PartnerName ?? $"Partner #{conn.TradingPartnerId}")</td>
                         <td>
                             <span class="badge @(conn.IsActive ? "bg-success" : "bg-secondary")">
-                                @(conn.IsActive ? "Active" : "Inactive")
+                                @(conn.Status ?? (conn.IsActive ? "Active" : "Inactive"))
                             </span>
                         </td>
                         <td>@(conn.LastSuccessfulSync?.ToLocalTime().ToString("g") ?? "Never")</td>
@@ -80,9 +107,14 @@ else
 }
 
 @code {
+    private List<ConnectionDto>? allConnections;
     private List<ConnectionDto>? connections;
     private string? message;
     private bool isError;
+    private string? selectedDealerId;
+    private string? selectedPartnerId;
+    private Dictionary<int, string> dealers = new();
+    private Dictionary<int, string> partners = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,7 +123,61 @@ else
 
     private async Task RefreshConnections()
     {
-        connections = await Api.GetConnectionsAsync();
+        allConnections = await Api.GetConnectionsAsync();
+
+        // Build filter options from the data
+        dealers = allConnections
+            .GroupBy(c => c.DealerId)
+            .ToDictionary(g => g.Key, g => g.First().DealerName ?? $"Dealer #{g.Key}");
+
+        partners = allConnections
+            .Where(c => c.TradingPartnerId > 0)
+            .GroupBy(c => c.TradingPartnerId)
+            .ToDictionary(g => g.Key, g => g.First().PartnerName ?? $"Partner #{g.Key}");
+
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        if (allConnections == null)
+        {
+            connections = null;
+            return;
+        }
+
+        var filtered = allConnections.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(selectedDealerId) && int.TryParse(selectedDealerId, out var dealerId))
+        {
+            filtered = filtered.Where(c => c.DealerId == dealerId);
+        }
+
+        if (!string.IsNullOrEmpty(selectedPartnerId) && int.TryParse(selectedPartnerId, out var partnerId))
+        {
+            filtered = filtered.Where(c => c.TradingPartnerId == partnerId);
+        }
+
+        connections = filtered.ToList();
+    }
+
+    private void ClearFilters()
+    {
+        selectedDealerId = null;
+        selectedPartnerId = null;
+        ApplyFilters();
+    }
+
+    private void OnDealerFilterChanged(ChangeEventArgs e)
+    {
+        selectedDealerId = e.Value?.ToString();
+        ApplyFilters();
+    }
+
+    private void OnPartnerFilterChanged(ChangeEventArgs e)
+    {
+        selectedPartnerId = e.Value?.ToString();
+        ApplyFilters();
     }
 
     private async Task ActivateConnection(int id)

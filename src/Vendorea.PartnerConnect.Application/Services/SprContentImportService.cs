@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Application.Services;
@@ -19,9 +20,13 @@ public class SprContentImportService : ISprContentImportService
     private readonly ISprFeatureBulletParser _featureParser;
     private readonly ISprRelationshipParser _relationshipParser;
     private readonly ISprCategoryParser _categoryParser;
+    private readonly IMerchant360Client _merchant360Client;
+    private readonly ITradingPartnerRepository _tradingPartnerRepository;
 
     // Track progress for current import
     private readonly Dictionary<int, ContentImportProgress> _progressCache = new();
+
+    private const int MaxBatchSize = 10000;
 
     public SprContentImportService(
         ILogger<SprContentImportService> logger,
@@ -33,7 +38,9 @@ public class SprContentImportService : ISprContentImportService
         ISprDetailContentParser detailParser,
         ISprFeatureBulletParser featureParser,
         ISprRelationshipParser relationshipParser,
-        ISprCategoryParser categoryParser)
+        ISprCategoryParser categoryParser,
+        IMerchant360Client merchant360Client,
+        ITradingPartnerRepository tradingPartnerRepository)
     {
         _logger = logger;
         _uploadRepository = uploadRepository;
@@ -45,6 +52,8 @@ public class SprContentImportService : ISprContentImportService
         _featureParser = featureParser;
         _relationshipParser = relationshipParser;
         _categoryParser = categoryParser;
+        _merchant360Client = merchant360Client;
+        _tradingPartnerRepository = tradingPartnerRepository;
     }
 
     public async Task<SprContentUpload> ImportFromZipAsync(
@@ -529,5 +538,200 @@ public class SprContentImportService : ISprContentImportService
     {
         _progressCache.TryGetValue(uploadId, out var progress);
         return Task.FromResult(progress);
+    }
+
+    /// <summary>
+    /// Pushes imported content to Merchant360.
+    /// </summary>
+    public async Task<ContentPushResult> PushToMerchant360Async(int uploadId, CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+        {
+            return new ContentPushResult
+            {
+                Success = false,
+                UploadId = uploadId,
+                ErrorMessage = $"Upload {uploadId} not found"
+            };
+        }
+
+        if (upload.Status != ContentUploadStatus.Completed)
+        {
+            return new ContentPushResult
+            {
+                Success = false,
+                UploadId = uploadId,
+                ErrorMessage = $"Upload status is {upload.Status}, must be Completed to push"
+            };
+        }
+
+        // Get trading partner info
+        var tradingPartner = await _tradingPartnerRepository.GetByIdAsync(upload.TradingPartnerId, cancellationToken);
+        if (tradingPartner == null)
+        {
+            return new ContentPushResult
+            {
+                Success = false,
+                UploadId = uploadId,
+                ErrorMessage = $"Trading partner {upload.TradingPartnerId} not found"
+            };
+        }
+
+        _logger.LogInformation(
+            "Starting content push to M360: UploadId={UploadId}, Partner={Partner}, Version={Version}",
+            uploadId, tradingPartner.Code, upload.ContentVersion);
+
+        try
+        {
+            // Get all products for this upload
+            var products = await _productContentRepository.GetByUploadIdAsync(uploadId, cancellationToken);
+
+            if (!products.Any())
+            {
+                return new ContentPushResult
+                {
+                    Success = false,
+                    UploadId = uploadId,
+                    ErrorMessage = "No products found for this upload"
+                };
+            }
+
+            _logger.LogInformation("Found {Count} products to push", products.Count);
+
+            // Get features and relationships for all products
+            var productIds = products.Select(p => p.Id).ToList();
+            var features = await _productContentRepository.GetFeaturesByProductIdsAsync(productIds, cancellationToken);
+            var relationships = await _productContentRepository.GetRelationshipsByProductIdsAsync(productIds, cancellationToken);
+
+            // Group by product
+            var featuresByProduct = features.GroupBy(f => f.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+            var relationshipsByProduct = relationships.GroupBy(r => r.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+
+            // Map to M360 format and de-duplicate by stock number
+            var contentProducts = products
+                .Select(p => MapToContentBatchProduct(p,
+                    featuresByProduct.GetValueOrDefault(p.Id, new List<SprProductFeature>()),
+                    relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>())))
+                .Where(p => !string.IsNullOrWhiteSpace(p.StockNumber)) // Skip products with no stock number
+                .GroupBy(p => p.StockNumber)
+                .Select(g =>
+                {
+                    if (g.Count() > 1)
+                    {
+                        _logger.LogWarning("Duplicate stock number {StockNumber} found, using first occurrence", g.Key);
+                    }
+                    return g.First();
+                })
+                .ToList();
+
+            // Push in batches
+            var result = new ContentPushResult
+            {
+                UploadId = uploadId,
+                Success = true
+            };
+
+            var batches = contentProducts.Chunk(MaxBatchSize).ToList();
+            result.BatchCount = batches.Count;
+
+            _logger.LogInformation("Pushing {Count} products in {Batches} batches", contentProducts.Count, batches.Count);
+
+            foreach (var batch in batches)
+            {
+                var request = new ContentBatchRequest
+                {
+                    TradingPartnerId = tradingPartner.Id,
+                    TradingPartnerCode = tradingPartner.Code,
+                    ContentVersion = upload.ContentVersion,
+                    Locale = upload.LocaleId,
+                    SourceUploadId = uploadId,
+                    Products = batch.ToList()
+                };
+
+                var response = await _merchant360Client.PushContentBatchAsync(request, cancellationToken);
+
+                if (!response.Success)
+                {
+                    result.Success = false;
+                    result.Errors.AddRange(response.Errors ?? new List<string>());
+                    result.ErrorMessage = string.Join("; ", response.Errors ?? new List<string>());
+
+                    _logger.LogError("Content push failed: {Errors}", result.ErrorMessage);
+                    return result;
+                }
+
+                result.RecordsPushed += response.RecordsReceived;
+                result.RecordsCreated += response.RecordsCreated;
+                result.RecordsUpdated += response.RecordsUpdated;
+                result.RecordsSkipped += response.RecordsSkipped;
+            }
+
+            // Update upload with push timestamp
+            await _uploadRepository.MarkPushedToM360Async(uploadId, cancellationToken);
+            result.PushedAt = DateTime.UtcNow;
+
+            _logger.LogInformation(
+                "Content push completed: {Pushed} pushed, {Created} created, {Updated} updated",
+                result.RecordsPushed, result.RecordsCreated, result.RecordsUpdated);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Content push failed for upload {UploadId}", uploadId);
+            return new ContentPushResult
+            {
+                Success = false,
+                UploadId = uploadId,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    private static ContentBatchProduct MapToContentBatchProduct(
+        SprProductContent product,
+        List<SprProductFeature> features,
+        List<SprProductRelationship> relationships)
+    {
+        return new ContentBatchProduct
+        {
+            // Use Sku if not empty, otherwise fall back to ProductId
+            StockNumber = !string.IsNullOrWhiteSpace(product.Sku) ? product.Sku : product.ProductId,
+            ProductName = product.Description1,
+            ShortDescription = product.Description2,
+            LongDescription = product.MarketingText,
+            BrandName = product.BrandName,
+            ManufacturerName = product.ManufacturerName,
+            ManufacturerPartNumber = product.ManufacturerId,
+            UpcCode = product.Upc,
+            CategoryPath = BuildCategoryPath(product),
+            ImageUrl225 = product.ImageUrl225,
+            ImageUrl75 = product.ImageUrl75,
+            Weight = null, // Not in current import
+            Length = null,
+            Width = null,
+            Height = null,
+            Features = features.Select(f => new ContentFeature
+            {
+                Headline = f.FeatureGroup,
+                Description = f.BulletText
+            }).ToList(),
+            RelatedProducts = relationships.Select(r => new ContentRelatedProduct
+            {
+                StockNumber = r.RelatedProductId,
+                RelationshipType = r.RelationshipType.ToString()
+            }).ToList()
+        };
+    }
+
+    private static string? BuildCategoryPath(SprProductContent product)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(product.MasterDepartmentName)) parts.Add(product.MasterDepartmentName);
+        if (!string.IsNullOrEmpty(product.DepartmentName)) parts.Add(product.DepartmentName);
+        if (!string.IsNullOrEmpty(product.ClassName)) parts.Add(product.ClassName);
+        if (!string.IsNullOrEmpty(product.SubClassName)) parts.Add(product.SubClassName);
+        return parts.Any() ? string.Join(" > ", parts) : null;
     }
 }

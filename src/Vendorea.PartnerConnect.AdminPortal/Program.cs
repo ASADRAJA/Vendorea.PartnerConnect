@@ -11,6 +11,7 @@ builder.Services.AddHttpClient<ApiClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5000");
     client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromMinutes(10); // Increased for large file uploads
 
     // Add API key for authentication
     var apiKey = builder.Configuration["ApiKey"];

@@ -143,14 +143,20 @@
                                             }
                                             else if (sub.Status == "Approved")
                                             {
-                                                <button class="btn btn-sm btn-warning" @onclick="() => ShowSuspendModal(sub)" title="Suspend">
+                                                <button class="btn btn-sm btn-warning me-1" @onclick="() => ShowSuspendModal(sub)" title="Suspend">
                                                     <span class="oi oi-ban"></span>
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" @onclick="() => ShowUnsubscribeModal(sub)" title="Unsubscribe">
+                                                    <span class="oi oi-x"></span>
                                                 </button>
                                             }
                                             else if (sub.Status == "Suspended")
                                             {
-                                                <button class="btn btn-sm btn-success" @onclick="() => ReactivateSubscription(sub.Id)" title="Reactivate">
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ReactivateSubscription(sub.Id)" title="Reactivate">
                                                     <span class="oi oi-action-redo"></span>
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" @onclick="() => ShowUnsubscribeModal(sub)" title="Unsubscribe">
+                                                    <span class="oi oi-x"></span>
                                                 </button>
                                             }
                                             else if (sub.Status == "Denied")
@@ -241,6 +247,10 @@
                     <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
                 </div>
                 <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(actionError))
+                    {
+                        <div class="alert alert-danger">@actionError</div>
+                    }
                     <p>Approve access for <strong>@selectedSubscription.TenantName</strong> to <strong>@selectedSubscription.TradingPartnerName</strong>?</p>
                     <dl class="row">
                         <dt class="col-sm-4">Account #</dt>
@@ -337,6 +347,43 @@
     </div>
 }
 
+@* Unsubscribe Modal *@
+@if (showUnsubscribeModal && selectedSubscription != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">End Subscription</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(actionError))
+                    {
+                        <div class="alert alert-danger">@actionError</div>
+                    }
+                    <p>Permanently end the subscription for <strong>@selectedSubscription.TenantName</strong> to <strong>@selectedSubscription.TradingPartnerName</strong>?</p>
+                    <p class="text-danger"><strong>Warning:</strong> This will cancel the subscription. The merchant will need to request a new subscription to regain access.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Notes (optional)</label>
+                        <textarea class="form-control" rows="2" @bind="unsubscribeRequest.Notes" placeholder="e.g., Merchant requested cancellation"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="UnsubscribeSubscription" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        End Subscription
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @* Details Modal *@
 @if (showDetailsModal && selectedSubscription != null)
 {
@@ -420,6 +467,7 @@
     private bool showApproveModal = false;
     private bool showDenyModal = false;
     private bool showSuspendModal = false;
+    private bool showUnsubscribeModal = false;
     private bool showDetailsModal = false;
 
     private MerchantSubscriptionDto? selectedSubscription;
@@ -427,8 +475,10 @@
     private ApproveSubscriptionRequest approveRequest = new();
     private DenySubscriptionRequest denyRequest = new();
     private SuspendSubscriptionRequest suspendRequest = new();
+    private UnsubscribeRequest unsubscribeRequest = new();
 
     private bool CanCreate => createRequest.TenantId > 0 && createRequest.TradingPartnerId > 0 && !string.IsNullOrWhiteSpace(createRequest.AccountNumber);
+    private string? actionError;
 
     private List<MerchantSubscriptionDto> filteredSubscriptions => activeTab switch
     {
@@ -493,6 +543,7 @@
     {
         selectedSubscription = sub;
         approveRequest = new ApproveSubscriptionRequest();
+        actionError = null;
         showApproveModal = true;
     }
 
@@ -510,6 +561,14 @@
         showSuspendModal = true;
     }
 
+    private void ShowUnsubscribeModal(MerchantSubscriptionDto sub)
+    {
+        selectedSubscription = sub;
+        unsubscribeRequest = new UnsubscribeRequest();
+        actionError = null;
+        showUnsubscribeModal = true;
+    }
+
     private void ShowDetailsModal(MerchantSubscriptionDto sub)
     {
         selectedSubscription = sub;
@@ -522,6 +581,7 @@
         showApproveModal = false;
         showDenyModal = false;
         showSuspendModal = false;
+        showUnsubscribeModal = false;
         showDetailsModal = false;
         selectedSubscription = null;
     }
@@ -551,6 +611,7 @@
         if (selectedSubscription == null) return;
 
         isSubmitting = true;
+        actionError = null;
         try
         {
             var success = await Api.ApproveSubscriptionAsync(selectedSubscription.Id, approveRequest);
@@ -559,6 +620,15 @@
                 CloseModals();
                 await LoadSubscriptions();
             }
+            else
+            {
+                actionError = "Failed to approve subscription. It may already be approved or in an invalid state.";
+                await LoadSubscriptions(); // Refresh to show current state
+            }
+        }
+        catch (Exception ex)
+        {
+            actionError = $"Error: {ex.Message}";
         }
         finally
         {
@@ -599,6 +669,35 @@
                 CloseModals();
                 await LoadSubscriptions();
             }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task UnsubscribeSubscription()
+    {
+        if (selectedSubscription == null) return;
+
+        isSubmitting = true;
+        actionError = null;
+        try
+        {
+            var success = await Api.UnsubscribeAsync(selectedSubscription.Id, unsubscribeRequest);
+            if (success)
+            {
+                CloseModals();
+                await LoadSubscriptions();
+            }
+            else
+            {
+                actionError = "Failed to end subscription. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            actionError = $"Error: {ex.Message}";
         }
         finally
         {

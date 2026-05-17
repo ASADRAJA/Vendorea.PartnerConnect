@@ -16,21 +16,21 @@
                 <div class="row g-3">
                     <div class="col-md-3">
                         <label class="form-label">Merchant</label>
-                        <select class="form-select" @bind="selectedMerchantId">
+                        <select class="form-select" value="@selectedMerchantId" @onchange="OnMerchantChanged">
                             <option value="0">Select Merchant...</option>
-                            @foreach (var merchant in merchants)
+                            @foreach (var merchant in merchantsWithSubscriptions)
                             {
-                                <option value="@merchant.Id">@merchant.Name (@merchant.Id)</option>
+                                <option value="@merchant.MerchantId">@merchant.MerchantName (@merchant.MerchantCode)</option>
                             }
                         </select>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Trading Partner</label>
-                        <select class="form-select" @bind="selectedPartnerCode">
+                        <select class="form-select" @bind="selectedPartnerCode" disabled="@(selectedMerchantId == 0)">
                             <option value="">Select Partner...</option>
-                            @foreach (var partner in tradingPartners)
+                            @foreach (var partner in availablePartnersForMerchant)
                             {
-                                <option value="@partner.Code">@partner.Name (@partner.Code)</option>
+                                <option value="@partner.TradingPartnerCode">@partner.TradingPartnerName (@partner.TradingPartnerCode)</option>
                             }
                         </select>
                     </div>
@@ -98,11 +98,18 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><span class="oi oi-clock me-2"></span> Upload History</span>
                 <div class="d-flex align-items-center">
-                    <select class="form-select form-select-sm me-2" style="width: 200px;" @bind="historyMerchantId">
-                        <option value="0">Select Merchant...</option>
-                        @foreach (var merchant in merchants)
+                    <select class="form-select form-select-sm me-2" style="width: 180px;" @bind="filterMerchantId" @bind:after="LoadHistory">
+                        <option value="0">All Merchants</option>
+                        @foreach (var merchant in merchantsWithSubscriptions)
                         {
-                            <option value="@merchant.Id">@merchant.Name (@merchant.Id)</option>
+                            <option value="@merchant.MerchantId">@merchant.MerchantName</option>
+                        }
+                    </select>
+                    <select class="form-select form-select-sm me-2" style="width: 150px;" @bind="filterPartnerCode" @bind:after="LoadHistory">
+                        <option value="">All Partners</option>
+                        @foreach (var partner in availablePartners)
+                        {
+                            <option value="@partner.Code">@partner.Name</option>
                         }
                     </select>
                     <button class="btn btn-sm btn-outline-primary" @onclick="LoadHistory">
@@ -120,7 +127,7 @@
                 }
                 else if (uploadHistory.Count == 0)
                 {
-                    <p class="text-muted text-center py-4">No upload history found. Select a Merchant and click Refresh.</p>
+                    <p class="text-muted text-center py-4">No upload history found.</p>
                 }
                 else
                 {
@@ -129,6 +136,7 @@
                             <thead>
                                 <tr>
                                     <th>ID</th>
+                                    <th>Merchant</th>
                                     <th>Partner</th>
                                     <th>File</th>
                                     <th>Status</th>
@@ -144,6 +152,7 @@
                                 {
                                     <tr>
                                         <td>@upload.Id</td>
+                                        <td>@(upload.DealerName ?? $"#{upload.DealerId}")</td>
                                         <td>@upload.TradingPartnerCode</td>
                                         <td title="@upload.FileName">@TruncateFileName(upload.FileName)</td>
                                         <td>
@@ -292,9 +301,10 @@
 }
 
 @code {
-    private List<TradingPartnerDto> tradingPartners = new();
-    private List<MerchantDto> merchants = new();
+    private List<MerchantWithSubscriptionsDto> merchantsWithSubscriptions = new();
+    private List<SubscribedPartnerDto> availablePartnersForMerchant = new();
     private List<PriceFeedUploadDto> uploadHistory = new();
+    private List<PartnerFilterOption> availablePartners = new();
 
     private int selectedMerchantId;
     private string selectedPartnerCode = "";
@@ -302,8 +312,15 @@
     private bool isUploading;
     private PriceFeedUploadResult? uploadResult;
 
-    private int historyMerchantId;
+    private int filterMerchantId;
+    private string filterPartnerCode = "";
     private bool isLoadingHistory;
+
+    private class PartnerFilterOption
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
 
     private PriceFeedUploadDetailDto? selectedUploadDetail;
     private int? pushingUploadId;
@@ -312,13 +329,36 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var partnersTask = Api.GetTradingPartnersAsync();
-        var merchantsTask = Api.GetMerchantsAsync();
+        merchantsWithSubscriptions = await Api.GetMerchantsWithActiveSubscriptionsAsync();
 
-        await Task.WhenAll(partnersTask, merchantsTask);
+        // Extract available partners from subscriptions
+        availablePartners = merchantsWithSubscriptions
+            .SelectMany(m => m.Partners)
+            .DistinctBy(p => p.TradingPartnerCode)
+            .Select(p => new PartnerFilterOption { Code = p.TradingPartnerCode, Name = p.TradingPartnerName })
+            .ToList();
 
-        tradingPartners = await partnersTask;
-        merchants = await merchantsTask;
+        // Load all upload history on init
+        await LoadHistory();
+    }
+
+    private void OnMerchantChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var merchantId))
+        {
+            selectedMerchantId = merchantId;
+            selectedPartnerCode = "";
+
+            // Filter partners based on merchant's active subscriptions
+            var merchant = merchantsWithSubscriptions.FirstOrDefault(m => m.MerchantId == merchantId);
+            availablePartnersForMerchant = merchant?.Partners ?? new();
+        }
+        else
+        {
+            selectedMerchantId = 0;
+            selectedPartnerCode = "";
+            availablePartnersForMerchant = new();
+        }
     }
 
     private void OnFileSelected(InputFileChangeEventArgs e)
@@ -340,7 +380,7 @@
             using var stream = selectedFile.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
             uploadResult = await Api.UploadPriceFeedAsync(selectedMerchantId, selectedPartnerCode, stream, selectedFile.Name);
 
-            if (uploadResult?.Success == true && historyMerchantId == selectedMerchantId)
+            if (uploadResult?.Success == true)
             {
                 await LoadHistory();
             }
@@ -357,12 +397,12 @@
 
     private async Task LoadHistory()
     {
-        if (historyMerchantId <= 0) return;
-
         isLoadingHistory = true;
         try
         {
-            uploadHistory = await Api.GetPriceFeedHistoryAsync(historyMerchantId);
+            int? dealerId = filterMerchantId > 0 ? filterMerchantId : null;
+            string? partnerCode = !string.IsNullOrEmpty(filterPartnerCode) ? filterPartnerCode : null;
+            uploadHistory = await Api.GetAllPriceFeedUploadsAsync(dealerId, partnerCode);
         }
         finally
         {

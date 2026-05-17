@@ -58,6 +58,32 @@ public interface ISprContentImportService
     /// Gets the current import status.
     /// </summary>
     Task<ContentImportProgress?> GetImportStatusAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes imported content to Merchant360.
+    /// Content is shared across all merchants.
+    /// </summary>
+    /// <param name="uploadId">The content upload ID to push.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Result of the push operation.</returns>
+    Task<ContentPushResult> PushToMerchant360Async(int uploadId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Result of pushing content to Merchant360.
+/// </summary>
+public class ContentPushResult
+{
+    public bool Success { get; set; }
+    public int UploadId { get; set; }
+    public int RecordsPushed { get; set; }
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+    public int BatchCount { get; set; }
+    public DateTime? PushedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
 }
 
 /// <summary>

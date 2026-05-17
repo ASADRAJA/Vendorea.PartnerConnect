@@ -12,6 +12,7 @@ public interface IDealerPartnerConnectionRepository
     Task<IReadOnlyList<DealerPartnerConnection>> GetByDealerIdAsync(int dealerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DealerPartnerConnection>> GetByPartnerIdAsync(int tradingPartnerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DealerPartnerConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DealerPartnerConnection>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<DealerPartnerConnection> AddAsync(DealerPartnerConnection connection, CancellationToken cancellationToken = default);
     Task UpdateAsync(DealerPartnerConnection connection, CancellationToken cancellationToken = default);
 }

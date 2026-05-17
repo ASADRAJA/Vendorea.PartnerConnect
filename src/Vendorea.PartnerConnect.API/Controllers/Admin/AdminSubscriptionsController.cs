@@ -16,15 +16,18 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 public class AdminSubscriptionsController : ControllerBase
 {
     private readonly IMerchantSubscriptionRequestRepository _subscriptionRepository;
+    private readonly IDealerPartnerConnectionRepository _connectionRepository;
     private readonly IMerchant360Client _merchant360Client;
     private readonly ILogger<AdminSubscriptionsController> _logger;
 
     public AdminSubscriptionsController(
         IMerchantSubscriptionRequestRepository subscriptionRepository,
+        IDealerPartnerConnectionRepository connectionRepository,
         IMerchant360Client merchant360Client,
         ILogger<AdminSubscriptionsController> logger)
     {
         _subscriptionRepository = subscriptionRepository;
+        _connectionRepository = connectionRepository;
         _merchant360Client = merchant360Client;
         _logger = logger;
     }
@@ -129,6 +132,7 @@ public class AdminSubscriptionsController : ControllerBase
         if (subscription.Status != SubscriptionRequestStatus.Pending && subscription.Status != SubscriptionRequestStatus.Denied)
             return BadRequest(new { error = "InvalidStatus", message = "Can only approve pending or denied subscriptions" });
 
+        var previousStatus = subscription.Status;
         subscription.Status = SubscriptionRequestStatus.Approved;
         subscription.ApprovedAt = DateTime.UtcNow;
         subscription.Notes = request.Notes ?? subscription.Notes;
@@ -142,11 +146,14 @@ public class AdminSubscriptionsController : ControllerBase
 
         await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
 
+        // Create or update the DealerPartnerConnection
+        await CreateOrUpdateConnectionAsync(subscription, ConnectionStatus.Active, cancellationToken);
+
         _logger.LogInformation("Approved subscription {Id} for TenantId={TenantId}, TradingPartnerId={TradingPartnerId}",
             id, subscription.TenantId, subscription.TradingPartnerId);
 
         // Notify M360 about the approval
-        await NotifyM360SubscriptionStatusChangeAsync(subscription, cancellationToken);
+        await NotifyM360SubscriptionStatusChangeAsync(subscription, previousStatus, cancellationToken);
 
         return Ok(new { success = true });
     }
@@ -167,6 +174,7 @@ public class AdminSubscriptionsController : ControllerBase
         if (subscription.Status != SubscriptionRequestStatus.Pending)
             return BadRequest(new { error = "InvalidStatus", message = "Can only deny pending subscriptions" });
 
+        var previousStatus = subscription.Status;
         subscription.Status = SubscriptionRequestStatus.Denied;
         subscription.DeniedAt = DateTime.UtcNow;
         subscription.DenialReason = request.Reason;
@@ -178,7 +186,7 @@ public class AdminSubscriptionsController : ControllerBase
             id, subscription.TenantId, request.Reason);
 
         // Notify M360 about the denial
-        await NotifyM360SubscriptionStatusChangeAsync(subscription, cancellationToken);
+        await NotifyM360SubscriptionStatusChangeAsync(subscription, previousStatus, cancellationToken);
 
         return Ok(new { success = true });
     }
@@ -199,16 +207,20 @@ public class AdminSubscriptionsController : ControllerBase
         if (subscription.Status != SubscriptionRequestStatus.Approved)
             return BadRequest(new { error = "InvalidStatus", message = "Can only suspend approved subscriptions" });
 
+        var previousStatus = subscription.Status;
         subscription.Status = SubscriptionRequestStatus.Suspended;
         subscription.SuspendedAt = DateTime.UtcNow;
         subscription.Notes = request.Notes ?? subscription.Notes;
 
         await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
 
+        // Update the DealerPartnerConnection status
+        await UpdateConnectionStatusAsync(subscription.TenantId, subscription.TradingPartnerId, ConnectionStatus.Suspended, cancellationToken);
+
         _logger.LogInformation("Suspended subscription {Id} for TenantId={TenantId}", id, subscription.TenantId);
 
         // Notify M360 about the suspension
-        await NotifyM360SubscriptionStatusChangeAsync(subscription, cancellationToken);
+        await NotifyM360SubscriptionStatusChangeAsync(subscription, previousStatus, cancellationToken);
 
         return Ok(new { success = true });
     }
@@ -234,12 +246,147 @@ public class AdminSubscriptionsController : ControllerBase
 
         await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
 
+        // Update the DealerPartnerConnection status back to Active
+        await UpdateConnectionStatusAsync(subscription.TenantId, subscription.TradingPartnerId, ConnectionStatus.Active, cancellationToken);
+
         _logger.LogInformation("Reactivated subscription {Id} for TenantId={TenantId}", id, subscription.TenantId);
 
         // Notify M360 about the reactivation
-        await NotifyM360SubscriptionStatusChangeAsync(subscription, cancellationToken);
+        await NotifyM360SubscriptionStatusChangeAsync(subscription, SubscriptionRequestStatus.Suspended, cancellationToken);
 
         return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Unsubscribes/terminates an active subscription (admin-initiated).
+    /// </summary>
+    [HttpPost("{id:int}/unsubscribe")]
+    public async Task<IActionResult> UnsubscribeSubscription(
+        int id,
+        [FromBody] UnsubscribeSubscriptionDto? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        var subscription = await _subscriptionRepository.GetByIdAsync(id, cancellationToken);
+        if (subscription == null)
+            return NotFound();
+
+        if (subscription.Status != SubscriptionRequestStatus.Approved &&
+            subscription.Status != SubscriptionRequestStatus.Suspended)
+        {
+            return BadRequest(new { error = "InvalidStatus", message = "Can only unsubscribe from approved or suspended subscriptions" });
+        }
+
+        var previousStatus = subscription.Status;
+        subscription.Status = SubscriptionRequestStatus.Cancelled;
+        subscription.CancelledAt = DateTime.UtcNow;
+        subscription.Notes = request?.Notes ?? subscription.Notes;
+
+        await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
+
+        // Update the DealerPartnerConnection status to Disconnected
+        await UpdateConnectionStatusAsync(subscription.TenantId, subscription.TradingPartnerId, ConnectionStatus.Disconnected, cancellationToken);
+
+        _logger.LogInformation("Admin unsubscribed subscription {Id} for TenantId={TenantId}", id, subscription.TenantId);
+
+        // Notify M360 about the unsubscription
+        await NotifyM360SubscriptionStatusChangeAsync(subscription, previousStatus, cancellationToken);
+
+        return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Manually resync a subscription status to M360.
+    /// Use this when M360 callback failed and needs to be retried.
+    /// </summary>
+    [HttpPost("{id:int}/resync")]
+    public async Task<IActionResult> ResyncSubscription(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var subscription = await _subscriptionRepository.GetByIdAsync(id, cancellationToken);
+        if (subscription == null)
+            return NotFound();
+
+        _logger.LogInformation("Manual resync requested for subscription {Id}, TenantId={TenantId}, Status={Status}",
+            id, subscription.TenantId, subscription.Status);
+
+        // Ensure DealerPartnerConnection exists for approved/suspended subscriptions
+        if (subscription.Status == SubscriptionRequestStatus.Approved)
+        {
+            await CreateOrUpdateConnectionAsync(subscription, ConnectionStatus.Active, cancellationToken);
+        }
+        else if (subscription.Status == SubscriptionRequestStatus.Suspended)
+        {
+            await CreateOrUpdateConnectionAsync(subscription, ConnectionStatus.Suspended, cancellationToken);
+        }
+
+        var statusChange = new SubscriptionStatusChangedDto
+        {
+            TenantId = subscription.TenantId,
+            TradingPartnerId = subscription.TradingPartnerId,
+            TradingPartnerCode = subscription.TradingPartner?.Code ?? string.Empty,
+            AccountNumber = subscription.AccountNumber,
+            PreviousStatus = subscription.Status.ToString(), // Same as current since this is a resync
+            NewStatus = subscription.Status.ToString(),
+            ChangedAt = DateTime.UtcNow,
+            ChangedBy = "admin-resync",
+            Reason = subscription.DenialReason,
+            Notes = subscription.Notes
+        };
+
+        var success = await _merchant360Client.NotifySubscriptionStatusChangedAsync(statusChange, cancellationToken);
+
+        if (success)
+        {
+            _logger.LogInformation("Successfully resynced subscription {Id} to M360", id);
+            return Ok(new { success = true, message = "Subscription status synced to M360 and connection ensured" });
+        }
+        else
+        {
+            _logger.LogWarning("Failed to resync subscription {Id} to M360", id);
+            return Ok(new { success = true, message = "Connection ensured but M360 sync failed - may need manual sync" });
+        }
+    }
+
+    /// <summary>
+    /// Gets merchants with their active partner subscriptions.
+    /// Used by price feed and content pages to filter dropdowns.
+    /// </summary>
+    [HttpGet("active-by-merchant")]
+    public async Task<IActionResult> GetActiveSubscriptionsByMerchant(CancellationToken cancellationToken = default)
+    {
+        // Get all approved subscriptions
+        var approvedSubscriptions = await _subscriptionRepository.GetByStatusAsync(
+            SubscriptionRequestStatus.Approved, cancellationToken);
+
+        // Group by tenant (merchant)
+        var grouped = approvedSubscriptions
+            .GroupBy(s => s.TenantId)
+            .ToList();
+
+        // Get merchant names from M360
+        var merchantIds = grouped.Select(g => g.Key).ToList();
+        var merchantNames = await GetMerchantNamesAsync(merchantIds, cancellationToken);
+
+        var result = grouped.Select(g =>
+        {
+            merchantNames.TryGetValue(g.Key, out var merchant);
+            return new MerchantWithSubscriptionsDto
+            {
+                MerchantId = g.Key,
+                MerchantName = merchant.Name ?? $"Merchant {g.Key}",
+                MerchantCode = merchant.Code ?? $"M{g.Key}",
+                Partners = g.Select(s => new SubscribedPartnerDto
+                {
+                    TradingPartnerId = s.TradingPartnerId,
+                    TradingPartnerCode = s.TradingPartner?.Code ?? "",
+                    TradingPartnerName = s.TradingPartner?.Name ?? $"Partner {s.TradingPartnerId}",
+                    AccountNumber = s.AccountNumber
+                }).ToList()
+            };
+        }).OrderBy(m => m.MerchantName).ToList();
+
+        return Ok(result);
     }
 
     private MerchantSubscriptionDto MapToDto(MerchantSubscriptionRequest entity, Dictionary<int, (string Name, string Code)> merchantNames)
@@ -295,17 +442,109 @@ public class AdminSubscriptionsController : ControllerBase
 
     private async Task NotifyM360SubscriptionStatusChangeAsync(
         MerchantSubscriptionRequest subscription,
+        SubscriptionRequestStatus previousStatus,
         CancellationToken cancellationToken)
     {
+        var statusChange = new SubscriptionStatusChangedDto
+        {
+            TenantId = subscription.TenantId,
+            TradingPartnerId = subscription.TradingPartnerId,
+            TradingPartnerCode = subscription.TradingPartner?.Code ?? string.Empty,
+            AccountNumber = subscription.AccountNumber,
+            PreviousStatus = previousStatus.ToString(),
+            NewStatus = subscription.Status.ToString(),
+            ChangedAt = DateTime.UtcNow,
+            ChangedBy = "admin", // TODO: Get actual admin user from context
+            Reason = subscription.DenialReason,
+            Notes = subscription.Notes
+        };
+
         try
         {
-            // TODO: Implement webhook or API call to notify M360 about status changes
-            _logger.LogInformation("Would notify M360 about subscription {Id} status change to {Status}",
-                subscription.Id, subscription.Status);
+            var success = await _merchant360Client.NotifySubscriptionStatusChangedAsync(statusChange, cancellationToken);
+
+            if (!success)
+            {
+                _logger.LogWarning("Failed to notify M360 about subscription status change for TenantId={TenantId}, TradingPartnerId={TradingPartnerId}. M360 may need to sync manually.",
+                    subscription.TenantId, subscription.TradingPartnerId);
+                // Don't throw - the local status change succeeded, M360 can sync later
+            }
+            else
+            {
+                _logger.LogInformation("Notified M360 about subscription status change: TenantId={TenantId}, {PreviousStatus} -> {NewStatus}",
+                    subscription.TenantId, previousStatus, subscription.Status);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to notify M360 about subscription status change");
+            // Log but don't throw - M360 may not have the endpoint implemented yet
+            _logger.LogWarning(ex, "Exception notifying M360 about subscription status change for TenantId={TenantId}, TradingPartnerId={TradingPartnerId}. M360 may need to sync manually.",
+                subscription.TenantId, subscription.TradingPartnerId);
+        }
+    }
+
+    private async Task CreateOrUpdateConnectionAsync(
+        MerchantSubscriptionRequest subscription,
+        ConnectionStatus status,
+        CancellationToken cancellationToken)
+    {
+        var existingConnection = await _connectionRepository.GetByDealerAndPartnerAsync(
+            subscription.TenantId, subscription.TradingPartnerId, cancellationToken);
+
+        if (existingConnection != null)
+        {
+            existingConnection.Status = status;
+            existingConnection.UpdatedAt = DateTime.UtcNow;
+            if (status == ConnectionStatus.Active)
+            {
+                existingConnection.ConnectedAt = DateTime.UtcNow;
+                existingConnection.DisconnectedAt = null;
+            }
+            await _connectionRepository.UpdateAsync(existingConnection, cancellationToken);
+            _logger.LogInformation("Updated DealerPartnerConnection for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} to {Status}",
+                subscription.TenantId, subscription.TradingPartnerId, status);
+        }
+        else
+        {
+            var connection = new DealerPartnerConnection
+            {
+                DealerId = subscription.TenantId,
+                TradingPartnerId = subscription.TradingPartnerId,
+                ExternalAccountId = subscription.AccountNumber,
+                Status = status,
+                ConnectedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _connectionRepository.AddAsync(connection, cancellationToken);
+            _logger.LogInformation("Created DealerPartnerConnection for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} with Status={Status}",
+                subscription.TenantId, subscription.TradingPartnerId, status);
+        }
+    }
+
+    private async Task UpdateConnectionStatusAsync(
+        int dealerId,
+        int tradingPartnerId,
+        ConnectionStatus status,
+        CancellationToken cancellationToken)
+    {
+        var connection = await _connectionRepository.GetByDealerAndPartnerAsync(dealerId, tradingPartnerId, cancellationToken);
+        if (connection != null)
+        {
+            connection.Status = status;
+            connection.UpdatedAt = DateTime.UtcNow;
+            if (status == ConnectionStatus.Disconnected)
+            {
+                connection.DisconnectedAt = DateTime.UtcNow;
+            }
+            await _connectionRepository.UpdateAsync(connection, cancellationToken);
+            _logger.LogInformation("Updated DealerPartnerConnection status for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} to {Status}",
+                dealerId, tradingPartnerId, status);
+        }
+        else
+        {
+            _logger.LogWarning("No DealerPartnerConnection found for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} to update status",
+                dealerId, tradingPartnerId);
         }
     }
 }
@@ -366,6 +605,27 @@ public class DenySubscriptionDto
 public class SuspendSubscriptionDto
 {
     public string? Notes { get; set; }
+}
+
+public class UnsubscribeSubscriptionDto
+{
+    public string? Notes { get; set; }
+}
+
+public class MerchantWithSubscriptionsDto
+{
+    public int MerchantId { get; set; }
+    public string MerchantName { get; set; } = string.Empty;
+    public string MerchantCode { get; set; } = string.Empty;
+    public List<SubscribedPartnerDto> Partners { get; set; } = new();
+}
+
+public class SubscribedPartnerDto
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string TradingPartnerName { get; set; } = string.Empty;
+    public string AccountNumber { get; set; } = string.Empty;
 }
 
 #endregion

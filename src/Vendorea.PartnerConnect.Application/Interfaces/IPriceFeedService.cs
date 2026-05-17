@@ -35,6 +35,15 @@ public interface IPriceFeedService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets all upload history (admin).
+    /// </summary>
+    Task<IReadOnlyList<PriceFeedUploadDto>> GetAllUploadHistoryAsync(
+        int? dealerId = null,
+        string? tradingPartnerCode = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets details of a specific upload.
     /// </summary>
     Task<PriceFeedUploadDetailDto?> GetUploadDetailsAsync(
@@ -94,6 +103,7 @@ public record PushToMerchant360Result(
 public record PriceFeedUploadDto(
     int Id,
     int DealerId,
+    string? DealerName,
     string TradingPartnerCode,
     string TradingPartnerName,
     string FileName,

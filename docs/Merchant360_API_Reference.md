@@ -156,15 +156,29 @@
 | `GET` | `/api/v1/trading-partner-subscriptions/{id}` | Get subscription request details |
 | `POST` | `/api/v1/trading-partner-subscriptions/{id}/approve` | Approve subscription |
 | `POST` | `/api/v1/trading-partner-subscriptions/{id}/deny` | Deny subscription |
+| `POST` | `/api/v1/trading-partner-subscriptions/{id}/cancel` | Cancel pending request |
+| `POST` | `/api/v1/trading-partner-subscriptions/cancel` | Cancel pending request (by tenant/partner) |
+| `POST` | `/api/v1/trading-partner-subscriptions/{id}/unsubscribe` | Unsubscribe from active subscription |
+| `POST` | `/api/v1/trading-partner-subscriptions/unsubscribe` | Unsubscribe (by tenant/partner) |
 
 ### Subscription Status Flow
 
 ```
 M360 Request → [Pending] → PC Admin Approves → [Approved] → PC pushes data to M360
                          → PC Admin Denies  → [Denied]
+                         → M360 Cancels     → [Cancelled]
 
-[Approved] → PC Admin Suspends → [Suspended] → PC Admin Reactivates → [Approved]
+[Approved] → PC Admin Suspends  → [Suspended] → PC Admin Reactivates → [Approved]
+           → M360 Unsubscribes  → [Cancelled]
+           → Admin Unsubscribes → [Cancelled]
+
+[Suspended] → Admin Unsubscribes → [Cancelled]
+            → M360 Unsubscribes  → [Cancelled]
+
+[Cancelled] → M360 can request again → [Pending]
 ```
+
+**Note**: Cancel is for pending requests only. Unsubscribe is for approved/suspended subscriptions.
 
 ### Subscription Response DTO
 
@@ -194,6 +208,26 @@ M360 Request → [Pending] → PC Admin Approves → [Approved] → PC pushes da
 }
 ```
 
+### Cancel Request DTO (by tenant/partner)
+
+```json
+{
+  "tenantId": 123,
+  "tradingPartnerId": 1,
+  "reason": "Merchant changed their mind"
+}
+```
+
+### Unsubscribe Request DTO (by tenant/partner)
+
+```json
+{
+  "tenantId": 123,
+  "tradingPartnerId": 1,
+  "reason": "Merchant no longer needs this service"
+}
+```
+
 ---
 
 ## Data Models
@@ -211,8 +245,56 @@ record TradingPartnerInfo(
 
 ### Subscription Status Enum
 ```
-Pending | Approved | Denied | Suspended
+Pending | Approved | Denied | Suspended | Cancelled
 ```
+
+---
+
+## PC → M360 Status Change Callback
+
+When a PC admin changes a subscription status (approve, deny, suspend, reactivate, unsubscribe), PC calls M360 to notify about the change. **This callback is required to succeed** - if M360 returns an error, the operation is rolled back.
+
+### Endpoint: `POST /api/v1/partner-connect/subscription-status-changed`
+
+**PC calls M360** with the following payload:
+
+```json
+{
+  "tenantId": 123,
+  "tradingPartnerId": 1,
+  "tradingPartnerCode": "SPR",
+  "accountNumber": "ACCT-001",
+  "previousStatus": "Pending",
+  "newStatus": "Approved",
+  "changedAt": "2026-05-15T14:30:00Z",
+  "changedBy": "admin@partnerconnect.com",
+  "reason": null,
+  "notes": "Approved after verification"
+}
+```
+
+**M360 Expected Response** (200 OK):
+```json
+{
+  "success": true
+}
+```
+
+**Key Points**:
+- M360 can look up the subscription by `tenantId` + `tradingPartnerId` (unique combination)
+- `previousStatus` and `newStatus` indicate the state transition
+- `reason` is populated for denial actions
+- `notes` contains optional admin notes
+
+### When Callback is Triggered
+
+| Action | previousStatus | newStatus |
+|--------|---------------|-----------|
+| Approve | Pending | Approved |
+| Deny | Pending | Denied |
+| Suspend | Approved | Suspended |
+| Reactivate | Suspended | Approved |
+| Unsubscribe (admin) | Approved/Suspended | Cancelled |
 
 ---
 
@@ -249,12 +331,27 @@ PC has `OAuth2TokenHandler` that automatically handles token refresh.
          │                                      │
          │        (PC Admin approves)           │
          │                                      │
+         │  Status Change Callback (required)   │
+         │<─────────────────────────────────────│
+         │  POST /api/v1/partner-connect/       │
+         │       subscription-status-changed    │
+         │─────────────────────────────────────>│
+         │  { success: true }                   │
+         │                                      │
          │  TIER 2: Receive Data Pushes         │
          │<─────────────────────────────────────│
          │  POST .../prices/batch               │
          │  (includes tradingPartner block)     │
          │─────────────────────────────────────>│
          │  { success: true, ... }              │
+         │                                      │
+         │  Merchant Cancels/Unsubscribes       │
+         │─────────────────────────────────────>│
+         │  POST /api/v1/trading-partner-       │
+         │       subscriptions/{id}/cancel      │
+         │  or  .../unsubscribe                 │
+         │<─────────────────────────────────────│
+         │  { success: true }                   │
          │                                      │
 ```
 
@@ -273,8 +370,14 @@ PC has `OAuth2TokenHandler` that automatically handles token refresh.
    - M360 calls PC: `POST /api/v1/trading-partner-subscriptions/request`
    - PC stores request with status "Pending" (PC is source of truth)
    - PC admin approves/denies via Admin Portal
+   - PC calls M360: `POST /api/v1/partner-connect/subscription-status-changed` (callback required to succeed)
    - On approval, PC starts pushing data for that merchant/partner combo
-   - M360 can poll PC for subscription status or wait for webhook notification (TODO)
+
+5. **Cancellation vs Unsubscribe**:
+   - **Cancel**: Merchant cancels a *pending* request (via M360 UI → PC API)
+   - **Unsubscribe**: Merchant/Admin terminates an *approved/suspended* subscription
+   - Both result in "Cancelled" status, but use different endpoints
+   - After cancellation, merchant can request the subscription again
 
 5. **Subscription Request Endpoint**:
    - URL: `POST /api/v1/trading-partner-subscriptions/request`

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vendorea.PartnerConnect.Persistence;
 
@@ -11,9 +12,11 @@ using Vendorea.PartnerConnect.Persistence;
 namespace Vendorea.PartnerConnect.Persistence.Migrations
 {
     [DbContext(typeof(PartnerConnectDbContext))]
-    partial class PartnerConnectDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260515211040_AddSubscriptionCancelledAt")]
+    partial class AddSubscriptionCancelledAt
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2587,9 +2590,6 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<DateTime?>("ProcessingStartedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateTime?>("PushedToM360At")
-                        .HasColumnType("datetime2");
-
                     b.Property<int>("SkippedProducts")
                         .HasColumnType("int");
 
@@ -2662,8 +2662,8 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasColumnType("bit");
 
                     b.Property<string>("BranchStockingStatus")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<bool>("BrokenQuantitiesAllowed")
                         .HasColumnType("bit");

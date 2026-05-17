@@ -51,6 +51,17 @@ public class AuditLogRepository : IAuditLogRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<AuditLog>> GetRecentAsync(
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.AuditLogs
+            .OrderByDescending(a => a.Timestamp)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<AuditLog>> GetByUserAsync(
         string userId,
         int limit = 100,

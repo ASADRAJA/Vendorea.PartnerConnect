@@ -172,4 +172,18 @@ public interface ISprProductContentRepository
     Task<bool> HasContentAsync(
         string localeId = "EN_US",
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets features for multiple products at once.
+    /// </summary>
+    Task<IReadOnlyList<SprProductFeature>> GetFeaturesByProductIdsAsync(
+        IEnumerable<long> productContentIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets relationships for multiple products at once.
+    /// </summary>
+    Task<IReadOnlyList<SprProductRelationship>> GetRelationshipsByProductIdsAsync(
+        IEnumerable<long> productContentIds,
+        CancellationToken cancellationToken = default);
 }

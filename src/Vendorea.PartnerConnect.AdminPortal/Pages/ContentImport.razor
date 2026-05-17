@@ -21,11 +21,15 @@
                         <label class="form-label">Trading Partner (Supplier)</label>
                         <select class="form-select" @bind="selectedTradingPartnerId">
                             <option value="0">-- Select Supplier --</option>
-                            @foreach (var partner in tradingPartners)
+                            @foreach (var partner in subscribedPartners)
                             {
                                 <option value="@partner.Id">@partner.Name (@partner.Code)</option>
                             }
                         </select>
+                        @if (subscribedPartners.Count == 0)
+                        {
+                            <small class="text-warning">No partners with active subscriptions</small>
+                        }
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Content Version</label>
@@ -185,6 +189,28 @@
                                             }
                                             @if (upload.Status == "Completed" || upload.Status == "PartiallyCompleted")
                                             {
+                                                @if (upload.PushedToM360At == null)
+                                                {
+                                                    <button class="btn btn-sm btn-success me-1"
+                                                            @onclick="() => PushToM360(upload.UploadId)"
+                                                            disabled="@(pushingUploadId == upload.UploadId)"
+                                                            title="Push to M360">
+                                                        @if (pushingUploadId == upload.UploadId)
+                                                        {
+                                                            <span class="spinner-border spinner-border-sm"></span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="oi oi-cloud-upload"></span>
+                                                        }
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-success me-1" title="Pushed @upload.PushedToM360At?.ToLocalTime().ToString("g")">
+                                                        <span class="oi oi-check"></span> Pushed
+                                                    </span>
+                                                }
                                                 <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(upload.UploadId)" title="Delete">
                                                     <span class="oi oi-trash"></span>
                                                 </button>
@@ -350,6 +376,7 @@
     private List<ContentImportSummaryDto> importHistory = new();
     private ContentStatisticsDto? stats;
     private List<TradingPartnerDto> tradingPartners = new();
+    private List<TradingPartnerDto> subscribedPartners = new();
 
     private int selectedTradingPartnerId;
     private string contentVersion = "";
@@ -367,12 +394,34 @@
     private int? deleteUploadId;
     private bool isDeleting;
 
+    private int? pushingUploadId;
+    private string? pushError;
+    private ContentPushResultDto? pushResult;
+
     private bool CanImport => selectedTradingPartnerId > 0 && !string.IsNullOrEmpty(contentVersion) && selectedFile != null;
 
     protected override async Task OnInitializedAsync()
     {
-        // Load trading partners and history on page load
-        tradingPartners = await Api.GetTradingPartnersAsync();
+        // Load trading partners and subscriptions
+        var partnersTask = Api.GetTradingPartnersAsync();
+        var subscriptionsTask = Api.GetMerchantsWithActiveSubscriptionsAsync();
+
+        await Task.WhenAll(partnersTask, subscriptionsTask);
+
+        tradingPartners = await partnersTask;
+        var merchantsWithSubs = await subscriptionsTask;
+
+        // Filter to only show partners that have at least one active subscription
+        var subscribedPartnerIds = merchantsWithSubs
+            .SelectMany(m => m.Partners)
+            .Select(p => p.TradingPartnerId)
+            .Distinct()
+            .ToHashSet();
+
+        subscribedPartners = tradingPartners
+            .Where(p => subscribedPartnerIds.Contains(p.Id))
+            .ToList();
+
         await LoadHistory();
     }
 
@@ -467,6 +516,38 @@
         finally
         {
             isDeleting = false;
+        }
+    }
+
+    private async Task PushToM360(int uploadId)
+    {
+        pushingUploadId = uploadId;
+        pushError = null;
+        pushResult = null;
+
+        try
+        {
+            pushResult = await Api.PushContentToM360Async(uploadId);
+
+            if (pushResult.Success)
+            {
+                await JS.InvokeVoidAsync("alert", $"Content pushed successfully! {pushResult.RecordsPushed:N0} products sent to M360.");
+                await LoadHistory();
+            }
+            else
+            {
+                pushError = pushResult.ErrorMessage ?? "Unknown error occurred";
+                await JS.InvokeVoidAsync("alert", $"Push failed: {pushError}");
+            }
+        }
+        catch (Exception ex)
+        {
+            pushError = ex.Message;
+            await JS.InvokeVoidAsync("alert", $"Push failed: {ex.Message}");
+        }
+        finally
+        {
+            pushingUploadId = null;
         }
     }
 

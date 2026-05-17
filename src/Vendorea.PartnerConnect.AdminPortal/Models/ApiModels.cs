@@ -39,9 +39,12 @@ public class TradingPartnerDto
 public class ConnectionDto
 {
     public int Id { get; set; }
+    public int DealerId { get; set; }
+    public string? DealerName { get; set; }
     public int TradingPartnerId { get; set; }
     public string? PartnerName { get; set; }
     public bool IsActive { get; set; }
+    public string? Status { get; set; }
     public DateTime? LastSuccessfulSync { get; set; }
     public DateTime? LastSyncAttempt { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -52,6 +55,10 @@ public class DocumentDto
 {
     public int Id { get; set; }
     public int DealerPartnerConnectionId { get; set; }
+    public int DealerId { get; set; }
+    public string? DealerName { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? PartnerName { get; set; }
     public string DocumentType { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -68,6 +75,20 @@ public class DocumentPagedResult
     public int Skip { get; set; }
     public int Take { get; set; }
     public List<DocumentDto> Results { get; set; } = new();
+    public DocumentFilterOptions? FilterOptions { get; set; }
+}
+
+public class DocumentFilterOptions
+{
+    public List<string> DocumentTypes { get; set; } = new();
+    public List<FilterOption> Dealers { get; set; } = new();
+    public List<FilterOption> Partners { get; set; } = new();
+}
+
+public class FilterOption
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
 }
 
 // Audit Log Models
@@ -175,8 +196,10 @@ public class PriceFeedUploadDto
 {
     public int Id { get; set; }
     public int DealerId { get; set; }
+    public string? DealerName { get; set; }
     public int TradingPartnerId { get; set; }
     public string? TradingPartnerCode { get; set; }
+    public string? TradingPartnerName { get; set; }
     public string FileName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public int RecordCount { get; set; }
@@ -250,6 +273,21 @@ public class ContentImportSummaryDto
     public string FileName { get; set; } = string.Empty;
     public DateTime UploadedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public DateTime? PushedToM360At { get; set; }
+}
+
+public class ContentPushResultDto
+{
+    public bool Success { get; set; }
+    public int UploadId { get; set; }
+    public int RecordsPushed { get; set; }
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+    public int BatchCount { get; set; }
+    public DateTime? PushedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
 }
 
 public class ContentImportResultDto
@@ -368,4 +406,26 @@ public class DenySubscriptionRequest
 public class SuspendSubscriptionRequest
 {
     public string? Notes { get; set; }
+}
+
+public class UnsubscribeRequest
+{
+    public string? Notes { get; set; }
+}
+
+// Subscription-based filtering for price feeds and content
+public class MerchantWithSubscriptionsDto
+{
+    public int MerchantId { get; set; }
+    public string MerchantName { get; set; } = string.Empty;
+    public string MerchantCode { get; set; } = string.Empty;
+    public List<SubscribedPartnerDto> Partners { get; set; } = new();
+}
+
+public class SubscribedPartnerDto
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string TradingPartnerName { get; set; } = string.Empty;
+    public string AccountNumber { get; set; } = string.Empty;
 }

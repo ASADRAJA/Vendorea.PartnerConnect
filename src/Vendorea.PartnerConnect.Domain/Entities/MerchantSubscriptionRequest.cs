@@ -74,6 +74,11 @@ public class MerchantSubscriptionRequest
     public int? SuspendedByUserId { get; set; }
 
     /// <summary>
+    /// When the subscription was cancelled by the merchant (if cancelled).
+    /// </summary>
+    public DateTime? CancelledAt { get; set; }
+
+    /// <summary>
     /// Navigation property to the trading partner.
     /// </summary>
     public TradingPartner? TradingPartner { get; set; }
@@ -87,5 +92,6 @@ public enum SubscriptionRequestStatus
     Pending,
     Approved,
     Denied,
-    Suspended
+    Suspended,
+    Cancelled
 }

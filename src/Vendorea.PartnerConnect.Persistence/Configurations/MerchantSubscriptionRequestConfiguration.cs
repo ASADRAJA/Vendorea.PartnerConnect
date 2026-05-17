@@ -39,6 +39,8 @@ public class MerchantSubscriptionRequestConfiguration : IEntityTypeConfiguration
         builder.Property(r => r.SuspendedAt);
         builder.Property(r => r.SuspendedByUserId);
 
+        builder.Property(r => r.CancelledAt);
+
         // Index for efficient queries
         builder.HasIndex(r => r.TenantId);
         builder.HasIndex(r => r.TradingPartnerId);

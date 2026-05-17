@@ -30,6 +30,13 @@ public interface IAuditLogRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets recent audit logs (all dealers).
+    /// </summary>
+    Task<IReadOnlyList<AuditLog>> GetRecentAsync(
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets audit logs for a specific user.
     /// </summary>
     Task<IReadOnlyList<AuditLog>> GetByUserAsync(

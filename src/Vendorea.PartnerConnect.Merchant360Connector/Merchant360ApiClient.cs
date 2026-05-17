@@ -517,5 +517,47 @@ public class Merchant360ApiClient : IMerchant360Client
         }
     }
 
+    /// <summary>
+    /// Notifies Merchant360 about a subscription status change.
+    /// Called when PC admin approves, denies, suspends, reactivates, or unsubscribes a subscription.
+    /// </summary>
+    public async Task<bool> NotifySubscriptionStatusChangedAsync(
+        SubscriptionStatusChangedDto statusChange,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notifying M360 about subscription status change: TenantId={TenantId}, TradingPartnerId={TradingPartnerId}, {PreviousStatus} -> {NewStatus}",
+            statusChange.TenantId, statusChange.TradingPartnerId, statusChange.PreviousStatus, statusChange.NewStatus);
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "/api/v1/partner-connect/subscription-status-changed",
+                statusChange,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "Successfully notified M360 about subscription status change for TenantId={TenantId}, TradingPartnerId={TradingPartnerId}",
+                    statusChange.TenantId, statusChange.TradingPartnerId);
+                return true;
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogError(
+                "Failed to notify M360 about subscription status change for TenantId={TenantId}, TradingPartnerId={TradingPartnerId}: {StatusCode} - {Error}",
+                statusChange.TenantId, statusChange.TradingPartnerId, response.StatusCode, errorContent);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Exception while notifying M360 about subscription status change for TenantId={TenantId}, TradingPartnerId={TradingPartnerId}",
+                statusChange.TenantId, statusChange.TradingPartnerId);
+            return false;
+        }
+    }
+
     #endregion
 }

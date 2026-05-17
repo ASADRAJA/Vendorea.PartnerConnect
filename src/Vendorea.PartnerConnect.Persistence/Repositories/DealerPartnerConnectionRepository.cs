@@ -51,6 +51,14 @@ public class DealerPartnerConnectionRepository : IDealerPartnerConnectionReposit
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<DealerPartnerConnection>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.DealerPartnerConnections
+            .Include(c => c.TradingPartner)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<DealerPartnerConnection> AddAsync(DealerPartnerConnection connection, CancellationToken cancellationToken = default)
     {
         _context.DealerPartnerConnections.Add(connection);

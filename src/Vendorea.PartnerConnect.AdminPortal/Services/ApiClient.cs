@@ -68,12 +68,12 @@ public class ApiClient
         }
     }
 
-    // Connections endpoints
+    // Connections endpoints (using admin endpoint to get all connections regardless of dealer)
     public async Task<List<ConnectionDto>> GetConnectionsAsync()
     {
         try
         {
-            return await _httpClient.GetFromJsonAsync<List<ConnectionDto>>("/api/v1/partners/connections") ?? new();
+            return await _httpClient.GetFromJsonAsync<List<ConnectionDto>>("/api/admin/dashboard/connections/all") ?? new();
         }
         catch (Exception ex)
         {
@@ -111,13 +111,25 @@ public class ApiClient
     }
 
     // Documents endpoints
-    public async Task<DocumentPagedResult> GetDocumentsAsync(int skip = 0, int take = 50, string? status = null)
+    public async Task<DocumentPagedResult> GetDocumentsAsync(
+        int skip = 0,
+        int take = 50,
+        string? status = null,
+        string? documentType = null,
+        int? dealerId = null,
+        int? tradingPartnerId = null)
     {
         try
         {
-            var url = $"/api/v1/documents?skip={skip}&take={take}";
+            var url = $"/api/admin/documents?skip={skip}&take={take}";
             if (!string.IsNullOrEmpty(status))
                 url += $"&status={status}";
+            if (!string.IsNullOrEmpty(documentType))
+                url += $"&documentType={documentType}";
+            if (dealerId.HasValue)
+                url += $"&dealerId={dealerId}";
+            if (tradingPartnerId.HasValue)
+                url += $"&tradingPartnerId={tradingPartnerId}";
 
             return await _httpClient.GetFromJsonAsync<DocumentPagedResult>(url) ?? new();
         }
@@ -293,6 +305,25 @@ public class ApiClient
         }
     }
 
+    public async Task<List<PriceFeedUploadDto>> GetAllPriceFeedUploadsAsync(int? dealerId = null, string? tradingPartnerCode = null, int limit = 100)
+    {
+        try
+        {
+            var url = $"/api/admin/pricefeeds?limit={limit}";
+            if (dealerId.HasValue)
+                url += $"&dealerId={dealerId}";
+            if (!string.IsNullOrEmpty(tradingPartnerCode))
+                url += $"&tradingPartnerCode={tradingPartnerCode}";
+
+            return await _httpClient.GetFromJsonAsync<List<PriceFeedUploadDto>>(url) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get all price feed uploads");
+            return new();
+        }
+    }
+
     public async Task<PriceFeedUploadDetailDto?> GetPriceFeedDetailsAsync(int uploadId)
     {
         try
@@ -336,6 +367,19 @@ public class ApiClient
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get merchants");
+            return new();
+        }
+    }
+
+    public async Task<List<MerchantWithSubscriptionsDto>> GetMerchantsWithActiveSubscriptionsAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<MerchantWithSubscriptionsDto>>("/api/admin/subscriptions/active-by-merchant") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get merchants with subscriptions");
             return new();
         }
     }
@@ -444,6 +488,29 @@ public class ApiClient
         {
             _logger.LogError(ex, "Failed to delete content import {UploadId}", uploadId);
             return false;
+        }
+    }
+
+    public async Task<ContentPushResultDto?> PushContentToM360Async(int uploadId)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync(
+                $"/api/v1/admin/spr/content/imports/{uploadId}/push", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<ContentPushResultDto>();
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning("Content push to M360 failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+            return new ContentPushResultDto { Success = false, ErrorMessage = errorContent };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to push content to M360 for upload {UploadId}", uploadId);
+            return new ContentPushResultDto { Success = false, ErrorMessage = ex.Message };
         }
     }
 
@@ -557,6 +624,34 @@ public class ApiClient
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to reactivate subscription {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> UnsubscribeAsync(int id, UnsubscribeRequest? request = null)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/unsubscribe", request ?? new UnsubscribeRequest());
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to unsubscribe subscription {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> ResyncSubscriptionAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/subscriptions/{id}/resync", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resync subscription {Id}", id);
             return false;
         }
     }

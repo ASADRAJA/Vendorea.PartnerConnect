@@ -122,4 +122,9 @@ public interface ISprContentUploadRepository
     /// Checks if there's any completed content data for a trading partner.
     /// </summary>
     Task<bool> HasDataForPartnerAsync(int tradingPartnerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks an upload as pushed to Merchant360.
+    /// </summary>
+    Task MarkPushedToM360Async(int uploadId, CancellationToken cancellationToken = default);
 }

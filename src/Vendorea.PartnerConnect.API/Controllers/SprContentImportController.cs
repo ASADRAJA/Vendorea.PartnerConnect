@@ -149,7 +149,8 @@ public class SprContentImportController : ControllerBase
             ErrorProducts = u.ErrorProducts,
             FileName = u.ZipFileName,
             UploadedAt = u.UploadedAt,
-            CompletedAt = u.ProcessingCompletedAt
+            CompletedAt = u.ProcessingCompletedAt,
+            PushedToM360At = u.PushedToM360At
         });
 
         return Ok(result);
@@ -235,6 +236,52 @@ public class SprContentImportController : ControllerBase
     }
 
     /// <summary>
+    /// Pushes imported content to Merchant360.
+    /// </summary>
+    [HttpPost("{uploadId:int}/push")]
+    [ProducesResponseType(typeof(ContentPushResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> PushToMerchant360(
+        int uploadId,
+        CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+        {
+            return NotFound($"Upload {uploadId} not found");
+        }
+
+        _logger.LogInformation("Starting content push to M360 for upload {UploadId}", uploadId);
+
+        var result = await _importService.PushToMerchant360Async(uploadId, cancellationToken);
+
+        if (!result.Success)
+        {
+            _logger.LogError("Content push failed: {Error}", result.ErrorMessage);
+            return BadRequest(new ContentPushResultDto
+            {
+                Success = false,
+                UploadId = uploadId,
+                ErrorMessage = result.ErrorMessage,
+                Errors = result.Errors
+            });
+        }
+
+        return Ok(new ContentPushResultDto
+        {
+            Success = true,
+            UploadId = uploadId,
+            RecordsPushed = result.RecordsPushed,
+            RecordsCreated = result.RecordsCreated,
+            RecordsUpdated = result.RecordsUpdated,
+            RecordsSkipped = result.RecordsSkipped,
+            BatchCount = result.BatchCount,
+            PushedAt = result.PushedAt
+        });
+    }
+
+    /// <summary>
     /// Validates a zip file without importing.
     /// </summary>
     [HttpPost("validate")]
@@ -254,6 +301,45 @@ public class SprContentImportController : ControllerBase
         var result = await _importService.ValidateZipAsync(stream, locale, cancellationToken);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Debug endpoint to inspect zip structure.
+    /// </summary>
+    [HttpPost("inspect")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [RequestSizeLimit(500_000_000)]
+    public IActionResult InspectZip(
+        IFormFile file,
+        [FromServices] ISprContentZipExtractor zipExtractor)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest("No file provided");
+        }
+
+        using var stream = file.OpenReadStream();
+        var entries = zipExtractor.ListEntries(stream);
+
+        var result = entries.Select(e => new
+        {
+            e.FullName,
+            e.Name,
+            e.Length,
+            ContentType = e.ContentType.ToString(),
+            e.IsNested,
+            e.ParentZipName
+        }).ToList();
+
+        var basicEntry = entries.FirstOrDefault(e => e.ContentType == Application.Interfaces.SprContentFileType.BasicContent);
+
+        return Ok(new
+        {
+            TotalEntries = entries.Count,
+            BasicContentFound = basicEntry != null,
+            BasicContentPath = basicEntry?.FullName,
+            Entries = result
+        });
     }
 
     /// <summary>
@@ -342,6 +428,7 @@ public class ContentImportSummaryDto
     public string FileName { get; set; } = string.Empty;
     public DateTime UploadedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public DateTime? PushedToM360At { get; set; }
 }
 
 /// <summary>
@@ -376,4 +463,21 @@ public class ContentStatisticsDto
     public int TotalCategories { get; set; }
     public string? LastContentVersion { get; set; }
     public DateTime? LastImportDate { get; set; }
+}
+
+/// <summary>
+/// Result of pushing content to Merchant360.
+/// </summary>
+public class ContentPushResultDto
+{
+    public bool Success { get; set; }
+    public int UploadId { get; set; }
+    public int RecordsPushed { get; set; }
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+    public int BatchCount { get; set; }
+    public DateTime? PushedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
 }

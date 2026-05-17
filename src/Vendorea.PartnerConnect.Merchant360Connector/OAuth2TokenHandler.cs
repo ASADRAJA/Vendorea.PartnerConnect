@@ -15,6 +15,11 @@ public class Merchant360Options
     public string TokenEndpoint { get; set; } = string.Empty;
     public string ClientId { get; set; } = string.Empty;
     public string ClientSecret { get; set; } = string.Empty;
+
+    /// <summary>
+    /// API key for X-Api-Key header authentication (alternative to OAuth2).
+    /// </summary>
+    public string? ApiKey { get; set; }
 }
 
 /// <summary>
@@ -90,7 +95,7 @@ public class OAuth2TokenHandler : DelegatingHandler
                 ["grant_type"] = "client_credentials",
                 ["client_id"] = _options.ClientId,
                 ["client_secret"] = _options.ClientSecret,
-                ["scope"] = "merchant360.prices.write merchant360.content.write merchant360.merchants.read merchant360.trading-partners.read"
+                ["scope"] = "merchant360.prices.write merchant360.content.write"
             });
 
             var response = await httpClient.PostAsync(_options.TokenEndpoint, tokenRequest, cancellationToken);

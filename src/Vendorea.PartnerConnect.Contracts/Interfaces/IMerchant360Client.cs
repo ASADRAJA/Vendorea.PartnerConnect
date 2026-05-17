@@ -71,6 +71,15 @@ public interface IMerchant360Client
     Task<bool> SuspendSubscriptionAsync(int id, SuspendSubscriptionDto request, CancellationToken cancellationToken = default);
     Task<bool> ReactivateSubscriptionAsync(int id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Notifies Merchant360 about a subscription status change.
+    /// Called when PC admin approves, denies, suspends, reactivates, or unsubscribes a subscription.
+    /// This callback is required to succeed - throws exception on failure.
+    /// </summary>
+    Task<bool> NotifySubscriptionStatusChangedAsync(
+        SubscriptionStatusChangedDto statusChange,
+        CancellationToken cancellationToken = default);
+
     #endregion
 }
 
@@ -311,6 +320,63 @@ public class DenySubscriptionDto
 
 public class SuspendSubscriptionDto
 {
+    public string? Notes { get; set; }
+}
+
+/// <summary>
+/// DTO sent to M360 when a subscription status changes.
+/// M360 can look up the subscription by TenantId + TradingPartnerId (unique).
+/// </summary>
+public class SubscriptionStatusChangedDto
+{
+    /// <summary>
+    /// The M360 tenant ID (merchant).
+    /// </summary>
+    public int TenantId { get; set; }
+
+    /// <summary>
+    /// The trading partner ID in PartnerConnect.
+    /// </summary>
+    public int TradingPartnerId { get; set; }
+
+    /// <summary>
+    /// The trading partner code (e.g., "SPR").
+    /// </summary>
+    public string TradingPartnerCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The merchant's account number with the trading partner.
+    /// </summary>
+    public string AccountNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The previous status before the change.
+    /// </summary>
+    public string PreviousStatus { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The new status after the change.
+    /// </summary>
+    public string NewStatus { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When the status change occurred.
+    /// </summary>
+    public DateTime ChangedAt { get; set; }
+
+    /// <summary>
+    /// Who made the change (e.g., "admin", user email).
+    /// </summary>
+    public string ChangedBy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Reason for the change (e.g., denial reason).
+    /// </summary>
+    public string? Reason { get; set; }
+
+    /// <summary>
+    /// Additional notes about the change.
+    /// </summary>
     public string? Notes { get; set; }
 }
 

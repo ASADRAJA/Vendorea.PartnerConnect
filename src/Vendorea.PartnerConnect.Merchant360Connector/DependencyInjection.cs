@@ -23,12 +23,18 @@ public static class DependencyInjection
         // Register the OAuth2 token handler
         services.AddTransient<OAuth2TokenHandler>();
 
-        // Register the HttpClient with the OAuth2 handler
+        // Register the HttpClient with authentication
         services.AddHttpClient<IMerchant360Client, Merchant360ApiClient>((sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<Merchant360Options>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(30);
+
+            // Use API key if configured, otherwise OAuth2 handler will add Bearer token
+            if (!string.IsNullOrEmpty(options.ApiKey))
+            {
+                client.DefaultRequestHeaders.Add("X-Api-Key", options.ApiKey);
+            }
         })
         .AddHttpMessageHandler<OAuth2TokenHandler>();
 

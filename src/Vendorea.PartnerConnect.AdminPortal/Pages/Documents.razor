@@ -6,8 +6,39 @@
 <h1>Documents</h1>
 
 <div class="row mb-3">
-    <div class="col-md-4">
-        <select class="form-select" @bind="statusFilter">
+    <div class="col-md-2">
+        <label class="form-label">Document Type</label>
+        <select class="form-select" value="@documentTypeFilter" @onchange="OnDocumentTypeChanged">
+            <option value="">All Types</option>
+            @foreach (var docType in documentTypes)
+            {
+                <option value="@docType">@docType</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Dealer</label>
+        <select class="form-select" value="@dealerFilter" @onchange="OnDealerChanged">
+            <option value="">All Dealers</option>
+            @foreach (var dealer in dealers)
+            {
+                <option value="@dealer.Id">@dealer.Name</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Partner</label>
+        <select class="form-select" value="@partnerFilter" @onchange="OnPartnerChanged">
+            <option value="">All Partners</option>
+            @foreach (var partner in partners)
+            {
+                <option value="@partner.Id">@partner.Name</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Status</label>
+        <select class="form-select" value="@statusFilter" @onchange="OnStatusChanged">
             <option value="">All Statuses</option>
             <option value="Received">Received</option>
             <option value="Validated">Validated</option>
@@ -17,9 +48,12 @@
             <option value="Quarantined">Quarantined</option>
         </select>
     </div>
-    <div class="col-md-2">
-        <button class="btn btn-primary" @onclick="RefreshDocuments">
+    <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-primary me-2" @onclick="RefreshDocuments">
             <span class="oi oi-reload"></span> Search
+        </button>
+        <button class="btn btn-outline-secondary" @onclick="ClearFilters">
+            Clear
         </button>
     </div>
 </div>
@@ -45,6 +79,8 @@ else
             <thead class="table-dark">
                 <tr>
                     <th>ID</th>
+                    <th>Dealer</th>
+                    <th>Partner</th>
                     <th>Type</th>
                     <th>Direction</th>
                     <th>Status</th>
@@ -59,6 +95,8 @@ else
                 {
                     <tr>
                         <td>@doc.Id</td>
+                        <td>@(doc.DealerName ?? $"Dealer #{doc.DealerId}")</td>
+                        <td>@(doc.PartnerName ?? $"Partner #{doc.TradingPartnerId}")</td>
                         <td><code>@doc.DocumentType</code></td>
                         <td>
                             <span class="badge @(doc.Direction == "Inbound" ? "bg-info" : "bg-primary")">
@@ -116,6 +154,10 @@ else
                     <dl class="row">
                         <dt class="col-sm-4">ID</dt>
                         <dd class="col-sm-8">@selectedDocument.Id</dd>
+                        <dt class="col-sm-4">Dealer</dt>
+                        <dd class="col-sm-8">@(selectedDocument.DealerName ?? $"Dealer #{selectedDocument.DealerId}")</dd>
+                        <dt class="col-sm-4">Partner</dt>
+                        <dd class="col-sm-8">@(selectedDocument.PartnerName ?? $"Partner #{selectedDocument.TradingPartnerId}")</dd>
                         <dt class="col-sm-4">Connection ID</dt>
                         <dd class="col-sm-8">@selectedDocument.DealerPartnerConnectionId</dd>
                         <dt class="col-sm-4">Document Type</dt>
@@ -156,9 +198,17 @@ else
     private DocumentPagedResult? documents;
     private DocumentDto? selectedDocument;
     private string statusFilter = "";
+    private string documentTypeFilter = "";
+    private string dealerFilter = "";
+    private string partnerFilter = "";
     private bool isLoading = true;
     private int currentPage = 0;
     private int pageSize = 20;
+
+    // Filter options from API
+    private List<string> documentTypes = new();
+    private List<FilterOption> dealers = new();
+    private List<FilterOption> partners = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -168,8 +218,65 @@ else
     private async Task RefreshDocuments()
     {
         isLoading = true;
-        documents = await Api.GetDocumentsAsync(currentPage * pageSize, pageSize, string.IsNullOrEmpty(statusFilter) ? null : statusFilter);
+
+        int? dealerId = string.IsNullOrEmpty(dealerFilter) ? null : int.TryParse(dealerFilter, out var d) ? d : null;
+        int? partnerId = string.IsNullOrEmpty(partnerFilter) ? null : int.TryParse(partnerFilter, out var p) ? p : null;
+
+        documents = await Api.GetDocumentsAsync(
+            currentPage * pageSize,
+            pageSize,
+            string.IsNullOrEmpty(statusFilter) ? null : statusFilter,
+            string.IsNullOrEmpty(documentTypeFilter) ? null : documentTypeFilter,
+            dealerId,
+            partnerId);
+
+        // Update filter options from response
+        if (documents?.FilterOptions != null)
+        {
+            documentTypes = documents.FilterOptions.DocumentTypes;
+            dealers = documents.FilterOptions.Dealers;
+            partners = documents.FilterOptions.Partners;
+        }
+
         isLoading = false;
+    }
+
+    private async Task ClearFilters()
+    {
+        statusFilter = "";
+        documentTypeFilter = "";
+        dealerFilter = "";
+        partnerFilter = "";
+        currentPage = 0;
+        await RefreshDocuments();
+    }
+
+    private async Task OnDocumentTypeChanged(ChangeEventArgs e)
+    {
+        documentTypeFilter = e.Value?.ToString() ?? "";
+        currentPage = 0;
+        await RefreshDocuments();
+    }
+
+    private async Task OnDealerChanged(ChangeEventArgs e)
+    {
+        dealerFilter = e.Value?.ToString() ?? "";
+        currentPage = 0;
+        await RefreshDocuments();
+    }
+
+    private async Task OnPartnerChanged(ChangeEventArgs e)
+    {
+        partnerFilter = e.Value?.ToString() ?? "";
+        currentPage = 0;
+        await RefreshDocuments();
+    }
+
+    private async Task OnStatusChanged(ChangeEventArgs e)
+    {
+        statusFilter = e.Value?.ToString() ?? "";
+        currentPage = 0;
+        await RefreshDocuments();
     }
 
     private async Task PreviousPage()

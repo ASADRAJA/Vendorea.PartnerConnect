@@ -433,12 +433,15 @@ public class SprPriceFeedParser
 
     /// <summary>
     /// Parses a CSV line handling quoted fields and escaped quotes.
+    /// SPR files use quotes literally (e.g., 9X11" for inches), not as field delimiters,
+    /// so we only treat quotes as delimiters if they appear at the start of a field.
     /// </summary>
     private static string[] ParseCsvLine(string line, char delimiter = DefaultDelimiter)
     {
         var values = new List<string>();
         var inQuotes = false;
         var currentValue = new System.Text.StringBuilder();
+        var fieldStart = true; // Track if we're at the start of a field
 
         for (int i = 0; i < line.Length; i++)
         {
@@ -448,23 +451,37 @@ public class SprPriceFeedParser
             {
                 if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
                 {
-                    // Escaped quote
+                    // Escaped quote inside quoted field
                     currentValue.Append('"');
                     i++;
                 }
+                else if (inQuotes)
+                {
+                    // End of quoted field
+                    inQuotes = false;
+                }
+                else if (fieldStart)
+                {
+                    // Start of quoted field (quote at beginning of field)
+                    inQuotes = true;
+                }
                 else
                 {
-                    inQuotes = !inQuotes;
+                    // Quote in middle of unquoted field - treat as literal (e.g., 9X11")
+                    currentValue.Append('"');
                 }
+                fieldStart = false;
             }
             else if (c == delimiter && !inQuotes)
             {
                 values.Add(currentValue.ToString());
                 currentValue.Clear();
+                fieldStart = true; // Next character starts a new field
             }
             else
             {
                 currentValue.Append(c);
+                fieldStart = false;
             }
         }
 
