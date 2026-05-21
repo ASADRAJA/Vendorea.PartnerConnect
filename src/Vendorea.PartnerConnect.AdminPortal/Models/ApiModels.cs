@@ -429,3 +429,59 @@ public class SubscribedPartnerDto
     public string TradingPartnerName { get; set; } = string.Empty;
     public string AccountNumber { get; set; } = string.Empty;
 }
+
+// FTP Content Ingestion Models
+public class FtpIngestionConfigDto
+{
+    public string FtpHost { get; set; } = "ftp.etilize.com";
+    public int FtpPort { get; set; } = 21;
+    public string FtpUsername { get; set; } = string.Empty;
+    public string FtpPassword { get; set; } = string.Empty;
+    public string LocalDownloadPath { get; set; } = @"C:\inquire";
+    public string Locale { get; set; } = "EN_US";
+    public string DatabaseType { get; set; } = "mssql";
+    public bool Enabled { get; set; }
+    public bool EnableScheduledRun { get; set; } = true;
+    public int ScheduledRunHourUtc { get; set; } = 2;
+    public int CheckIntervalMinutes { get; set; } = 60;
+    public int ConnectionTimeoutSeconds { get; set; } = 30;
+    public int BulkInsertBatchSize { get; set; } = 10000;
+    public bool CleanupAfterImport { get; set; } = true;
+}
+
+public class FtpIngestionStatusDto
+{
+    public bool IsRunning { get; set; }
+    public DateTime? LastRunAt { get; set; }
+    public bool? LastRunSuccess { get; set; }
+    public DateTime? NextScheduledRun { get; set; }
+    public string? CurrentPhase { get; set; }
+}
+
+public class FtpIngestionRunDto
+{
+    public int Id { get; set; }
+    public bool Success { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? Message { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string Duration { get; set; } = string.Empty;
+    public int ProductsTransformed { get; set; }
+    public int CategoriesTransformed { get; set; }
+    public int FeaturesTransformed { get; set; }
+    public int RelationshipsTransformed { get; set; }
+    public int SpecificationsTransformed { get; set; }
+    public int FilesDownloaded { get; set; }
+    public long BytesDownloaded { get; set; }
+    public int TablesImported { get; set; }
+    public long RowsImported { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
+public class FtpConnectionTestResult
+{
+    public bool Success { get; set; }
+    public int FilesFound { get; set; }
+    public string? ErrorMessage { get; set; }
+}

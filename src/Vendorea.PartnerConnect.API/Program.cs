@@ -10,8 +10,16 @@ using Vendorea.PartnerConnect.Persistence;
 using Vendorea.PartnerConnect.Storage;
 using Vendorea.PartnerConnect.Transport;
 using Vendorea.PartnerConnect.Webhooks;
+using Vendorea.PartnerConnect.WorkerProcesses;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Kestrel for long-running import operations
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(60);
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(60);
+});
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -74,6 +82,9 @@ builder.Services.AddWebhooks();
 // Billing
 builder.Services.AddBilling(builder.Configuration);
 
+// Worker Processes (for FTP ingestion services, without background worker)
+builder.Services.AddWorkerProcesses(builder.Configuration);
+
 // Authentication
 builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.AuthenticationScheme)
     .AddApiKeyAuthentication();
@@ -97,6 +108,34 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Cleanup any orphaned ingestion runs from previous crashes
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<Vendorea.PartnerConnect.Persistence.PartnerConnectDbContext>();
+        var orphanedRuns = dbContext.FtpIngestionRuns
+            .Where(r => r.CompletedAt == null)
+            .ToList();
+
+        if (orphanedRuns.Any())
+        {
+            Log.Information("Found {Count} orphaned ingestion runs, marking as failed", orphanedRuns.Count);
+            foreach (var run in orphanedRuns)
+            {
+                run.Success = false;
+                run.CompletedAt = DateTime.UtcNow;
+                run.Errors.Add("Process terminated unexpectedly (API restart)");
+            }
+            dbContext.SaveChanges();
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Could not cleanup orphaned ingestion runs");
+    }
+}
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())

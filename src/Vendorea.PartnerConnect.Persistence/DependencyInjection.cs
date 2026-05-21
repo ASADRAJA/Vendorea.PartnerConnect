@@ -91,6 +91,10 @@ public static class DependencyInjection
         // Merchant Subscription Requests (from M360)
         services.AddScoped<IMerchantSubscriptionRequestRepository, MerchantSubscriptionRequestRepository>();
 
+        // FTP Ingestion
+        services.AddScoped<IFtpIngestionRunRepository, FtpIngestionRunRepository>();
+        services.AddScoped<IPartnerIngestionConfigRepository, PartnerIngestionConfigRepository>();
+
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
     }

@@ -1243,6 +1243,69 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("ExternalDealers", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.FtpIngestionRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<long>("BytesDownloaded")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("CategoriesTransformed")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Errors")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("FeaturesTransformed")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FilesDownloaded")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductsTransformed")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RelationshipsTransformed")
+                        .HasColumnType("int");
+
+                    b.Property<long>("RowsImported")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("SpecificationsTransformed")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("TablesImported")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TriggeredBy")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartedAt")
+                        .IsDescending();
+
+                    b.HasIndex("Success");
+
+                    b.ToTable("FtpIngestionRuns", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.InventoryFeedBatch", b =>
                 {
                     b.Property<int>("Id")
@@ -1634,6 +1697,98 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.HasIndex("DealerPartnerConnectionId", "State");
 
                     b.ToTable("PartnerDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.PartnerIngestionConfig", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AzureBlobConnectionString")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("AzureBlobContainerName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("BulkInsertBatchSize")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CheckIntervalMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("CleanupAfterImport")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ConnectionTimeoutSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DatabaseType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("EnableScheduledRun")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("FtpHost")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FtpPassword")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("FtpPort")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FtpUsername")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("LocalDownloadPath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("PartnerCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("ScheduledRunHourUtc")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("UseAzureBlobStorage")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartnerCode")
+                        .IsUnique();
+
+                    b.ToTable("PartnerIngestionConfigs", (string)null);
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Permission", b =>
@@ -3327,6 +3482,1035 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasDatabaseName("IX_SprProductSpecifications_Content");
 
                     b.ToTable("SprProductSpecifications", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawAttributeName", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AttributeId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("attributeid");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttributeId");
+
+                    b.ToTable("attributenames", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawCategory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CatLevel")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("catlevel");
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("DisplayOrder")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("displayorder");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("LastUpdated")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("lastupdated");
+
+                    b.Property<string>("OrderNumber")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("ordernumber");
+
+                    b.Property<string>("ParentCategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("parentcategoryid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentCategoryId");
+
+                    b.ToTable("category", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawCategoryDisplayAttribute", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AttributeId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("attributeid");
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("DefaultDisplayOrder")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("defaultdisplayorder");
+
+                    b.Property<string>("DisplayOrder")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("displayorder");
+
+                    b.Property<string>("HeaderId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("headerid");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("LastUpdated")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("lastupdated");
+
+                    b.Property<string>("TemplateType")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("templatetype");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttributeId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("categorydisplayattributes", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawCategoryHeader", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("DefaultDisplayOrder")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("defaultdisplayorder");
+
+                    b.Property<string>("DisplayOrder")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("displayorder");
+
+                    b.Property<string>("HeaderId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("headerid");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("LastUpdated")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("lastupdated");
+
+                    b.Property<string>("TemplateType")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("templatetype");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("HeaderId");
+
+                    b.ToTable("categoryheader", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawCategoryName", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("categorynames", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawCategorySearchAttribute", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AttributeId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("attributeid");
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("IsPreferred")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("ispreferred");
+
+                    b.Property<string>("LastUpdated")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("lastupdated");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttributeId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("categorysearchattributes", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawHeaderName", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("HeaderId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("headerid");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HeaderId");
+
+                    b.ToTable("headernames", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawLocale", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CountryCode")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("countrycode");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("LanguageCode")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("languagecode");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("locales", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawManufacturer", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Address1")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("address1");
+
+                    b.Property<string>("Address2")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("address2");
+
+                    b.Property<string>("City")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("city");
+
+                    b.Property<string>("Country")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("country");
+
+                    b.Property<string>("Fax")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("fax");
+
+                    b.Property<string>("LastUpdated")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("lastupdated");
+
+                    b.Property<string>("ManufacturerId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("manufacturerid");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Phone")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("State")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("url");
+
+                    b.Property<string>("Zip")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("zip");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("manufacturer", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawMappedCategory", b =>
+                {
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.HasKey("ProductId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("mapped_category", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawMappedCategoryName", b =>
+                {
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("name");
+
+                    b.HasKey("CategoryId", "LocaleId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("mapped_category_names", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawMappedCategoryTaxonomy", b =>
+                {
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("ParentCategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("parentcategoryid");
+
+                    b.HasKey("CategoryId");
+
+                    b.HasIndex("ParentCategoryId");
+
+                    b.ToTable("mapped_category_taxonomy", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProduct", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("CreationDate")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("creationdate");
+
+                    b.Property<string>("Equivalency")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("equivalency");
+
+                    b.Property<string>("IsAccessory")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isaccessory");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("LastUpdated")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("lastupdated");
+
+                    b.Property<string>("ManufacturerId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("manufacturerid");
+
+                    b.Property<string>("MfgPartNo")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("mfgpartno");
+
+                    b.Property<string>("ModifiedDate")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("modifieddate");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("productid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("ManufacturerId");
+
+                    b.HasIndex("MfgPartNo");
+
+                    b.ToTable("product", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductAccessory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AccessoryProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("accessoryproductid");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("IsOption")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isoption");
+
+                    b.Property<string>("IsPreferred")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("ispreferred");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("RecommendationWeight")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("recommendation_weight");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccessoryProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productaccessories", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductAttribute", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AbsoluteValue")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("absolutevalue");
+
+                    b.Property<string>("AttributeId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("attributeid");
+
+                    b.Property<string>("CategoryId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("categoryid");
+
+                    b.Property<string>("DisplayValue")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("displayvalue");
+
+                    b.Property<string>("IsAbsolute")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isabsolute");
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("UnitId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("unitid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttributeId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productattribute", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductDescription", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("IsDefault")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isdefault");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productdescriptions", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductFeature", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BulletText")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("bullettext");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("SequenceNo")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("sequenceno");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productfeatures", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductImage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("Status")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productimages", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductKeyword", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Keywords")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("keywords");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productkeywords", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductLocale", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("IsActive")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isactive");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("Status")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productlocales", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductResource", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("EndDate")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("enddate");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("Sku")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("sku");
+
+                    b.Property<string>("SkuName")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("skuname");
+
+                    b.Property<string>("StartDate")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("startdate");
+
+                    b.Property<string>("Status")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Text")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("text");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("type");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("productresources", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductSimilar", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("SimilarProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("similarproductid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("SimilarProductId");
+
+                    b.ToTable("productsimilar", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductSku", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AddedDate")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("addeddate");
+
+                    b.Property<string>("DiscontinuedDate")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("discontinueddate");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("Sku")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("sku");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("Sku");
+
+                    b.ToTable("productskus", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawProductUpsell", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("UpsellProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("upsellproductid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("UpsellProductId");
+
+                    b.ToTable("productupsell", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawSearchAttribute", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AbsoluteValue")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("absolutevalue");
+
+                    b.Property<string>("AttributeId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("attributeid");
+
+                    b.Property<string>("IsAbsolute")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isabsolute");
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("productid");
+
+                    b.Property<string>("ValueId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("valueid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttributeId");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("ValueId");
+
+                    b.ToTable("search_attribute", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawSearchAttributeValue", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AbsoluteValue")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("absolutevalue");
+
+                    b.Property<string>("IsAbsolute")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("isabsolute");
+
+                    b.Property<string>("UnitId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("unitid");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("value");
+
+                    b.Property<string>("ValueId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("valueid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Value");
+
+                    b.ToTable("search_attribute_values", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawUnit", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BaseUnitId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("baseunitid");
+
+                    b.Property<string>("Multiple")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("multiple");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("UnitId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("unitid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("units", "spr");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.SprRaw.SprRawUnitName", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("LocaleId")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("localeid");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("UnitId")
+                        .HasColumnType("nvarchar(450)")
+                        .HasColumnName("unitid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UnitId");
+
+                    b.ToTable("unitnames", "spr");
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.TradingPartner", b =>

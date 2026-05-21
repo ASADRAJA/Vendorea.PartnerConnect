@@ -58,6 +58,7 @@ public enum SprContentFileType
     Unknown,
     BasicContent,
     DetailContent,
+    Descriptions,
     FeatureBullets,
     Accessories,
     SimilarProducts,
@@ -66,7 +67,8 @@ public enum SprContentFileType
     Categories,
     SkuMapping,
     Keywords,
-    SqlScript
+    SqlScript,
+    FlatFile  // Comprehensive flat file export with all product data
 }
 
 /// <summary>
@@ -86,6 +88,22 @@ public interface ISprBasicContentParser
 }
 
 /// <summary>
+/// Interface for parsing SPR flat file export (comprehensive product data).
+/// </summary>
+public interface ISprFlatFileParser
+{
+    /// <summary>
+    /// Parses the flat file export which contains all product data in one file.
+    /// Returns product content along with specifications HTML (which goes to separate table).
+    /// </summary>
+    IAsyncEnumerable<(SprProductContent Product, string? SpecificationsHtml)> ParseAsync(
+        StreamReader reader,
+        int contentUploadId,
+        string localeId,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Interface for parsing SPR detail content (specifications).
 /// </summary>
 public interface ISprDetailContentParser
@@ -94,6 +112,19 @@ public interface ISprDetailContentParser
     /// Parses specification records.
     /// </summary>
     IAsyncEnumerable<(string ProductId, string SpecificationsHtml)> ParseAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Interface for parsing SPR product descriptions.
+/// </summary>
+public interface ISprDescriptionParser
+{
+    /// <summary>
+    /// Parses description records from EN_US_B_productdescriptions.csv.
+    /// </summary>
+    IAsyncEnumerable<(string ProductId, string Description)> ParseAsync(
         StreamReader reader,
         CancellationToken cancellationToken = default);
 }

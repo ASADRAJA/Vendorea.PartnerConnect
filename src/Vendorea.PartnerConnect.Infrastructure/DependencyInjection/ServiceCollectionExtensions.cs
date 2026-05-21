@@ -37,6 +37,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISprContentZipExtractor, SprContentZipExtractor>();
         services.AddScoped<SprContentFileParser>();
         services.AddScoped<ISprBasicContentParser, SprBasicContentParser>();
+        services.AddScoped<ISprFlatFileParser, SprFlatFileParser>();
+        services.AddScoped<ISprDescriptionParser, SprDescriptionParser>();
         services.AddScoped<ISprDetailContentParser, SprDetailContentParser>();
         services.AddScoped<ISprFeatureBulletParser, SprFeatureBulletParser>();
         services.AddScoped<ISprRelationshipParser, SprRelationshipParser>();

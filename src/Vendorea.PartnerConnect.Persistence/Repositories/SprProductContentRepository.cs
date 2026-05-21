@@ -267,6 +267,51 @@ public class SprProductContentRepository : ISprProductContentRepository
         }
     }
 
+    public async Task BulkUpdateDescriptionsAsync(
+        Dictionary<long, string> descriptions,
+        CancellationToken cancellationToken = default)
+    {
+        if (descriptions.Count == 0)
+            return;
+
+        // Use raw SQL with CASE expression for efficient bulk update
+        // Process in batches to avoid SQL parameter limits
+        const int batchSize = 100;
+        var items = descriptions.ToList();
+        var now = DateTime.UtcNow;
+
+        for (int i = 0; i < items.Count; i += batchSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var batch = items.Skip(i).Take(batchSize).ToList();
+
+            // Build the CASE expression for descriptions
+            var caseExpressions = new List<string>();
+            var parameters = new List<object>();
+            var paramIndex = 0;
+
+            foreach (var (id, description) in batch)
+            {
+                caseExpressions.Add($"WHEN {id} THEN {{{paramIndex}}}");
+                parameters.Add(description ?? string.Empty);
+                paramIndex++;
+            }
+
+            var ids = string.Join(",", batch.Select(b => b.Key));
+            var caseExpression = string.Join(" ", caseExpressions);
+
+            var sql = $@"UPDATE SprProductContent
+                         SET Description1 = CASE Id {caseExpression} END,
+                             UpdatedAt = {{{paramIndex}}}
+                         WHERE Id IN ({ids})";
+
+            parameters.Add(now);
+
+            await _context.Database.ExecuteSqlRawAsync(sql, parameters.ToArray(), cancellationToken);
+        }
+    }
+
     public async Task DeleteByUploadIdAsync(int uploadId, CancellationToken cancellationToken = default)
     {
         // Delete in correct order due to FK constraints

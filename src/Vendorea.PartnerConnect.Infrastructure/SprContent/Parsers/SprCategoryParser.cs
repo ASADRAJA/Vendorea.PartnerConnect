@@ -40,7 +40,8 @@ public class SprCategoryParser : ISprCategoryParser
         int successCount = 0;
         int errorCount = 0;
 
-        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: true, cancellationToken: cancellationToken))
+        // Category file (sprcategory.csv) HAS headers and is comma-delimited
+        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: true, delimiter: ',', cancellationToken: cancellationToken))
         {
             SprCategoryParseResult? result = null;
 

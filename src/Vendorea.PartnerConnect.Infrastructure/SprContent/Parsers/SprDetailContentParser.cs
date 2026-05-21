@@ -37,7 +37,7 @@ public class SprDetailContentParser : ISprDetailContentParser
         int successCount = 0;
         int errorCount = 0;
 
-        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: true, cancellationToken: cancellationToken))
+        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: false, delimiter: ',', cancellationToken: cancellationToken))
         {
             string? productId = null;
             string? specsHtml = null;

@@ -655,4 +655,98 @@ public class ApiClient
             return false;
         }
     }
+
+    // FTP Content Ingestion endpoints
+    public async Task<FtpIngestionConfigDto?> GetFtpIngestionConfigAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<FtpIngestionConfigDto>("/api/admin/ftp-ingestion/config");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get FTP ingestion config");
+            return null;
+        }
+    }
+
+    public async Task<bool> SaveFtpIngestionConfigAsync(FtpIngestionConfigDto config)
+    {
+        try
+        {
+            var response = await _httpClient.PutAsJsonAsync("/api/admin/ftp-ingestion/config", config);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save FTP ingestion config");
+            return false;
+        }
+    }
+
+    public async Task<FtpConnectionTestResult> TestFtpConnectionAsync(FtpIngestionConfigDto config)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/ftp-ingestion/test-connection", config);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<FtpConnectionTestResult>()
+                    ?? new FtpConnectionTestResult { Success = false, ErrorMessage = "Invalid response" };
+            }
+            var error = await response.Content.ReadAsStringAsync();
+            return new FtpConnectionTestResult { Success = false, ErrorMessage = error };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to test FTP connection");
+            return new FtpConnectionTestResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<FtpIngestionStatusDto?> GetFtpIngestionStatusAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<FtpIngestionStatusDto>("/api/admin/ftp-ingestion/status");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get FTP ingestion status");
+            return null;
+        }
+    }
+
+    public async Task<FtpIngestionRunDto?> RunFtpIngestionAsync()
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync("/api/admin/ftp-ingestion/run", null);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<FtpIngestionRunDto>();
+            }
+            var error = await response.Content.ReadAsStringAsync();
+            return new FtpIngestionRunDto { Success = false, Errors = new List<string> { error } };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to run FTP ingestion");
+            return new FtpIngestionRunDto { Success = false, Errors = new List<string> { ex.Message } };
+        }
+    }
+
+    public async Task<List<FtpIngestionRunDto>> GetFtpIngestionHistoryAsync(int limit = 20)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<FtpIngestionRunDto>>(
+                $"/api/admin/ftp-ingestion/history?limit={limit}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get FTP ingestion history");
+            return new();
+        }
+    }
 }

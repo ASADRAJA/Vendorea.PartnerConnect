@@ -21,5 +21,6 @@
     <ProjectReference Include="..\Vendorea.PartnerConnect.Contracts\Vendorea.PartnerConnect.Contracts.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Storage\Vendorea.PartnerConnect.Storage.csproj" />
     <ProjectReference Include="..\Vendorea.PartnerConnect.Transport\Vendorea.PartnerConnect.Transport.csproj" />
+    <ProjectReference Include="..\Vendorea.PartnerConnect.WorkerProcesses\Vendorea.PartnerConnect.WorkerProcesses.csproj" />
   </ItemGroup>
 </Project>

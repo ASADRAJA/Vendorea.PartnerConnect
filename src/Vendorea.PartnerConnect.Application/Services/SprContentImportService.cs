@@ -16,6 +16,8 @@ public class SprContentImportService : ISprContentImportService
     private readonly ISprCategoryRepository _categoryRepository;
     private readonly ISprContentZipExtractor _zipExtractor;
     private readonly ISprBasicContentParser _basicParser;
+    private readonly ISprFlatFileParser _flatFileParser;
+    private readonly ISprDescriptionParser _descriptionParser;
     private readonly ISprDetailContentParser _detailParser;
     private readonly ISprFeatureBulletParser _featureParser;
     private readonly ISprRelationshipParser _relationshipParser;
@@ -35,6 +37,8 @@ public class SprContentImportService : ISprContentImportService
         ISprCategoryRepository categoryRepository,
         ISprContentZipExtractor zipExtractor,
         ISprBasicContentParser basicParser,
+        ISprFlatFileParser flatFileParser,
+        ISprDescriptionParser descriptionParser,
         ISprDetailContentParser detailParser,
         ISprFeatureBulletParser featureParser,
         ISprRelationshipParser relationshipParser,
@@ -48,6 +52,8 @@ public class SprContentImportService : ISprContentImportService
         _categoryRepository = categoryRepository;
         _zipExtractor = zipExtractor;
         _basicParser = basicParser;
+        _flatFileParser = flatFileParser;
+        _descriptionParser = descriptionParser;
         _detailParser = detailParser;
         _featureParser = featureParser;
         _relationshipParser = relationshipParser;
@@ -115,11 +121,21 @@ public class SprContentImportService : ISprContentImportService
             var entries = _zipExtractor.ListEntries(zipStream);
             _logger.LogInformation("Found {Count} entries in archive", entries.Count);
 
-            // Find content files
-            var basicContentEntry = entries.FirstOrDefault(e => e.ContentType == SprContentFileType.BasicContent);
-            if (basicContentEntry == null)
+            // Log all detected entries for debugging
+            _logger.LogInformation("Detected {Count} entries in archive:", entries.Count);
+            foreach (var e in entries.Take(30))
             {
-                throw new InvalidOperationException("No basic content file found in archive");
+                _logger.LogInformation("  - {Name} -> {Type} (Nested={Nested})", e.Name, e.ContentType, e.IsNested);
+            }
+
+            // Prefer flat file over basic content (flat file has all product data)
+            var flatFileEntry = entries.FirstOrDefault(e => e.ContentType == SprContentFileType.FlatFile);
+            var basicContentEntry = entries.FirstOrDefault(e => e.ContentType == SprContentFileType.BasicContent);
+
+            if (flatFileEntry == null && basicContentEntry == null)
+            {
+                throw new InvalidOperationException("No product content file found in archive. " +
+                    "Need either a flat file (EN_US_SP_Richards_MSSQL.csv) or basic content file (EN_US_B_product.csv).");
             }
 
             // Update to parsing phase
@@ -132,23 +148,59 @@ public class SprContentImportService : ISprContentImportService
             // Parse categories first (if available)
             await ImportCategoriesAsync(zipStream, entries, cancellationToken);
 
-            // Parse and import basic content
-            var productIdMap = await ImportBasicContentAsync(
-                zipStream, basicContentEntry, upload.Id, localeId,
-                progress, progressCallback, cancellationToken);
+            Dictionary<string, long> productIdMap;
 
-            // Parse and import specifications
-            var detailEntry = entries.FirstOrDefault(e => e.ContentType == SprContentFileType.DetailContent);
-            if (detailEntry != null)
+            if (flatFileEntry != null)
             {
-                await ImportSpecificationsAsync(zipStream, detailEntry, productIdMap, progress, progressCallback, cancellationToken);
+                // Use comprehensive flat file - contains all product data + specs
+                _logger.LogInformation("Using flat file for import: {FileName}", flatFileEntry.Name);
+                productIdMap = await ImportFromFlatFileAsync(
+                    zipStream, flatFileEntry, upload.Id, localeId,
+                    progress, progressCallback, cancellationToken);
+            }
+            else
+            {
+                // Fall back to basic content + separate files
+                _logger.LogInformation("Using basic content for import: {FileName}", basicContentEntry!.Name);
+                productIdMap = await ImportBasicContentAsync(
+                    zipStream, basicContentEntry, upload.Id, localeId,
+                    progress, progressCallback, cancellationToken);
+
+                // Parse and import descriptions (updates products with actual descriptions)
+                var descriptionEntry = entries.FirstOrDefault(e => e.ContentType == SprContentFileType.Descriptions);
+                if (descriptionEntry != null)
+                {
+                    _logger.LogInformation("Found descriptions entry: {Name}", descriptionEntry.Name);
+                    await ImportDescriptionsAsync(zipStream, descriptionEntry, productIdMap, progress, progressCallback, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning("No descriptions file found in archive");
+                }
+
+                // Parse and import specifications from detail file
+                var detailEntry = entries.FirstOrDefault(e => e.ContentType == SprContentFileType.DetailContent);
+                if (detailEntry != null)
+                {
+                    _logger.LogInformation("Found detail entry: {Name}", detailEntry.Name);
+                    await ImportSpecificationsAsync(zipStream, detailEntry, productIdMap, progress, progressCallback, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning("No detail/specifications file found in archive");
+                }
             }
 
             // Parse and import features
             var featureEntry = entries.FirstOrDefault(e => e.ContentType == SprContentFileType.FeatureBullets);
             if (featureEntry != null)
             {
+                _logger.LogInformation("Found features entry: {Name}", featureEntry.Name);
                 await ImportFeaturesAsync(zipStream, featureEntry, productIdMap, progress, progressCallback, cancellationToken);
+            }
+            else
+            {
+                _logger.LogWarning("No feature bullets file found in archive");
             }
 
             // Parse and import relationships
@@ -260,10 +312,20 @@ public class SprContentImportService : ISprContentImportService
             {
                 await _productContentRepository.BulkInsertAsync(products, cancellationToken);
 
+                int zeroIdCount = 0;
                 foreach (var p in products)
                 {
+                    if (p.Id == 0)
+                    {
+                        zeroIdCount++;
+                    }
                     productIdMap[p.ProductId] = p.Id;
                     progress.ProcessedProducts++;
+                }
+
+                if (zeroIdCount > 0)
+                {
+                    _logger.LogWarning("WARNING: {Count} products have Id=0 after bulk insert!", zeroIdCount);
                 }
 
                 progressCallback?.Invoke(progress);
@@ -285,8 +347,207 @@ public class SprContentImportService : ISprContentImportService
             progressCallback?.Invoke(progress);
         }
 
-        _logger.LogInformation("Imported {Count} products", productIdMap.Count);
+        // Log sample entries for debugging
+        var sampleEntries = productIdMap.Take(3).ToList();
+        foreach (var (key, value) in sampleEntries)
+        {
+            _logger.LogInformation("ProductIdMap sample: ProductId='{ProductId}' -> DbId={DbId}", key, value);
+        }
+
+        _logger.LogInformation("Imported {Count} products, ProductIdMap has {MapCount} entries",
+            productIdMap.Count, productIdMap.Count);
         return productIdMap;
+    }
+
+    /// <summary>
+    /// Imports products from comprehensive flat file (EN_US_SP_Richards_MSSQL.csv).
+    /// The flat file contains all product data including specs HTML in one file.
+    /// </summary>
+    private async Task<Dictionary<string, long>> ImportFromFlatFileAsync(
+        Stream zipStream,
+        ZipEntryInfo entry,
+        int uploadId,
+        string localeId,
+        ContentImportProgress progress,
+        Action<ContentImportProgress>? progressCallback,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Importing from flat file: {FileName}", entry.Name);
+
+        progress.CurrentPhase = "Importing products from flat file";
+        progress.CurrentFile = entry.Name;
+        progressCallback?.Invoke(progress);
+
+        using var reader = _zipExtractor.OpenEntryReader(zipStream, entry.FullName);
+        if (reader == null)
+        {
+            throw new InvalidOperationException($"Could not open {entry.Name}");
+        }
+
+        var products = new List<SprProductContent>();
+        var pendingSpecs = new List<(SprProductContent Product, string SpecsHtml)>();
+        var productIdMap = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        int batchSize = 500;
+
+        await foreach (var (product, specsHtml) in _flatFileParser.ParseAsync(reader, uploadId, localeId, cancellationToken))
+        {
+            products.Add(product);
+            if (!string.IsNullOrWhiteSpace(specsHtml))
+            {
+                pendingSpecs.Add((product, specsHtml));
+            }
+            progress.TotalProducts++;
+
+            if (products.Count >= batchSize)
+            {
+                // Insert products
+                await _productContentRepository.BulkInsertAsync(products, cancellationToken);
+
+                int zeroIdCount = 0;
+                foreach (var p in products)
+                {
+                    if (p.Id == 0)
+                    {
+                        zeroIdCount++;
+                    }
+                    productIdMap[p.ProductId] = p.Id;
+                    progress.ProcessedProducts++;
+                }
+
+                if (zeroIdCount > 0)
+                {
+                    _logger.LogWarning("WARNING: {Count} products have Id=0 after bulk insert!", zeroIdCount);
+                }
+
+                // Insert specs for these products
+                if (pendingSpecs.Count > 0)
+                {
+                    var specsToInsert = pendingSpecs
+                        .Where(s => s.Product.Id > 0)
+                        .Select(s => new SprProductSpecification
+                        {
+                            SprProductContentId = s.Product.Id,
+                            SpecificationsHtml = s.SpecsHtml
+                        })
+                        .ToList();
+
+                    if (specsToInsert.Count > 0)
+                    {
+                        await _productContentRepository.BulkInsertSpecificationsAsync(specsToInsert, cancellationToken);
+                    }
+                    pendingSpecs.Clear();
+                }
+
+                progressCallback?.Invoke(progress);
+                products.Clear();
+            }
+        }
+
+        // Insert remaining products
+        if (products.Count > 0)
+        {
+            await _productContentRepository.BulkInsertAsync(products, cancellationToken);
+
+            foreach (var p in products)
+            {
+                productIdMap[p.ProductId] = p.Id;
+                progress.ProcessedProducts++;
+            }
+
+            // Insert remaining specs
+            if (pendingSpecs.Count > 0)
+            {
+                var specsToInsert = pendingSpecs
+                    .Where(s => s.Product.Id > 0)
+                    .Select(s => new SprProductSpecification
+                    {
+                        SprProductContentId = s.Product.Id,
+                        SpecificationsHtml = s.SpecsHtml
+                    })
+                    .ToList();
+
+                if (specsToInsert.Count > 0)
+                {
+                    await _productContentRepository.BulkInsertSpecificationsAsync(specsToInsert, cancellationToken);
+                }
+            }
+
+            progressCallback?.Invoke(progress);
+        }
+
+        // Log sample entries for debugging
+        var sampleEntries = productIdMap.Take(3).ToList();
+        foreach (var (key, value) in sampleEntries)
+        {
+            _logger.LogInformation("ProductIdMap sample: ProductId='{ProductId}' -> DbId={DbId}", key, value);
+        }
+
+        _logger.LogInformation("Imported {Count} products from flat file, ProductIdMap has {MapCount} entries",
+            productIdMap.Count, productIdMap.Count);
+        return productIdMap;
+    }
+
+    private async Task ImportDescriptionsAsync(
+        Stream zipStream,
+        ZipEntryInfo entry,
+        Dictionary<string, long> productIdMap,
+        ContentImportProgress progress,
+        Action<ContentImportProgress>? progressCallback,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Importing descriptions from {FileName}, ProductIdMap has {Count} entries",
+            entry.Name, productIdMap.Count);
+
+        progress.CurrentPhase = "Importing descriptions";
+        progress.CurrentFile = entry.Name;
+        progressCallback?.Invoke(progress);
+
+        using var reader = _zipExtractor.OpenEntryReader(zipStream, entry.FullName);
+        if (reader == null)
+        {
+            _logger.LogWarning("Could not open reader for descriptions file: {FileName}", entry.FullName);
+            return;
+        }
+
+        var updates = new Dictionary<long, string>();
+        int batchSize = 1000;
+        int totalUpdates = 0;
+        int missingCount = 0;
+        string? firstMissingProductId = null;
+        string? sampleMapKey = productIdMap.Keys.FirstOrDefault();
+
+        await foreach (var (productId, description) in _descriptionParser.ParseAsync(reader, cancellationToken))
+        {
+            if (productIdMap.TryGetValue(productId, out var contentId))
+            {
+                updates[contentId] = description;
+                totalUpdates++;
+
+                if (updates.Count >= batchSize)
+                {
+                    await _productContentRepository.BulkUpdateDescriptionsAsync(updates, cancellationToken);
+                    updates.Clear();
+                }
+            }
+            else
+            {
+                missingCount++;
+                if (firstMissingProductId == null)
+                {
+                    firstMissingProductId = productId;
+                }
+            }
+        }
+
+        if (updates.Count > 0)
+        {
+            await _productContentRepository.BulkUpdateDescriptionsAsync(updates, cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Updated {Count} product descriptions, {Missing} had no matching product. " +
+            "Sample missing ProductId: '{MissingId}', Sample map key: '{MapKey}'",
+            totalUpdates, missingCount, firstMissingProductId, sampleMapKey);
     }
 
     private async Task ImportSpecificationsAsync(
@@ -343,17 +604,25 @@ public class SprContentImportService : ISprContentImportService
         Action<ContentImportProgress>? progressCallback,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Importing features from {FileName}", entry.Name);
+        _logger.LogInformation("Importing features from {FileName}, ProductIdMap has {Count} entries",
+            entry.Name, productIdMap.Count);
 
         progress.CurrentPhase = "Importing features";
         progress.CurrentFile = entry.Name;
         progressCallback?.Invoke(progress);
 
         using var reader = _zipExtractor.OpenEntryReader(zipStream, entry.FullName);
-        if (reader == null) return;
+        if (reader == null)
+        {
+            _logger.LogWarning("Could not open reader for features file: {FileName}", entry.FullName);
+            return;
+        }
 
         var features = new List<SprProductFeature>();
         int batchSize = 1000;
+        int missingCount = 0;
+        string? firstMissingProductId = null;
+        string? sampleMapKey = productIdMap.Keys.FirstOrDefault();
 
         await foreach (var (productId, feature) in _featureParser.ParseAsync(reader, cancellationToken))
         {
@@ -371,6 +640,14 @@ public class SprContentImportService : ISprContentImportService
                     progressCallback?.Invoke(progress);
                 }
             }
+            else
+            {
+                missingCount++;
+                if (firstMissingProductId == null)
+                {
+                    firstMissingProductId = productId;
+                }
+            }
         }
 
         if (features.Count > 0)
@@ -379,7 +656,10 @@ public class SprContentImportService : ISprContentImportService
             progress.ProcessedFeatures += features.Count;
         }
 
-        _logger.LogInformation("Imported {Count} features", progress.ProcessedFeatures);
+        _logger.LogInformation(
+            "Imported {Count} features, {Missing} had no matching product. " +
+            "Sample missing ProductId: '{MissingId}', Sample map key: '{MapKey}'",
+            progress.ProcessedFeatures, missingCount, firstMissingProductId, sampleMapKey);
     }
 
     private async Task ImportRelationshipsAsync(

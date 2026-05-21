@@ -82,6 +82,11 @@ public class SprContentImportController : ControllerBase
 
         try
         {
+            // Use a standalone 60-minute timeout for the import operation.
+            // This prevents HTTP request timeouts from cancelling the import prematurely.
+            // The import will continue even if the client connection times out.
+            using var importCts = new CancellationTokenSource(TimeSpan.FromMinutes(60));
+
             using var stream = file.OpenReadStream();
             var upload = await _importService.ImportFromZipAsync(
                 tradingPartner.Id,
@@ -92,7 +97,7 @@ public class SprContentImportController : ControllerBase
                 progress => _logger.LogDebug(
                     "Import progress: {Phase} - {Processed}/{Total}",
                     progress.CurrentPhase, progress.ProcessedProducts, progress.TotalProducts),
-                cancellationToken);
+                importCts.Token);
 
             return Ok(new ContentImportResultDto
             {

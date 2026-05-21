@@ -100,6 +100,14 @@ public class SprContentFileParser
                     // End of quoted field
                     inQuotes = false;
                     prevWasQuote = false;
+
+                    // Check if this character is the delimiter
+                    if (c == delimiter)
+                    {
+                        fields.Add(currentField.ToString().Trim());
+                        currentField.Clear();
+                        continue;
+                    }
                 }
                 currentField.Append(c);
             }

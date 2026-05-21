@@ -240,7 +240,7 @@ public class SprContentZipExtractor : ISprContentZipExtractor
         // Product descriptions (often in basic folder)
         // These contain the marketing descriptions
         if (isDataFile && lowerName.Contains("productdescription"))
-            return SprContentFileType.DetailContent;
+            return SprContentFileType.Descriptions;
 
         // Detail content (specifications HTML)
         // SPR format: files in detail folder or with _d_ prefix
@@ -288,6 +288,15 @@ public class SprContentZipExtractor : ISprContentZipExtractor
         // SQL scripts
         if (lowerName.EndsWith(".sql"))
             return SprContentFileType.SqlScript;
+
+        // Flat file export (comprehensive product data with all fields)
+        // Files like EN_US_SP_Richards_MSSQL.csv or EN_US_SP_Richards.csv
+        if (isDataFile && (
+            lowerName.Contains("sp_richards") ||
+            lowerName.Contains("sprichards") ||
+            lowerName.Contains("_horizon") ||
+            lowerName.Contains("_epic")))
+            return SprContentFileType.FlatFile;
 
         return SprContentFileType.Unknown;
     }

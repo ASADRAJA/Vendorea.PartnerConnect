@@ -143,6 +143,13 @@ public interface ISprProductContentRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Bulk updates product descriptions.
+    /// </summary>
+    Task BulkUpdateDescriptionsAsync(
+        Dictionary<long, string> descriptions,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes all product content for an upload.
     /// </summary>
     Task DeleteByUploadIdAsync(int uploadId, CancellationToken cancellationToken = default);

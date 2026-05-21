@@ -39,7 +39,7 @@ public class SprFeatureBulletParser : ISprFeatureBulletParser
         int successCount = 0;
         int errorCount = 0;
 
-        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: true, cancellationToken: cancellationToken))
+        await foreach (var record in _fileParser.ParseFileAsync(reader, hasHeader: false, delimiter: ',', cancellationToken: cancellationToken))
         {
             string? productId = null;
             SprProductFeature? feature = null;
@@ -52,7 +52,8 @@ public class SprFeatureBulletParser : ISprFeatureBulletParser
                     throw new InvalidOperationException($"Missing ProductId at line {record.LineNumber}");
                 }
 
-                var bulletText = GetValue(record, Columns.BulletText, 2);
+                // SPR format: ProductId, FeatureGroup, SortOrder, BulletText, Date, Flag
+                var bulletText = GetValue(record, Columns.BulletText, 3);
                 if (string.IsNullOrWhiteSpace(bulletText))
                 {
                     continue; // Skip empty bullets
@@ -60,9 +61,9 @@ public class SprFeatureBulletParser : ISprFeatureBulletParser
 
                 feature = new SprProductFeature
                 {
-                    SortOrder = SprContentFileParser.ParseInt(GetValue(record, Columns.SortOrder, 1)) ?? 0,
-                    BulletText = bulletText,
-                    FeatureGroup = GetValue(record, Columns.FeatureGroup, 3)
+                    FeatureGroup = GetValue(record, Columns.FeatureGroup, 1),
+                    SortOrder = SprContentFileParser.ParseInt(GetValue(record, Columns.SortOrder, 2)) ?? 0,
+                    BulletText = bulletText
                 };
 
                 successCount++;

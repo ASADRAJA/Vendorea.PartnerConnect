@@ -7,6 +7,7 @@ using Vendorea.PartnerConnect.PartnerAdapters;
 using Vendorea.PartnerConnect.Persistence;
 using Vendorea.PartnerConnect.Storage;
 using Vendorea.PartnerConnect.Transport;
+using Vendorea.PartnerConnect.WorkerProcesses;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -52,6 +53,10 @@ builder.Services.AddHostedService<DocumentProcessingWorker>();
 builder.Services.AddHostedService<ContentSyncWorker>();
 builder.Services.AddHostedService<OutboxProcessorWorker>();
 builder.Services.AddHostedService<EdiDocumentSyncWorker>();
+
+// SPR Content Ingestion Worker
+builder.Services.AddWorkerProcesses(builder.Configuration);
+builder.Services.AddSprContentIngestionWorker();
 
 try
 {

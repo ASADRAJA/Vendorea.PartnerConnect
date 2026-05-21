@@ -49,6 +49,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vendorea.PartnerConnect.Bil
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vendorea.PartnerConnect.AdminPortal", "src\Vendorea.PartnerConnect.AdminPortal\Vendorea.PartnerConnect.AdminPortal.csproj", "{D52C5AE2-DA0C-4284-AD02-3CAAFFB7B4DD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vendorea.PartnerConnect.WorkerProcesses", "src\Vendorea.PartnerConnect.WorkerProcesses\Vendorea.PartnerConnect.WorkerProcesses.csproj", "{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -311,6 +313,18 @@ Global
 		{D52C5AE2-DA0C-4284-AD02-3CAAFFB7B4DD}.Release|x64.Build.0 = Release|Any CPU
 		{D52C5AE2-DA0C-4284-AD02-3CAAFFB7B4DD}.Release|x86.ActiveCfg = Release|Any CPU
 		{D52C5AE2-DA0C-4284-AD02-3CAAFFB7B4DD}.Release|x86.Build.0 = Release|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Debug|x64.Build.0 = Debug|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Debug|x86.Build.0 = Debug|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Release|x64.ActiveCfg = Release|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Release|x64.Build.0 = Release|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Release|x86.ActiveCfg = Release|Any CPU
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -337,5 +351,6 @@ Global
 		{FD38DAA1-2C51-4ABA-8BCE-0A15A3397CFB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{95493EDE-089B-4F5E-9525-98D08458109E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{D52C5AE2-DA0C-4284-AD02-3CAAFFB7B4DD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{F4204006-5EB7-44B9-AA6A-E2DD890D27CD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
