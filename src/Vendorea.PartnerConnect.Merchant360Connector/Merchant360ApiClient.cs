@@ -292,6 +292,64 @@ public class Merchant360ApiClient : IMerchant360Client
         }
     }
 
+    /// <summary>
+    /// Pushes a batch of categories to Merchant360.
+    /// Categories should be synced before products.
+    /// </summary>
+    public async Task<CategoryBatchResponse> PushCategoryBatchAsync(
+        CategoryBatchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Pushing {Count} categories for partner {PartnerCode}",
+            request.Categories.Count, request.TradingPartnerCode);
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "/api/v1/partner-connect/content/categories/batch",
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<CategoryBatchResponse>(cancellationToken);
+                if (result != null)
+                {
+                    _logger.LogInformation(
+                        "Category batch success for partner {PartnerCode}: Received={Received}, Created={Created}, Updated={Updated}",
+                        request.TradingPartnerCode, result.CategoriesReceived, result.CategoriesCreated, result.CategoriesUpdated);
+                    return result;
+                }
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Category batch failed for partner {PartnerCode}: {StatusCode} - {Error}",
+                request.TradingPartnerCode, response.StatusCode, errorContent);
+
+            return new CategoryBatchResponse
+            {
+                Success = false,
+                TradingPartnerId = request.TradingPartnerId,
+                TradingPartnerCode = request.TradingPartnerCode,
+                CategoriesReceived = request.Categories.Count,
+                Errors = new List<string> { $"API returned {response.StatusCode}: {errorContent}" }
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while pushing categories for partner {PartnerCode}", request.TradingPartnerCode);
+            return new CategoryBatchResponse
+            {
+                Success = false,
+                TradingPartnerId = request.TradingPartnerId,
+                TradingPartnerCode = request.TradingPartnerCode,
+                CategoriesReceived = request.Categories.Count,
+                Errors = new List<string> { ex.Message }
+            };
+        }
+    }
+
     #region Phase 2 - Inventory (Disabled)
 
     /// <summary>

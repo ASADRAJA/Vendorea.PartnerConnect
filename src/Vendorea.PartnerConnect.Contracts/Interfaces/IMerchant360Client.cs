@@ -42,6 +42,14 @@ public interface IMerchant360Client
         ContentBatchRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Pushes a batch of categories to Merchant360.
+    /// Categories should be synced before products.
+    /// </summary>
+    Task<CategoryBatchResponse> PushCategoryBatchAsync(
+        CategoryBatchRequest request,
+        CancellationToken cancellationToken = default);
+
     #region Phase 2 - Inventory (Disabled)
 
     /// <summary>
@@ -187,10 +195,26 @@ public class ContentBatchProduct
     public string? CategoryPath { get; set; }
     public string? ImageUrl225 { get; set; }
     public string? ImageUrl75 { get; set; }
+    public string? ImageUrl3 { get; set; }
     public decimal? Weight { get; set; }
     public decimal? Length { get; set; }
     public decimal? Width { get; set; }
     public decimal? Height { get; set; }
+
+    // New fields for enhanced content
+    public string? Keywords { get; set; }
+    public string? CountryOfOrigin { get; set; }
+    public string? UnspscCode { get; set; }
+    public string? ProductType { get; set; }
+    public string? ProductLine { get; set; }
+    public string? ProductSeries { get; set; }
+    public decimal? RecycledPercent { get; set; }
+    public decimal? RecycledPcwPercent { get; set; }
+    public bool? AssemblyRequired { get; set; }
+    public string? Description3 { get; set; }
+    public string? ManufacturerWebsite { get; set; }
+    public string? CategoryCode { get; set; }
+
     public List<ContentSpecification> Specifications { get; set; } = new();
     public List<ContentFeature> Features { get; set; } = new();
     public List<ContentRelatedProduct> RelatedProducts { get; set; } = new();
@@ -201,18 +225,22 @@ public class ContentSpecification
     public string Name { get; set; } = string.Empty;
     public string? Value { get; set; }
     public string? Group { get; set; }
+    public int DisplayOrder { get; set; }
 }
 
 public class ContentFeature
 {
     public string? Headline { get; set; }
     public string? Description { get; set; }
+    public int DisplayOrder { get; set; }
 }
 
 public class ContentRelatedProduct
 {
     public string StockNumber { get; set; } = string.Empty;
     public string? RelationshipType { get; set; }
+    public bool IsBidirectional { get; set; }
+    public int DisplayOrder { get; set; }
 }
 
 /// <summary>
@@ -233,6 +261,45 @@ public class ContentBatchResponse
     public int FeaturesProcessed { get; set; }
     public int RelationshipsProcessed { get; set; }
     public int? SyncLogId { get; set; }
+    public List<string>? Errors { get; set; }
+}
+
+#endregion
+
+#region Category Batch DTOs
+
+/// <summary>
+/// Request to push a batch of categories to M360.
+/// Categories should be synced before products.
+/// </summary>
+public class CategoryBatchRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public List<CategoryBatchItem> Categories { get; set; } = new();
+}
+
+public class CategoryBatchItem
+{
+    public string CategoryCode { get; set; } = string.Empty;
+    public string CategoryName { get; set; } = string.Empty;
+    public string? ParentCategoryCode { get; set; }
+    public int Level { get; set; }
+    public string? FullPath { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+/// <summary>
+/// Response from M360 after pushing a category batch.
+/// </summary>
+public class CategoryBatchResponse
+{
+    public bool Success { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? TradingPartnerCode { get; set; }
+    public int CategoriesReceived { get; set; }
+    public int CategoriesCreated { get; set; }
+    public int CategoriesUpdated { get; set; }
     public List<string>? Errors { get; set; }
 }
 

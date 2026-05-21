@@ -969,6 +969,179 @@ public class SprContentImportService : ISprContentImportService
         }
     }
 
+    /// <summary>
+    /// Pushes SPR categories to Merchant360.
+    /// Categories should be pushed before content to ensure proper FK relationships.
+    /// </summary>
+    public async Task<CategoryPushResult> PushCategoriesToMerchant360Async(
+        int tradingPartnerId,
+        CancellationToken cancellationToken = default)
+    {
+        // Get trading partner info
+        var tradingPartner = await _tradingPartnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+        if (tradingPartner == null)
+        {
+            return new CategoryPushResult
+            {
+                Success = false,
+                TradingPartnerId = tradingPartnerId,
+                ErrorMessage = $"Trading partner {tradingPartnerId} not found"
+            };
+        }
+
+        _logger.LogInformation(
+            "Starting category push to M360: Partner={Partner}",
+            tradingPartner.Code);
+
+        try
+        {
+            // Get all active categories
+            var categories = await _categoryRepository.GetAllActiveAsync(cancellationToken);
+
+            if (!categories.Any())
+            {
+                return new CategoryPushResult
+                {
+                    Success = true,
+                    TradingPartnerId = tradingPartnerId,
+                    TradingPartnerCode = tradingPartner.Code,
+                    CategoriesPushed = 0,
+                    PushedAt = DateTime.UtcNow,
+                    ErrorMessage = "No active categories found to push"
+                };
+            }
+
+            _logger.LogInformation("Found {Count} categories to push", categories.Count);
+
+            // Build category batch request
+            var categoryBatch = new CategoryBatchRequest
+            {
+                TradingPartnerId = tradingPartner.Id,
+                TradingPartnerCode = tradingPartner.Code,
+                Categories = categories.Select(c => new CategoryBatchItem
+                {
+                    CategoryCode = c.CategoryCode,
+                    CategoryName = c.CategoryName,
+                    ParentCategoryCode = c.ParentCategory?.CategoryCode,
+                    Level = c.Level,
+                    FullPath = c.FullPath ?? BuildCategoryFullPath(c, categories),
+                    IsActive = c.IsActive
+                }).ToList()
+            };
+
+            // Push categories
+            var response = await _merchant360Client.PushCategoryBatchAsync(categoryBatch, cancellationToken);
+
+            var result = new CategoryPushResult
+            {
+                Success = response.Success,
+                TradingPartnerId = tradingPartnerId,
+                TradingPartnerCode = tradingPartner.Code,
+                CategoriesPushed = response.CategoriesReceived,
+                CategoriesCreated = response.CategoriesCreated,
+                CategoriesUpdated = response.CategoriesUpdated,
+                PushedAt = DateTime.UtcNow
+            };
+
+            if (!response.Success)
+            {
+                result.Errors.AddRange(response.Errors ?? new List<string>());
+                result.ErrorMessage = string.Join("; ", response.Errors ?? new List<string>());
+                _logger.LogError("Category push failed: {Errors}", result.ErrorMessage);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Category push completed: {Pushed} pushed, {Created} created, {Updated} updated",
+                    result.CategoriesPushed, result.CategoriesCreated, result.CategoriesUpdated);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Category push failed for trading partner {TradingPartnerId}", tradingPartnerId);
+            return new CategoryPushResult
+            {
+                Success = false,
+                TradingPartnerId = tradingPartnerId,
+                TradingPartnerCode = tradingPartner.Code,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    /// <summary>
+    /// Pushes both categories and content to Merchant360 in the correct order.
+    /// </summary>
+    public async Task<FullContentPushResult> PushAllToMerchant360Async(
+        int uploadId,
+        CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+        {
+            return new FullContentPushResult
+            {
+                Success = false,
+                UploadId = uploadId,
+                ErrorMessage = $"Upload {uploadId} not found"
+            };
+        }
+
+        _logger.LogInformation(
+            "Starting full content push to M360: UploadId={UploadId}, Partner={PartnerId}",
+            uploadId, upload.TradingPartnerId);
+
+        // Push categories first
+        var categoryResult = await PushCategoriesToMerchant360Async(upload.TradingPartnerId, cancellationToken);
+        if (!categoryResult.Success)
+        {
+            _logger.LogWarning(
+                "Category push failed, but continuing with content push. Error: {Error}",
+                categoryResult.ErrorMessage);
+        }
+
+        // Then push content
+        var contentResult = await PushToMerchant360Async(uploadId, cancellationToken);
+
+        var result = new FullContentPushResult
+        {
+            Success = contentResult.Success,
+            UploadId = uploadId,
+            CategoryResult = categoryResult,
+            ContentResult = contentResult,
+            PushedAt = DateTime.UtcNow
+        };
+
+        if (!contentResult.Success)
+        {
+            result.ErrorMessage = contentResult.ErrorMessage;
+        }
+
+        _logger.LogInformation(
+            "Full content push completed: Categories={Categories}, Products={Products}, Success={Success}",
+            categoryResult.CategoriesPushed, contentResult.RecordsPushed, result.Success);
+
+        return result;
+    }
+
+    private static string? BuildCategoryFullPath(SprCategory category, IReadOnlyList<SprCategory> allCategories)
+    {
+        var parts = new List<string> { category.CategoryName };
+        var current = category;
+
+        while (current.ParentCategoryId.HasValue)
+        {
+            var parent = allCategories.FirstOrDefault(c => c.Id == current.ParentCategoryId.Value);
+            if (parent == null) break;
+            parts.Insert(0, parent.CategoryName);
+            current = parent;
+        }
+
+        return string.Join(" > ", parts);
+    }
+
     private static ContentBatchProduct MapToContentBatchProduct(
         SprProductContent product,
         List<SprProductFeature> features,
@@ -983,25 +1156,57 @@ public class SprContentImportService : ISprContentImportService
             LongDescription = product.MarketingText,
             BrandName = product.BrandName,
             ManufacturerName = product.ManufacturerName,
-            ManufacturerPartNumber = product.ManufacturerId,
+            ManufacturerPartNumber = product.ManufacturerPartNumber ?? product.ManufacturerId,
             UpcCode = product.Upc,
             CategoryPath = BuildCategoryPath(product),
             ImageUrl225 = product.ImageUrl225,
             ImageUrl75 = product.ImageUrl75,
-            Weight = null, // Not in current import
+            ImageUrl3 = product.ImageUrl3,
+            Weight = null, // From price feed, not content
             Length = null,
             Width = null,
             Height = null,
-            Features = features.Select(f => new ContentFeature
-            {
-                Headline = f.FeatureGroup,
-                Description = f.BulletText
-            }).ToList(),
-            RelatedProducts = relationships.Select(r => new ContentRelatedProduct
-            {
-                StockNumber = r.RelatedProductId,
-                RelationshipType = r.RelationshipType.ToString()
-            }).ToList()
+
+            // New enhanced content fields
+            Keywords = product.Keywords,
+            CountryOfOrigin = product.CountryOfOrigin,
+            UnspscCode = product.UnspscCode,
+            ProductType = product.ProductType,
+            ProductLine = product.ProductLine,
+            ProductSeries = product.ProductSeries,
+            RecycledPercent = product.RecycledPercent,
+            RecycledPcwPercent = product.RecycledPcwPercent,
+            AssemblyRequired = product.AssemblyRequired,
+            Description3 = product.Description3,
+            ManufacturerWebsite = product.ManufacturerWebsite,
+            CategoryCode = product.SubClassNumber ?? product.ClassNumber ?? product.DepartmentNumber,
+
+            // Specifications - for now we don't have structured specs, HTML is in SprProductSpecification
+            // M360 will need to parse HTML or we need to add structured spec parsing
+            Specifications = new List<ContentSpecification>(),
+
+            // Features with display order
+            Features = features
+                .OrderBy(f => f.SortOrder)
+                .Select((f, idx) => new ContentFeature
+                {
+                    Headline = f.FeatureGroup,
+                    Description = f.BulletText,
+                    DisplayOrder = f.SortOrder > 0 ? f.SortOrder : idx + 1
+                })
+                .ToList(),
+
+            // Related products with display order and bidirectional flag
+            RelatedProducts = relationships
+                .OrderBy(r => r.SortOrder)
+                .Select((r, idx) => new ContentRelatedProduct
+                {
+                    StockNumber = r.RelatedSku ?? r.RelatedProductId,
+                    RelationshipType = r.RelationshipType.ToString(),
+                    IsBidirectional = r.IsBidirectional,
+                    DisplayOrder = r.SortOrder > 0 ? r.SortOrder : idx + 1
+                })
+                .ToList()
         };
     }
 

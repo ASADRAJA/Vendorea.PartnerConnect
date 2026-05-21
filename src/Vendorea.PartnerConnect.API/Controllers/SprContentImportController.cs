@@ -287,6 +287,138 @@ public class SprContentImportController : ControllerBase
     }
 
     /// <summary>
+    /// Pushes SPR categories to Merchant360.
+    /// Categories should be pushed before content to ensure proper FK relationships.
+    /// </summary>
+    [HttpPost("categories/push")]
+    [ProducesResponseType(typeof(CategoryPushResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> PushCategoriesToMerchant360(
+        [FromQuery] int tradingPartnerId,
+        CancellationToken cancellationToken = default)
+    {
+        if (tradingPartnerId <= 0)
+        {
+            return BadRequest("Trading partner ID is required");
+        }
+
+        _logger.LogInformation("Starting category push to M360 for trading partner {TradingPartnerId}", tradingPartnerId);
+
+        var result = await _importService.PushCategoriesToMerchant360Async(tradingPartnerId, cancellationToken);
+
+        if (!result.Success)
+        {
+            _logger.LogError("Category push failed: {Error}", result.ErrorMessage);
+            return BadRequest(new CategoryPushResultDto
+            {
+                Success = false,
+                TradingPartnerId = tradingPartnerId,
+                TradingPartnerCode = result.TradingPartnerCode,
+                ErrorMessage = result.ErrorMessage,
+                Errors = result.Errors
+            });
+        }
+
+        return Ok(new CategoryPushResultDto
+        {
+            Success = true,
+            TradingPartnerId = tradingPartnerId,
+            TradingPartnerCode = result.TradingPartnerCode,
+            CategoriesPushed = result.CategoriesPushed,
+            CategoriesCreated = result.CategoriesCreated,
+            CategoriesUpdated = result.CategoriesUpdated,
+            PushedAt = result.PushedAt
+        });
+    }
+
+    /// <summary>
+    /// Pushes both categories and content to Merchant360 in the correct order.
+    /// Categories are pushed first, then content.
+    /// </summary>
+    [HttpPost("{uploadId:int}/push-all")]
+    [ProducesResponseType(typeof(FullContentPushResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> PushAllToMerchant360(
+        int uploadId,
+        CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+        {
+            return NotFound($"Upload {uploadId} not found");
+        }
+
+        _logger.LogInformation("Starting full content push to M360 for upload {UploadId}", uploadId);
+
+        var result = await _importService.PushAllToMerchant360Async(uploadId, cancellationToken);
+
+        if (!result.Success)
+        {
+            _logger.LogError("Full content push failed: {Error}", result.ErrorMessage);
+            return BadRequest(new FullContentPushResultDto
+            {
+                Success = false,
+                UploadId = uploadId,
+                ErrorMessage = result.ErrorMessage,
+                CategoryResult = result.CategoryResult != null ? new CategoryPushResultDto
+                {
+                    Success = result.CategoryResult.Success,
+                    TradingPartnerId = result.CategoryResult.TradingPartnerId,
+                    TradingPartnerCode = result.CategoryResult.TradingPartnerCode,
+                    CategoriesPushed = result.CategoryResult.CategoriesPushed,
+                    CategoriesCreated = result.CategoryResult.CategoriesCreated,
+                    CategoriesUpdated = result.CategoryResult.CategoriesUpdated,
+                    PushedAt = result.CategoryResult.PushedAt,
+                    ErrorMessage = result.CategoryResult.ErrorMessage,
+                    Errors = result.CategoryResult.Errors
+                } : null,
+                ContentResult = result.ContentResult != null ? new ContentPushResultDto
+                {
+                    Success = result.ContentResult.Success,
+                    UploadId = result.ContentResult.UploadId,
+                    RecordsPushed = result.ContentResult.RecordsPushed,
+                    RecordsCreated = result.ContentResult.RecordsCreated,
+                    RecordsUpdated = result.ContentResult.RecordsUpdated,
+                    RecordsSkipped = result.ContentResult.RecordsSkipped,
+                    BatchCount = result.ContentResult.BatchCount,
+                    PushedAt = result.ContentResult.PushedAt,
+                    ErrorMessage = result.ContentResult.ErrorMessage,
+                    Errors = result.ContentResult.Errors
+                } : null
+            });
+        }
+
+        return Ok(new FullContentPushResultDto
+        {
+            Success = true,
+            UploadId = uploadId,
+            PushedAt = result.PushedAt,
+            CategoryResult = result.CategoryResult != null ? new CategoryPushResultDto
+            {
+                Success = result.CategoryResult.Success,
+                TradingPartnerId = result.CategoryResult.TradingPartnerId,
+                TradingPartnerCode = result.CategoryResult.TradingPartnerCode,
+                CategoriesPushed = result.CategoryResult.CategoriesPushed,
+                CategoriesCreated = result.CategoryResult.CategoriesCreated,
+                CategoriesUpdated = result.CategoryResult.CategoriesUpdated,
+                PushedAt = result.CategoryResult.PushedAt
+            } : null,
+            ContentResult = result.ContentResult != null ? new ContentPushResultDto
+            {
+                Success = result.ContentResult.Success,
+                UploadId = result.ContentResult.UploadId,
+                RecordsPushed = result.ContentResult.RecordsPushed,
+                RecordsCreated = result.ContentResult.RecordsCreated,
+                RecordsUpdated = result.ContentResult.RecordsUpdated,
+                RecordsSkipped = result.ContentResult.RecordsSkipped,
+                BatchCount = result.ContentResult.BatchCount,
+                PushedAt = result.ContentResult.PushedAt
+            } : null
+        });
+    }
+
+    /// <summary>
     /// Validates a zip file without importing.
     /// </summary>
     [HttpPost("validate")]
@@ -485,4 +617,33 @@ public class ContentPushResultDto
     public DateTime? PushedAt { get; set; }
     public string? ErrorMessage { get; set; }
     public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
+/// Result of pushing categories to Merchant360.
+/// </summary>
+public class CategoryPushResultDto
+{
+    public bool Success { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? TradingPartnerCode { get; set; }
+    public int CategoriesPushed { get; set; }
+    public int CategoriesCreated { get; set; }
+    public int CategoriesUpdated { get; set; }
+    public DateTime? PushedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
+/// Combined result of pushing categories and content to Merchant360.
+/// </summary>
+public class FullContentPushResultDto
+{
+    public bool Success { get; set; }
+    public int UploadId { get; set; }
+    public DateTime? PushedAt { get; set; }
+    public CategoryPushResultDto? CategoryResult { get; set; }
+    public ContentPushResultDto? ContentResult { get; set; }
+    public string? ErrorMessage { get; set; }
 }

@@ -67,6 +67,23 @@ public interface ISprContentImportService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Result of the push operation.</returns>
     Task<ContentPushResult> PushToMerchant360Async(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes SPR categories to Merchant360.
+    /// Categories should be pushed before content to ensure proper FK relationships.
+    /// </summary>
+    /// <param name="tradingPartnerId">The trading partner ID (SPR).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Result of the category push operation.</returns>
+    Task<CategoryPushResult> PushCategoriesToMerchant360Async(int tradingPartnerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes both categories and content to Merchant360 in the correct order.
+    /// </summary>
+    /// <param name="uploadId">The content upload ID to push.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Combined result of the push operations.</returns>
+    Task<FullContentPushResult> PushAllToMerchant360Async(int uploadId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -80,10 +97,42 @@ public class ContentPushResult
     public int RecordsCreated { get; set; }
     public int RecordsUpdated { get; set; }
     public int RecordsSkipped { get; set; }
+    public int SpecificationsPushed { get; set; }
+    public int FeaturesPushed { get; set; }
+    public int RelationshipsPushed { get; set; }
     public int BatchCount { get; set; }
     public DateTime? PushedAt { get; set; }
     public string? ErrorMessage { get; set; }
     public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
+/// Result of pushing categories to Merchant360.
+/// </summary>
+public class CategoryPushResult
+{
+    public bool Success { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? TradingPartnerCode { get; set; }
+    public int CategoriesPushed { get; set; }
+    public int CategoriesCreated { get; set; }
+    public int CategoriesUpdated { get; set; }
+    public DateTime? PushedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
+/// Combined result of pushing all content (categories + products) to Merchant360.
+/// </summary>
+public class FullContentPushResult
+{
+    public bool Success { get; set; }
+    public int UploadId { get; set; }
+    public CategoryPushResult? CategoryResult { get; set; }
+    public ContentPushResult? ContentResult { get; set; }
+    public DateTime? PushedAt { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 /// <summary>
