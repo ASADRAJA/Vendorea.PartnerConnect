@@ -372,6 +372,141 @@
     </div>
 }
 
+@if (showPushProgress)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header @(pushProgress?.Success == true ? "bg-success text-white" : pushProgress?.IsComplete == true && pushProgress?.Success == false ? "bg-danger text-white" : "")">
+                    <h5 class="modal-title">
+                        @if (pushProgress?.IsComplete == true)
+                        {
+                            @(pushProgress.Success ? "Push Complete" : "Push Failed")
+                        }
+                        else
+                        {
+                            <span>Pushing to Merchant360...</span>
+                        }
+                    </h5>
+                    @if (pushProgress?.IsComplete == true)
+                    {
+                        <button type="button" class="btn-close" @onclick="ClosePushProgress"></button>
+                    }
+                </div>
+                <div class="modal-body">
+                    @if (pushProgress != null)
+                    {
+                        <div class="mb-3">
+                            <strong>Status:</strong> @pushProgress.PhaseDescription
+                        </div>
+
+                        <div class="progress mb-3" style="height: 30px;">
+                            <div class="progress-bar @(pushProgress.IsComplete && !pushProgress.Success ? "bg-danger" : pushProgress.IsComplete && pushProgress.Success ? "bg-success" : "progress-bar-striped progress-bar-animated")"
+                                 role="progressbar"
+                                 style="width: @pushProgress.PercentComplete.ToString("F0")%">
+                                @pushProgress.PercentComplete.ToString("F0")%
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Categories</h6>
+                                <div class="d-flex justify-content-between">
+                                    <span>Pushed:</span>
+                                    <span>@pushProgress.CategoriesPushed.ToString("N0") / @pushProgress.TotalCategories.ToString("N0")</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Products</h6>
+                                <div class="d-flex justify-content-between">
+                                    <span>Pushed:</span>
+                                    <span>@pushProgress.ProductsPushed.ToString("N0") / @pushProgress.TotalProducts.ToString("N0")</span>
+                                </div>
+                                @if (pushProgress.TotalBatches > 0)
+                                {
+                                    <div class="d-flex justify-content-between">
+                                        <span>Batch:</span>
+                                        <span>@pushProgress.CurrentBatch / @pushProgress.TotalBatches</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        @if (pushProgress.IsComplete)
+                        {
+                            <hr />
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="text-center">
+                                        <h4 class="text-success">@pushProgress.RecordsCreated.ToString("N0")</h4>
+                                        <small class="text-muted">Created</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="text-center">
+                                        <h4 class="text-info">@pushProgress.RecordsUpdated.ToString("N0")</h4>
+                                        <small class="text-muted">Updated</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="text-center">
+                                        <h4 class="text-warning">@pushProgress.RecordsSkipped.ToString("N0")</h4>
+                                        <small class="text-muted">Skipped</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(pushProgress.ErrorMessage))
+                            {
+                                <div class="alert alert-danger mt-3">
+                                    <strong>Error:</strong> @pushProgress.ErrorMessage
+                                </div>
+                            }
+
+                            @if (pushProgress.Errors.Count > 0)
+                            {
+                                <div class="mt-3">
+                                    <h6 class="text-danger">Errors (@pushProgress.Errors.Count)</h6>
+                                    <ul class="small text-danger">
+                                        @foreach (var error in pushProgress.Errors.Take(5))
+                                        {
+                                            <li>@error</li>
+                                        }
+                                        @if (pushProgress.Errors.Count > 5)
+                                        {
+                                            <li>... and @(pushProgress.Errors.Count - 5) more</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+
+                            <div class="mt-3 small text-muted">
+                                <div>Started: @pushProgress.StartedAt.ToLocalTime().ToString("g")</div>
+                                @if (pushProgress.CompletedAt.HasValue)
+                                {
+                                    <div>Completed: @pushProgress.CompletedAt.Value.ToLocalTime().ToString("g")</div>
+                                    var duration = pushProgress.CompletedAt.Value - pushProgress.StartedAt;
+                                    <div>Duration: @duration.ToString(@"mm\:ss")</div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    @if (pushProgress?.IsComplete == true)
+                    {
+                        <button type="button" class="btn btn-primary" @onclick="ClosePushProgress">Close</button>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Please wait while content is being pushed...</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<ContentImportSummaryDto> importHistory = new();
     private ContentStatisticsDto? stats;
@@ -397,30 +532,46 @@
     private int? pushingUploadId;
     private string? pushError;
     private ContentPushResultDto? pushResult;
+    private bool showPushProgress;
+    private M360PushProgressDto? pushProgress;
+    private System.Threading.Timer? _pushPollTimer;
 
     private bool CanImport => selectedTradingPartnerId > 0 && !string.IsNullOrEmpty(contentVersion) && selectedFile != null;
 
     protected override async Task OnInitializedAsync()
     {
-        // Load trading partners and subscriptions
-        var partnersTask = Api.GetTradingPartnersAsync();
-        var subscriptionsTask = Api.GetMerchantsWithActiveSubscriptionsAsync();
+        // Load trading partners first (doesn't require M360)
+        tradingPartners = await Api.GetTradingPartnersAsync();
 
-        await Task.WhenAll(partnersTask, subscriptionsTask);
+        // Try to get subscriptions from M360, but don't block if M360 is unavailable
+        try
+        {
+            var merchantsWithSubs = await Api.GetMerchantsWithActiveSubscriptionsAsync();
 
-        tradingPartners = await partnersTask;
-        var merchantsWithSubs = await subscriptionsTask;
+            if (merchantsWithSubs.Count > 0)
+            {
+                // Filter to only show partners that have at least one active subscription
+                var subscribedPartnerIds = merchantsWithSubs
+                    .SelectMany(m => m.Partners)
+                    .Select(p => p.TradingPartnerId)
+                    .Distinct()
+                    .ToHashSet();
 
-        // Filter to only show partners that have at least one active subscription
-        var subscribedPartnerIds = merchantsWithSubs
-            .SelectMany(m => m.Partners)
-            .Select(p => p.TradingPartnerId)
-            .Distinct()
-            .ToHashSet();
-
-        subscribedPartners = tradingPartners
-            .Where(p => subscribedPartnerIds.Contains(p.Id))
-            .ToList();
+                subscribedPartners = tradingPartners
+                    .Where(p => subscribedPartnerIds.Contains(p.Id))
+                    .ToList();
+            }
+            else
+            {
+                // No subscriptions found - show all trading partners
+                subscribedPartners = tradingPartners.ToList();
+            }
+        }
+        catch
+        {
+            // M360 unavailable - show all trading partners for testing
+            subscribedPartners = tradingPartners.ToList();
+        }
 
         await LoadHistory();
     }
@@ -524,31 +675,89 @@
         pushingUploadId = uploadId;
         pushError = null;
         pushResult = null;
+        showPushProgress = true;
+        pushProgress = null;
 
         try
         {
-            pushResult = await Api.PushContentToM360Async(uploadId);
+            // Start the push
+            pushProgress = await Api.StartM360PushAsync(uploadId);
 
-            if (pushResult.Success)
+            if (pushProgress == null)
             {
-                await JS.InvokeVoidAsync("alert", $"Content pushed successfully! {pushResult.RecordsPushed:N0} products sent to M360.");
-                await LoadHistory();
+                pushProgress = new M360PushProgressDto
+                {
+                    UploadId = uploadId,
+                    Phase = "Failed",
+                    PhaseDescription = "Failed to start push",
+                    IsComplete = true,
+                    Success = false,
+                    ErrorMessage = "No response from server"
+                };
+                pushingUploadId = null;
+                StateHasChanged();
+                return;
             }
-            else
+
+            // Start polling for progress
+            _pushPollTimer = new System.Threading.Timer(async _ =>
             {
-                pushError = pushResult.ErrorMessage ?? "Unknown error occurred";
-                await JS.InvokeVoidAsync("alert", $"Push failed: {pushError}");
-            }
+                await InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        var progress = await Api.GetM360PushProgressAsync(uploadId);
+                        if (progress != null)
+                        {
+                            pushProgress = progress;
+                            StateHasChanged();
+
+                            if (progress.IsComplete)
+                            {
+                                StopPushPolling();
+                                await LoadHistory();
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log but don't stop polling on transient errors
+                        Console.WriteLine($"Polling error: {ex.Message}");
+                    }
+                });
+            }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
         }
         catch (Exception ex)
         {
-            pushError = ex.Message;
-            await JS.InvokeVoidAsync("alert", $"Push failed: {ex.Message}");
-        }
-        finally
-        {
+            pushProgress = new M360PushProgressDto
+            {
+                UploadId = uploadId,
+                Phase = "Failed",
+                PhaseDescription = "Push failed",
+                IsComplete = true,
+                Success = false,
+                ErrorMessage = ex.Message
+            };
             pushingUploadId = null;
+            StateHasChanged();
         }
+    }
+
+    private void StopPushPolling()
+    {
+        _pushPollTimer?.Dispose();
+        _pushPollTimer = null;
+        pushingUploadId = null;
+        StateHasChanged();
+    }
+
+    private async Task ClosePushProgress()
+    {
+        StopPushPolling();
+        showPushProgress = false;
+        pushProgress = null;
+        StateHasChanged();
+        await LoadHistory();
     }
 
     private string GetStatusBadgeClass(string status) => status?.ToLower() switch

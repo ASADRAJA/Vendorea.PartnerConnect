@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
@@ -24,11 +25,16 @@ public class SprContentImportService : ISprContentImportService
     private readonly ISprCategoryParser _categoryParser;
     private readonly IMerchant360Client _merchant360Client;
     private readonly ITradingPartnerRepository _tradingPartnerRepository;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
-    // Track progress for current import
-    private readonly Dictionary<int, ContentImportProgress> _progressCache = new();
+    // Track progress for current import (static to persist across scoped instances)
+    private static readonly Dictionary<int, ContentImportProgress> _progressCache = new();
+
+    // Track progress for M360 push operations (static to persist across scoped instances)
+    private static readonly Dictionary<int, M360PushProgress> _pushProgressCache = new();
 
     private const int MaxBatchSize = 10000;
+    private const int PushBatchSize = 500;
 
     public SprContentImportService(
         ILogger<SprContentImportService> logger,
@@ -44,7 +50,8 @@ public class SprContentImportService : ISprContentImportService
         ISprRelationshipParser relationshipParser,
         ISprCategoryParser categoryParser,
         IMerchant360Client merchant360Client,
-        ITradingPartnerRepository tradingPartnerRepository)
+        ITradingPartnerRepository tradingPartnerRepository,
+        IServiceScopeFactory serviceScopeFactory)
     {
         _logger = logger;
         _uploadRepository = uploadRepository;
@@ -60,6 +67,7 @@ public class SprContentImportService : ISprContentImportService
         _categoryParser = categoryParser;
         _merchant360Client = merchant360Client;
         _tradingPartnerRepository = tradingPartnerRepository;
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
     public async Task<SprContentUpload> ImportFromZipAsync(
@@ -1124,6 +1132,269 @@ public class SprContentImportService : ISprContentImportService
             categoryResult.CategoriesPushed, contentResult.RecordsPushed, result.Success);
 
         return result;
+    }
+
+    /// <summary>
+    /// Starts pushing content to M360 with progress tracking.
+    /// Returns immediately after starting. Poll GetM360PushProgressAsync for status.
+    /// </summary>
+    public async Task<M360PushProgress> StartM360PushAsync(int uploadId)
+    {
+        // Check if already pushing
+        if (_pushProgressCache.TryGetValue(uploadId, out var existingProgress) && !existingProgress.IsComplete)
+        {
+            return existingProgress;
+        }
+
+        var upload = await _uploadRepository.GetByIdAsync(uploadId);
+        if (upload == null)
+        {
+            return new M360PushProgress
+            {
+                UploadId = uploadId,
+                Phase = M360PushPhase.Failed,
+                PhaseDescription = "Upload not found",
+                IsComplete = true,
+                Success = false,
+                ErrorMessage = $"Upload {uploadId} not found"
+            };
+        }
+
+        if (upload.Status != ContentUploadStatus.Completed && upload.Status != ContentUploadStatus.PartiallyCompleted)
+        {
+            return new M360PushProgress
+            {
+                UploadId = uploadId,
+                Phase = M360PushPhase.Failed,
+                PhaseDescription = "Upload not ready",
+                IsComplete = true,
+                Success = false,
+                ErrorMessage = $"Upload status is {upload.Status}, must be Completed to push"
+            };
+        }
+
+        // Initialize progress
+        var progress = new M360PushProgress
+        {
+            UploadId = uploadId,
+            Phase = M360PushPhase.Initializing,
+            PhaseDescription = "Initializing push...",
+            StartedAt = DateTime.UtcNow
+        };
+        _pushProgressCache[uploadId] = progress;
+
+        // Capture values needed for background task
+        var tradingPartnerId = upload.TradingPartnerId;
+
+        // Start the push in a background task with its own DI scope
+        _ = Task.Run(async () =>
+        {
+            // Create a new scope for the background task to get fresh DbContext instances
+            using var scope = _serviceScopeFactory.CreateScope();
+            var scopedUploadRepository = scope.ServiceProvider.GetRequiredService<ISprContentUploadRepository>();
+            var scopedProductContentRepository = scope.ServiceProvider.GetRequiredService<ISprProductContentRepository>();
+            var scopedCategoryRepository = scope.ServiceProvider.GetRequiredService<ISprCategoryRepository>();
+            var scopedTradingPartnerRepository = scope.ServiceProvider.GetRequiredService<ITradingPartnerRepository>();
+            var scopedMerchant360Client = scope.ServiceProvider.GetRequiredService<IMerchant360Client>();
+
+            try
+            {
+                await ExecuteM360PushWithProgressAsync(
+                    uploadId,
+                    tradingPartnerId,
+                    scopedUploadRepository,
+                    scopedProductContentRepository,
+                    scopedCategoryRepository,
+                    scopedTradingPartnerRepository,
+                    scopedMerchant360Client);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background M360 push failed for upload {UploadId}", uploadId);
+                if (_pushProgressCache.TryGetValue(uploadId, out var p))
+                {
+                    p.Phase = M360PushPhase.Failed;
+                    p.PhaseDescription = "Push failed";
+                    p.IsComplete = true;
+                    p.Success = false;
+                    p.ErrorMessage = ex.Message;
+                    p.CompletedAt = DateTime.UtcNow;
+                }
+            }
+        });
+
+        return progress;
+    }
+
+    /// <summary>
+    /// Gets the current progress of an M360 push operation.
+    /// </summary>
+    public Task<M360PushProgress?> GetM360PushProgressAsync(int uploadId)
+    {
+        _pushProgressCache.TryGetValue(uploadId, out var progress);
+        return Task.FromResult(progress);
+    }
+
+    /// <summary>
+    /// Executes the M360 push with progress tracking.
+    /// Uses scoped services to avoid DbContext disposal issues in background tasks.
+    /// </summary>
+    private async Task ExecuteM360PushWithProgressAsync(
+        int uploadId,
+        int tradingPartnerId,
+        ISprContentUploadRepository uploadRepository,
+        ISprProductContentRepository productContentRepository,
+        ISprCategoryRepository categoryRepository,
+        ITradingPartnerRepository tradingPartnerRepository,
+        IMerchant360Client merchant360Client)
+    {
+        var progress = _pushProgressCache[uploadId];
+
+        // Get trading partner info
+        var tradingPartner = await tradingPartnerRepository.GetByIdAsync(tradingPartnerId);
+        if (tradingPartner == null)
+        {
+            progress.Phase = M360PushPhase.Failed;
+            progress.PhaseDescription = "Trading partner not found";
+            progress.IsComplete = true;
+            progress.ErrorMessage = $"Trading partner {tradingPartnerId} not found";
+            progress.CompletedAt = DateTime.UtcNow;
+            return;
+        }
+
+        _logger.LogInformation("Starting M360 push with progress tracking: UploadId={UploadId}", uploadId);
+
+        // Phase 1: Push Categories
+        progress.Phase = M360PushPhase.PushingCategories;
+        progress.PhaseDescription = "Loading categories...";
+
+        var categories = await categoryRepository.GetAllActiveAsync();
+        progress.TotalCategories = categories.Count;
+        progress.PhaseDescription = $"Pushing {categories.Count} categories...";
+
+        if (categories.Any())
+        {
+            var categoryBatch = new CategoryBatchRequest
+            {
+                TradingPartnerId = tradingPartner.Id,
+                TradingPartnerCode = tradingPartner.Code,
+                Categories = categories.Select(c => new CategoryBatchItem
+                {
+                    CategoryCode = c.CategoryCode,
+                    CategoryName = c.CategoryName,
+                    ParentCategoryCode = c.ParentCategory?.CategoryCode,
+                    Level = c.Level,
+                    FullPath = c.FullPath ?? BuildCategoryFullPath(c, categories),
+                    IsActive = c.IsActive
+                }).ToList()
+            };
+
+            var categoryResponse = await merchant360Client.PushCategoryBatchAsync(categoryBatch);
+            progress.CategoriesPushed = categories.Count;
+
+            if (!categoryResponse.Success)
+            {
+                _logger.LogWarning("Category push failed: {Errors}", string.Join("; ", categoryResponse.Errors ?? new List<string>()));
+                progress.Errors.AddRange(categoryResponse.Errors ?? new List<string>());
+            }
+        }
+        else
+        {
+            progress.CategoriesPushed = 0;
+        }
+
+        progress.PhaseDescription = $"Categories pushed: {progress.CategoriesPushed}";
+
+        // Phase 2: Push Products
+        progress.Phase = M360PushPhase.PushingProducts;
+        progress.PhaseDescription = "Loading products...";
+
+        var products = await productContentRepository.GetByUploadIdAsync(uploadId);
+        if (!products.Any())
+        {
+            progress.Phase = M360PushPhase.Completed;
+            progress.PhaseDescription = "No products to push";
+            progress.IsComplete = true;
+            progress.Success = true;
+            progress.CompletedAt = DateTime.UtcNow;
+            return;
+        }
+
+        // Get features and relationships
+        var productIds = products.Select(p => p.Id).ToList();
+        var features = await productContentRepository.GetFeaturesByProductIdsAsync(productIds);
+        var relationships = await productContentRepository.GetRelationshipsByProductIdsAsync(productIds);
+
+        var featuresByProduct = features.GroupBy(f => f.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+        var relationshipsByProduct = relationships.GroupBy(r => r.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+
+        // Map and deduplicate
+        var contentProducts = products
+            .Select(p => MapToContentBatchProduct(p,
+                featuresByProduct.GetValueOrDefault(p.Id, new List<SprProductFeature>()),
+                relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>())))
+            .Where(p => !string.IsNullOrWhiteSpace(p.StockNumber))
+            .GroupBy(p => p.StockNumber)
+            .Select(g => g.First())
+            .ToList();
+
+        progress.TotalProducts = contentProducts.Count;
+        var batches = contentProducts.Chunk(PushBatchSize).ToList();
+        progress.TotalBatches = batches.Count;
+
+        _logger.LogInformation("Pushing {Count} products in {Batches} batches", contentProducts.Count, batches.Count);
+
+        var upload = await uploadRepository.GetByIdAsync(uploadId);
+
+        int batchIndex = 0;
+        foreach (var batch in batches)
+        {
+            batchIndex++;
+            progress.CurrentBatch = batchIndex;
+            progress.PhaseDescription = $"Pushing products batch {batchIndex}/{batches.Count}...";
+
+            var request = new ContentBatchRequest
+            {
+                TradingPartnerId = tradingPartner.Id,
+                TradingPartnerCode = tradingPartner.Code,
+                ContentVersion = upload?.ContentVersion ?? "Unknown",
+                Locale = upload?.LocaleId ?? "EN_US",
+                SourceUploadId = uploadId,
+                Products = batch.ToList()
+            };
+
+            var response = await merchant360Client.PushContentBatchAsync(request);
+
+            if (!response.Success)
+            {
+                progress.Phase = M360PushPhase.Failed;
+                progress.PhaseDescription = $"Failed at batch {batchIndex}";
+                progress.IsComplete = true;
+                progress.Success = false;
+                progress.ErrorMessage = string.Join("; ", response.Errors ?? new List<string>());
+                progress.Errors.AddRange(response.Errors ?? new List<string>());
+                progress.CompletedAt = DateTime.UtcNow;
+                return;
+            }
+
+            progress.ProductsPushed += batch.Length;
+            progress.RecordsCreated += response.RecordsCreated;
+            progress.RecordsUpdated += response.RecordsUpdated;
+            progress.RecordsSkipped += response.RecordsSkipped;
+        }
+
+        // Mark upload as pushed
+        await uploadRepository.MarkPushedToM360Async(uploadId);
+
+        progress.Phase = M360PushPhase.Completed;
+        progress.PhaseDescription = "Push completed successfully";
+        progress.IsComplete = true;
+        progress.Success = true;
+        progress.CompletedAt = DateTime.UtcNow;
+
+        _logger.LogInformation(
+            "M360 push completed: Upload={UploadId}, Categories={Categories}, Products={Products}, Created={Created}, Updated={Updated}",
+            uploadId, progress.CategoriesPushed, progress.ProductsPushed, progress.RecordsCreated, progress.RecordsUpdated);
     }
 
     private static string? BuildCategoryFullPath(SprCategory category, IReadOnlyList<SprCategory> allCategories)

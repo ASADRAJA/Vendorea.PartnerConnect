@@ -14,6 +14,16 @@ public class MerchantSubscriptionRequest
     public int TenantId { get; set; }
 
     /// <summary>
+    /// The merchant's name (captured from M360 at subscription time).
+    /// </summary>
+    public string? TenantName { get; set; }
+
+    /// <summary>
+    /// The merchant's code (captured from M360 at subscription time).
+    /// </summary>
+    public string? TenantCode { get; set; }
+
+    /// <summary>
     /// The trading partner ID in PartnerConnect (e.g., SPR = 1).
     /// </summary>
     public int TradingPartnerId { get; set; }

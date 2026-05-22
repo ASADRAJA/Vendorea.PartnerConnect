@@ -103,6 +103,8 @@ public class AdminSubscriptionsController : ControllerBase
         var subscription = new MerchantSubscriptionRequest
         {
             TenantId = request.TenantId,
+            TenantName = request.TenantName,
+            TenantCode = request.TenantCode,
             TradingPartnerId = request.TradingPartnerId,
             AccountNumber = request.AccountNumber,
             Notes = request.Notes,
@@ -351,6 +353,7 @@ public class AdminSubscriptionsController : ControllerBase
     /// <summary>
     /// Gets merchants with their active partner subscriptions.
     /// Used by price feed and content pages to filter dropdowns.
+    /// Uses locally stored tenant names (no M360 call needed).
     /// </summary>
     [HttpGet("active-by-merchant")]
     public async Task<IActionResult> GetActiveSubscriptionsByMerchant(CancellationToken cancellationToken = default)
@@ -359,46 +362,43 @@ public class AdminSubscriptionsController : ControllerBase
         var approvedSubscriptions = await _subscriptionRepository.GetByStatusAsync(
             SubscriptionRequestStatus.Approved, cancellationToken);
 
-        // Group by tenant (merchant)
-        var grouped = approvedSubscriptions
+        // Group by tenant (merchant) - use locally stored names
+        var result = approvedSubscriptions
             .GroupBy(s => s.TenantId)
-            .ToList();
-
-        // Get merchant names from M360
-        var merchantIds = grouped.Select(g => g.Key).ToList();
-        var merchantNames = await GetMerchantNamesAsync(merchantIds, cancellationToken);
-
-        var result = grouped.Select(g =>
-        {
-            merchantNames.TryGetValue(g.Key, out var merchant);
-            return new MerchantWithSubscriptionsDto
+            .Select(g =>
             {
-                MerchantId = g.Key,
-                MerchantName = merchant.Name ?? $"Merchant {g.Key}",
-                MerchantCode = merchant.Code ?? $"M{g.Key}",
-                Partners = g.Select(s => new SubscribedPartnerDto
+                var firstSub = g.First();
+                return new MerchantWithSubscriptionsDto
                 {
-                    TradingPartnerId = s.TradingPartnerId,
-                    TradingPartnerCode = s.TradingPartner?.Code ?? "",
-                    TradingPartnerName = s.TradingPartner?.Name ?? $"Partner {s.TradingPartnerId}",
-                    AccountNumber = s.AccountNumber
-                }).ToList()
-            };
-        }).OrderBy(m => m.MerchantName).ToList();
+                    MerchantId = g.Key,
+                    MerchantName = firstSub.TenantName ?? $"Merchant {g.Key}",
+                    MerchantCode = firstSub.TenantCode ?? $"M{g.Key}",
+                    Partners = g.Select(s => new SubscribedPartnerDto
+                    {
+                        TradingPartnerId = s.TradingPartnerId,
+                        TradingPartnerCode = s.TradingPartner?.Code ?? "",
+                        TradingPartnerName = s.TradingPartner?.Name ?? $"Partner {s.TradingPartnerId}",
+                        AccountNumber = s.AccountNumber
+                    }).ToList()
+                };
+            })
+            .OrderBy(m => m.MerchantName)
+            .ToList();
 
         return Ok(result);
     }
 
     private MerchantSubscriptionDto MapToDto(MerchantSubscriptionRequest entity, Dictionary<int, (string Name, string Code)> merchantNames)
     {
+        // Prefer locally stored tenant name/code, fall back to M360 lookup
         merchantNames.TryGetValue(entity.TenantId, out var merchant);
 
         return new MerchantSubscriptionDto
         {
             Id = entity.Id,
             TenantId = entity.TenantId,
-            TenantName = merchant.Name ?? $"Tenant {entity.TenantId}",
-            TenantCode = merchant.Code ?? $"T{entity.TenantId}",
+            TenantName = entity.TenantName ?? merchant.Name ?? $"Tenant {entity.TenantId}",
+            TenantCode = entity.TenantCode ?? merchant.Code ?? $"T{entity.TenantId}",
             TradingPartnerId = entity.TradingPartnerId,
             TradingPartnerCode = entity.TradingPartner?.Code,
             TradingPartnerName = entity.TradingPartner?.Name,
@@ -422,7 +422,12 @@ public class AdminSubscriptionsController : ControllerBase
 
         try
         {
-            var merchants = await _merchant360Client.GetMerchantsAsync(activeOnly: false, cancellationToken);
+            // Use a short timeout (5 seconds) for M360 calls to avoid blocking the UI
+            // If M360 is slow or unavailable, we'll use fallback names
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            var merchants = await _merchant360Client.GetMerchantsAsync(activeOnly: false, linkedCts.Token);
             foreach (var id in tenantIds)
             {
                 var merchant = merchants.FirstOrDefault(m => m.Id == id);
@@ -431,6 +436,10 @@ public class AdminSubscriptionsController : ControllerBase
                     result[id] = (merchant.Name, merchant.Code ?? $"T{id}");
                 }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("M360 merchant names request timed out, using defaults");
         }
         catch (Exception ex)
         {
@@ -586,6 +595,8 @@ public class MerchantSubscriptionDto
 public class CreateSubscriptionDto
 {
     public int TenantId { get; set; }
+    public string? TenantName { get; set; }
+    public string? TenantCode { get; set; }
     public int TradingPartnerId { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
     public string? Notes { get; set; }

@@ -15,6 +15,12 @@ public class MerchantSubscriptionRequestConfiguration : IEntityTypeConfiguration
         builder.Property(r => r.TenantId)
             .IsRequired();
 
+        builder.Property(r => r.TenantName)
+            .HasMaxLength(200);
+
+        builder.Property(r => r.TenantCode)
+            .HasMaxLength(50);
+
         builder.Property(r => r.TradingPartnerId)
             .IsRequired();
 

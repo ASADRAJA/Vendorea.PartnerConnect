@@ -1,0 +1,15 @@
+{
+  "Id": "60ba93c6-c7ee-454d-a3c1-ce53ae8f8f72",
+  "OriginalFileName": "003382200-BESTPRICE-CSVFull.csv",
+  "ContentType": "text/csv",
+  "SizeBytes": 27600742,
+  "ContentHash": "0ec3c78e4dd98f6afe1c736e195743bcd7d73ecb386ac4606362adb671e05655",
+  "DealerId": 3,
+  "TradingPartnerCode": "SPR",
+  "DocumentType": "PriceList",
+  "PartnerDocumentId": null,
+  "CorrelationId": "f60387cd-4034-4c4e-8a71-574c8bb6aea5",
+  "StoredAt": "2026-05-17T01:51:55.0419358Z",
+  "ExpiresAt": null,
+  "Tags": null
+}

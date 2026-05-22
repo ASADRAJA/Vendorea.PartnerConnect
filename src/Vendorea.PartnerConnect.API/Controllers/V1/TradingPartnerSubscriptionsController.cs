@@ -91,6 +91,8 @@ public class TradingPartnerSubscriptionsController : ControllerBase
             // If denied, allow re-request by updating the existing record
             existing.Status = SubscriptionRequestStatus.Pending;
             existing.AccountNumber = request.AccountNumber;
+            existing.TenantName = request.TenantName ?? existing.TenantName;
+            existing.TenantCode = request.TenantCode ?? existing.TenantCode;
             existing.RequestedAt = DateTime.UtcNow;
             existing.DeniedAt = null;
             existing.DeniedByUserId = null;
@@ -118,6 +120,8 @@ public class TradingPartnerSubscriptionsController : ControllerBase
         var subscriptionRequest = new MerchantSubscriptionRequest
         {
             TenantId = request.TenantId,
+            TenantName = request.TenantName,
+            TenantCode = request.TenantCode,
             TradingPartnerId = request.TradingPartnerId,
             AccountNumber = request.AccountNumber,
             Status = SubscriptionRequestStatus.Pending,
@@ -396,6 +400,16 @@ public class CreateSubscriptionRequestDto
     /// The M360 tenant ID requesting the subscription.
     /// </summary>
     public int TenantId { get; set; }
+
+    /// <summary>
+    /// The merchant's name (from M360).
+    /// </summary>
+    public string? TenantName { get; set; }
+
+    /// <summary>
+    /// The merchant's code (from M360).
+    /// </summary>
+    public string? TenantCode { get; set; }
 
     /// <summary>
     /// The trading partner ID in PartnerConnect.

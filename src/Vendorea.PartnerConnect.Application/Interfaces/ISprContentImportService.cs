@@ -84,6 +84,21 @@ public interface ISprContentImportService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Combined result of the push operations.</returns>
     Task<FullContentPushResult> PushAllToMerchant360Async(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Starts pushing content to M360 with progress tracking.
+    /// Returns immediately after starting. Poll GetM360PushProgressAsync for status.
+    /// </summary>
+    /// <param name="uploadId">The content upload ID to push.</param>
+    /// <returns>Initial progress state.</returns>
+    Task<M360PushProgress> StartM360PushAsync(int uploadId);
+
+    /// <summary>
+    /// Gets the current progress of an M360 push operation.
+    /// </summary>
+    /// <param name="uploadId">The content upload ID being pushed.</param>
+    /// <returns>Current progress, or null if no push is in progress.</returns>
+    Task<M360PushProgress?> GetM360PushProgressAsync(int uploadId);
 }
 
 /// <summary>
@@ -133,6 +148,70 @@ public class FullContentPushResult
     public ContentPushResult? ContentResult { get; set; }
     public DateTime? PushedAt { get; set; }
     public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
+/// Progress information for M360 push operation.
+/// </summary>
+public class M360PushProgress
+{
+    public int UploadId { get; set; }
+    public M360PushPhase Phase { get; set; }
+    public string PhaseDescription { get; set; } = string.Empty;
+    public bool IsComplete { get; set; }
+    public bool Success { get; set; }
+
+    // Category progress
+    public int TotalCategories { get; set; }
+    public int CategoriesPushed { get; set; }
+
+    // Product progress
+    public int TotalProducts { get; set; }
+    public int ProductsPushed { get; set; }
+    public int CurrentBatch { get; set; }
+    public int TotalBatches { get; set; }
+
+    // Results
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+
+    public DateTime StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
+
+    public double PercentComplete
+    {
+        get
+        {
+            if (IsComplete) return 100;
+            if (TotalProducts == 0 && TotalCategories == 0) return 0;
+
+            // Categories are ~5% of work, products are ~95%
+            double categoryPercent = TotalCategories > 0
+                ? (double)CategoriesPushed / TotalCategories * 5
+                : 5;
+            double productPercent = TotalProducts > 0
+                ? (double)ProductsPushed / TotalProducts * 95
+                : 0;
+
+            return categoryPercent + productPercent;
+        }
+    }
+}
+
+/// <summary>
+/// Phases of the M360 push operation.
+/// </summary>
+public enum M360PushPhase
+{
+    NotStarted,
+    Initializing,
+    PushingCategories,
+    PushingProducts,
+    Completed,
+    Failed
 }
 
 /// <summary>

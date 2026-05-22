@@ -514,6 +514,43 @@ public class ApiClient
         }
     }
 
+    public async Task<M360PushProgressDto?> StartM360PushAsync(int uploadId)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync(
+                $"/api/v1/admin/spr/content/imports/{uploadId}/push-start", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<M360PushProgressDto>();
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning("M360 push start failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+            return new M360PushProgressDto { IsComplete = true, Success = false, ErrorMessage = errorContent };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start M360 push for upload {UploadId}", uploadId);
+            return new M360PushProgressDto { IsComplete = true, Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<M360PushProgressDto?> GetM360PushProgressAsync(int uploadId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<M360PushProgressDto>(
+                $"/api/v1/admin/spr/content/imports/{uploadId}/push-status");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get M360 push progress for upload {UploadId}", uploadId);
+            return null;
+        }
+    }
+
     // Merchant Subscription endpoints (calls Merchant360 via PartnerConnect API proxy)
     public async Task<SubscriptionListResult> GetSubscriptionsAsync(SubscriptionStatus? status = null, int? tenantId = null, int? tradingPartnerId = null)
     {

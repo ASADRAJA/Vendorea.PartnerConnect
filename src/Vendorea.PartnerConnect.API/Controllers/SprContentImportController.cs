@@ -419,6 +419,73 @@ public class SprContentImportController : ControllerBase
     }
 
     /// <summary>
+    /// Starts pushing content to M360 with progress tracking.
+    /// Returns immediately. Poll push-status for progress.
+    /// </summary>
+    [HttpPost("{uploadId:int}/push-start")]
+    [ProducesResponseType(typeof(M360PushProgressDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> StartPushToMerchant360(int uploadId)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId);
+        if (upload == null)
+        {
+            return NotFound($"Upload {uploadId} not found");
+        }
+
+        _logger.LogInformation("Starting M360 push with progress tracking for upload {UploadId}", uploadId);
+
+        var progress = await _importService.StartM360PushAsync(uploadId);
+
+        return Ok(MapToProgressDto(progress));
+    }
+
+    /// <summary>
+    /// Gets the current progress of an M360 push operation.
+    /// </summary>
+    [HttpGet("{uploadId:int}/push-status")]
+    [ProducesResponseType(typeof(M360PushProgressDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPushStatus(int uploadId)
+    {
+        var progress = await _importService.GetM360PushProgressAsync(uploadId);
+
+        if (progress == null)
+        {
+            return NotFound($"No push in progress for upload {uploadId}");
+        }
+
+        return Ok(MapToProgressDto(progress));
+    }
+
+    private static M360PushProgressDto MapToProgressDto(M360PushProgress progress)
+    {
+        return new M360PushProgressDto
+        {
+            UploadId = progress.UploadId,
+            Phase = progress.Phase.ToString(),
+            PhaseDescription = progress.PhaseDescription,
+            IsComplete = progress.IsComplete,
+            Success = progress.Success,
+            TotalCategories = progress.TotalCategories,
+            CategoriesPushed = progress.CategoriesPushed,
+            TotalProducts = progress.TotalProducts,
+            ProductsPushed = progress.ProductsPushed,
+            CurrentBatch = progress.CurrentBatch,
+            TotalBatches = progress.TotalBatches,
+            RecordsCreated = progress.RecordsCreated,
+            RecordsUpdated = progress.RecordsUpdated,
+            RecordsSkipped = progress.RecordsSkipped,
+            PercentComplete = progress.PercentComplete,
+            StartedAt = progress.StartedAt,
+            CompletedAt = progress.CompletedAt,
+            ErrorMessage = progress.ErrorMessage,
+            Errors = progress.Errors
+        };
+    }
+
+    /// <summary>
     /// Validates a zip file without importing.
     /// </summary>
     [HttpPost("validate")]
@@ -646,4 +713,37 @@ public class FullContentPushResultDto
     public CategoryPushResultDto? CategoryResult { get; set; }
     public ContentPushResultDto? ContentResult { get; set; }
     public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
+/// Progress information for M360 push operation.
+/// </summary>
+public class M360PushProgressDto
+{
+    public int UploadId { get; set; }
+    public string Phase { get; set; } = string.Empty;
+    public string PhaseDescription { get; set; } = string.Empty;
+    public bool IsComplete { get; set; }
+    public bool Success { get; set; }
+
+    // Category progress
+    public int TotalCategories { get; set; }
+    public int CategoriesPushed { get; set; }
+
+    // Product progress
+    public int TotalProducts { get; set; }
+    public int ProductsPushed { get; set; }
+    public int CurrentBatch { get; set; }
+    public int TotalBatches { get; set; }
+
+    // Results
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+
+    public double PercentComplete { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
 }

@@ -290,6 +290,36 @@ public class ContentPushResultDto
     public List<string> Errors { get; set; } = new();
 }
 
+public class M360PushProgressDto
+{
+    public int UploadId { get; set; }
+    public string Phase { get; set; } = string.Empty;
+    public string PhaseDescription { get; set; } = string.Empty;
+    public bool IsComplete { get; set; }
+    public bool Success { get; set; }
+
+    // Category progress
+    public int TotalCategories { get; set; }
+    public int CategoriesPushed { get; set; }
+
+    // Product progress
+    public int TotalProducts { get; set; }
+    public int ProductsPushed { get; set; }
+    public int CurrentBatch { get; set; }
+    public int TotalBatches { get; set; }
+
+    // Results
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
+
+    public double PercentComplete { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
 public class ContentImportResultDto
 {
     public int UploadId { get; set; }

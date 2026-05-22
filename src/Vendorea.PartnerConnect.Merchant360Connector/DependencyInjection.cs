@@ -28,7 +28,7 @@ public static class DependencyInjection
         {
             var options = sp.GetRequiredService<IOptions<Merchant360Options>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = TimeSpan.FromMinutes(5); // Large batches can take time
 
             // Use API key if configured, otherwise OAuth2 handler will add Bearer token
             if (!string.IsNullOrEmpty(options.ApiKey))
@@ -55,7 +55,7 @@ public static class DependencyInjection
         services.AddHttpClient<IMerchant360Client, Merchant360ApiClient>(client =>
         {
             client.BaseAddress = new Uri(baseUrl);
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = TimeSpan.FromMinutes(5); // Large batches can take time
             configureClient?.Invoke(client);
         });
 
