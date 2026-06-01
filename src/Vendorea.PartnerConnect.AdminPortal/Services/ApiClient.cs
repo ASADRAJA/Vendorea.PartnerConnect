@@ -452,7 +452,7 @@ public class ApiClient
         try
         {
             return await _httpClient.GetFromJsonAsync<ContentStatisticsDto>(
-                $"/api/v1/admin/spr/content/stats?locale={Uri.EscapeDataString(locale)}");
+                $"/api/v1/admin/spr/content/imports/stats?locale={Uri.EscapeDataString(locale)}");
         }
         catch (Exception ex)
         {

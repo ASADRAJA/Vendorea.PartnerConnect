@@ -34,7 +34,7 @@ public class SprContentImportService : ISprContentImportService
     private static readonly Dictionary<int, M360PushProgress> _pushProgressCache = new();
 
     private const int MaxBatchSize = 10000;
-    private const int PushBatchSize = 50; // Reduced - M360 times out with large batches + specs
+    private const int PushBatchSize = 500; // M360 uses bulk insert for specs/features/relationships
 
     public SprContentImportService(
         ILogger<SprContentImportService> logger,
