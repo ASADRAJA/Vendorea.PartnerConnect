@@ -200,4 +200,12 @@ public interface ISprProductContentRepository
     Task<IReadOnlyList<SprProductSpecification>> GetSpecificationsByProductIdsAsync(
         IEnumerable<long> productContentIds,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets SKU to SPR CategoryCode mappings for a list of SKUs.
+    /// Used to resolve product categories for price feed push.
+    /// </summary>
+    Task<Dictionary<string, string>> GetSkuToCategoryCodeMappingAsync(
+        IEnumerable<string> skus,
+        CancellationToken cancellationToken = default);
 }

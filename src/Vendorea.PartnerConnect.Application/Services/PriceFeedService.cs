@@ -15,6 +15,7 @@ public class PriceFeedService : IPriceFeedService
 {
     private readonly IPriceFeedUploadRepository _uploadRepository;
     private readonly ISprPriceRecordRepository _sprPriceRecordRepository;
+    private readonly ISprProductContentRepository _sprProductContentRepository;
     private readonly ITradingPartnerRepository _tradingPartnerRepository;
     private readonly IDocumentStorage _documentStorage;
     private readonly ISprPriceFeedParser _sprParser;
@@ -24,6 +25,7 @@ public class PriceFeedService : IPriceFeedService
     public PriceFeedService(
         IPriceFeedUploadRepository uploadRepository,
         ISprPriceRecordRepository sprPriceRecordRepository,
+        ISprProductContentRepository sprProductContentRepository,
         ITradingPartnerRepository tradingPartnerRepository,
         IDocumentStorage documentStorage,
         ISprPriceFeedParser sprParser,
@@ -32,6 +34,7 @@ public class PriceFeedService : IPriceFeedService
     {
         _uploadRepository = uploadRepository;
         _sprPriceRecordRepository = sprPriceRecordRepository;
+        _sprProductContentRepository = sprProductContentRepository;
         _tradingPartnerRepository = tradingPartnerRepository;
         _documentStorage = documentStorage;
         _sprParser = sprParser;
@@ -405,7 +408,17 @@ public class PriceFeedService : IPriceFeedService
             // Get records for this upload
             var records = await _sprPriceRecordRepository.GetByUploadIdAsync(uploadId, cancellationToken);
 
-            // Convert to batch items
+            // Get SKU → SPR CategoryCode mappings from product content
+            // This maps the 4-letter price codes to SPR numeric category codes
+            var stockNumbers = records.Select(r => r.StockNumber).Distinct().ToList();
+            var skuToCategoryCode = await _sprProductContentRepository.GetSkuToCategoryCodeMappingAsync(
+                stockNumbers, cancellationToken);
+
+            _logger.LogInformation(
+                "Resolved {MappedCount}/{TotalCount} SKUs to SPR category codes",
+                skuToCategoryCode.Count, stockNumbers.Count);
+
+            // Convert to batch items, using SPR category code when available
             var allItems = records.Select(r => new PriceBatchItem
             {
                 StockNumber = r.StockNumber,
@@ -413,7 +426,8 @@ public class PriceFeedService : IPriceFeedService
                 NetCost = r.NetCostNonCcp,
                 RetailListPrice = r.RetailListPrice,
                 Uom = r.SellingUnitOfMeasure,
-                CategoryCode = r.CategoryCode,
+                // Use SPR category code if available, otherwise fall back to price feed code
+                CategoryCode = skuToCategoryCode.TryGetValue(r.StockNumber, out var sprCode) ? sprCode : r.CategoryCode,
                 ManufacturerPartNumber = r.MpcNumber,
                 UpcCode = r.Upc,
                 Weight = r.WeightLbs,

@@ -410,4 +410,42 @@ public class SprProductContentRepository : ISprProductContentRepository
             .Where(s => ids.Contains(s.SprProductContentId))
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<Dictionary<string, string>> GetSkuToCategoryCodeMappingAsync(
+        IEnumerable<string> skus,
+        CancellationToken cancellationToken = default)
+    {
+        var skuList = skus.ToList();
+        if (skuList.Count == 0)
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Query products joined with categories to get SKU → CategoryCode mapping
+        // Process in batches to avoid SQL parameter limits
+        const int batchSize = 2000;
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < skuList.Count; i += batchSize)
+        {
+            var batch = skuList.Skip(i).Take(batchSize).ToList();
+
+            var mappings = await _context.SprProductContent
+                .Where(p => p.Sku != null && batch.Contains(p.Sku) && p.SprCategoryId != null)
+                .Join(
+                    _context.SprCategories,
+                    p => p.SprCategoryId,
+                    c => c.Id,
+                    (p, c) => new { p.Sku, c.CategoryCode })
+                .ToListAsync(cancellationToken);
+
+            foreach (var mapping in mappings)
+            {
+                if (!string.IsNullOrEmpty(mapping.Sku) && !result.ContainsKey(mapping.Sku))
+                {
+                    result[mapping.Sku] = mapping.CategoryCode;
+                }
+            }
+        }
+
+        return result;
+    }
 }
