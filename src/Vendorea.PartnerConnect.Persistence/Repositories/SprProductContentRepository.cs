@@ -400,4 +400,14 @@ public class SprProductContentRepository : ISprProductContentRepository
             .ThenBy(r => r.SortOrder)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<SprProductSpecification>> GetSpecificationsByProductIdsAsync(
+        IEnumerable<long> productContentIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = productContentIds.ToList();
+        return await _context.SprProductSpecifications
+            .Where(s => ids.Contains(s.SprProductContentId))
+            .ToListAsync(cancellationToken);
+    }
 }

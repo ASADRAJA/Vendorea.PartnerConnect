@@ -34,7 +34,7 @@ public class SprContentImportService : ISprContentImportService
     private static readonly Dictionary<int, M360PushProgress> _pushProgressCache = new();
 
     private const int MaxBatchSize = 10000;
-    private const int PushBatchSize = 500;
+    private const int PushBatchSize = 50; // Reduced - M360 times out with large batches + specs
 
     public SprContentImportService(
         ILogger<SprContentImportService> logger,
@@ -887,20 +887,23 @@ public class SprContentImportService : ISprContentImportService
 
             _logger.LogInformation("Found {Count} products to push", products.Count);
 
-            // Get features and relationships for all products
+            // Get features, relationships, and specifications for all products
             var productIds = products.Select(p => p.Id).ToList();
             var features = await _productContentRepository.GetFeaturesByProductIdsAsync(productIds, cancellationToken);
             var relationships = await _productContentRepository.GetRelationshipsByProductIdsAsync(productIds, cancellationToken);
+            var specifications = await _productContentRepository.GetSpecificationsByProductIdsAsync(productIds, cancellationToken);
 
             // Group by product
             var featuresByProduct = features.GroupBy(f => f.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
             var relationshipsByProduct = relationships.GroupBy(r => r.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+            var specsByProduct = specifications.ToDictionary(s => s.SprProductContentId, s => s.SpecificationsHtml);
 
             // Map to M360 format and de-duplicate by stock number
             var contentProducts = products
                 .Select(p => MapToContentBatchProduct(p,
                     featuresByProduct.GetValueOrDefault(p.Id, new List<SprProductFeature>()),
-                    relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>())))
+                    relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>()),
+                    specsByProduct.GetValueOrDefault(p.Id)))
                 .Where(p => !string.IsNullOrWhiteSpace(p.StockNumber)) // Skip products with no stock number
                 .GroupBy(p => p.StockNumber)
                 .Select(g =>
@@ -1320,19 +1323,22 @@ public class SprContentImportService : ISprContentImportService
             return;
         }
 
-        // Get features and relationships
+        // Get features, relationships, and specifications
         var productIds = products.Select(p => p.Id).ToList();
         var features = await productContentRepository.GetFeaturesByProductIdsAsync(productIds);
         var relationships = await productContentRepository.GetRelationshipsByProductIdsAsync(productIds);
+        var specifications = await productContentRepository.GetSpecificationsByProductIdsAsync(productIds);
 
         var featuresByProduct = features.GroupBy(f => f.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
         var relationshipsByProduct = relationships.GroupBy(r => r.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+        var specsByProduct = specifications.ToDictionary(s => s.SprProductContentId, s => s.SpecificationsHtml);
 
         // Map and deduplicate
         var contentProducts = products
             .Select(p => MapToContentBatchProduct(p,
                 featuresByProduct.GetValueOrDefault(p.Id, new List<SprProductFeature>()),
-                relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>())))
+                relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>()),
+                specsByProduct.GetValueOrDefault(p.Id)))
             .Where(p => !string.IsNullOrWhiteSpace(p.StockNumber))
             .GroupBy(p => p.StockNumber)
             .Select(g => g.First())
@@ -1416,7 +1422,8 @@ public class SprContentImportService : ISprContentImportService
     private static ContentBatchProduct MapToContentBatchProduct(
         SprProductContent product,
         List<SprProductFeature> features,
-        List<SprProductRelationship> relationships)
+        List<SprProductRelationship> relationships,
+        string? specificationsHtml)
     {
         return new ContentBatchProduct
         {
@@ -1452,9 +1459,8 @@ public class SprContentImportService : ISprContentImportService
             ManufacturerWebsite = product.ManufacturerWebsite,
             CategoryCode = product.SubClassNumber ?? product.ClassNumber ?? product.DepartmentNumber,
 
-            // Specifications - for now we don't have structured specs, HTML is in SprProductSpecification
-            // M360 will need to parse HTML or we need to add structured spec parsing
-            Specifications = new List<ContentSpecification>(),
+            // Specifications parsed from HTML
+            Specifications = ParseSpecificationsFromHtml(specificationsHtml),
 
             // Features with display order
             Features = features
@@ -1489,5 +1495,48 @@ public class SprContentImportService : ISprContentImportService
         if (!string.IsNullOrEmpty(product.ClassName)) parts.Add(product.ClassName);
         if (!string.IsNullOrEmpty(product.SubClassName)) parts.Add(product.SubClassName);
         return parts.Any() ? string.Join(" > ", parts) : null;
+    }
+
+    /// <summary>
+    /// Parses HTML specifications table into structured ContentSpecification objects.
+    /// Expected format: &lt;table class="specs"&gt;&lt;tr&gt;&lt;th&gt;Name&lt;/th&gt;&lt;td&gt;Value&lt;/td&gt;&lt;/tr&gt;...&lt;/table&gt;
+    /// </summary>
+    private static List<ContentSpecification> ParseSpecificationsFromHtml(string? html)
+    {
+        var specs = new List<ContentSpecification>();
+
+        if (string.IsNullOrWhiteSpace(html))
+            return specs;
+
+        // Regex to match <tr><th>Name</th><td>Value</td></tr> patterns
+        var rowPattern = new System.Text.RegularExpressions.Regex(
+            @"<tr[^>]*>\s*<th[^>]*>([^<]*)</th>\s*<td[^>]*>([^<]*)</td>\s*</tr>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        var matches = rowPattern.Matches(html);
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int displayOrder = 1;
+
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            var name = System.Net.WebUtility.HtmlDecode(match.Groups[1].Value.Trim());
+            var value = System.Net.WebUtility.HtmlDecode(match.Groups[2].Value.Trim());
+
+            // Skip empty names or duplicates
+            if (string.IsNullOrWhiteSpace(name) || seenNames.Contains(name))
+                continue;
+
+            seenNames.Add(name);
+
+            specs.Add(new ContentSpecification
+            {
+                Name = name,
+                Value = value,
+                Group = null, // Could be parsed from table sections if needed
+                DisplayOrder = displayOrder++
+            });
+        }
+
+        return specs;
     }
 }

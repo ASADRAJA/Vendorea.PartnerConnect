@@ -210,6 +210,20 @@
                                                     <span class="badge bg-success me-1" title="Pushed @upload.PushedToM360At?.ToLocalTime().ToString("g")">
                                                         <span class="oi oi-check"></span> Pushed
                                                     </span>
+                                                    <button class="btn btn-sm btn-outline-success me-1"
+                                                            @onclick="() => PushToM360(upload.UploadId)"
+                                                            disabled="@(pushingUploadId == upload.UploadId)"
+                                                            title="Re-push to M360">
+                                                        @if (pushingUploadId == upload.UploadId)
+                                                        {
+                                                            <span class="spinner-border spinner-border-sm"></span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="oi oi-loop-circular"></span>
+                                                        }
+                                                        Re-push
+                                                    </button>
                                                 }
                                                 <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(upload.UploadId)" title="Delete">
                                                     <span class="oi oi-trash"></span>

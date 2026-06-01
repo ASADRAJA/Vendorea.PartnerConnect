@@ -193,4 +193,11 @@ public interface ISprProductContentRepository
     Task<IReadOnlyList<SprProductRelationship>> GetRelationshipsByProductIdsAsync(
         IEnumerable<long> productContentIds,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets specifications for multiple products at once.
+    /// </summary>
+    Task<IReadOnlyList<SprProductSpecification>> GetSpecificationsByProductIdsAsync(
+        IEnumerable<long> productContentIds,
+        CancellationToken cancellationToken = default);
 }
