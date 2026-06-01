@@ -161,7 +161,38 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
 
         await _dbContext.Database.ExecuteSqlRawAsync(updateParentsSql, cancellationToken);
 
-        _logger.LogInformation("Transformed {Count} categories", count);
+        // Third pass: compute Level and FullPath using recursive CTE
+        var computeHierarchySql = @"
+            WITH CategoryHierarchy AS (
+                -- Root categories (no parent)
+                SELECT
+                    Id,
+                    CategoryCode,
+                    0 AS ComputedLevel,
+                    CAST(CategoryCode AS NVARCHAR(500)) AS ComputedPath
+                FROM SprCategories
+                WHERE ParentCategoryId IS NULL
+
+                UNION ALL
+
+                -- Child categories
+                SELECT
+                    c.Id,
+                    c.CategoryCode,
+                    ch.ComputedLevel + 1,
+                    CAST(ch.ComputedPath + '/' + c.CategoryCode AS NVARCHAR(500))
+                FROM SprCategories c
+                INNER JOIN CategoryHierarchy ch ON c.ParentCategoryId = ch.Id
+            )
+            UPDATE c
+            SET c.Level = ch.ComputedLevel,
+                c.FullPath = ch.ComputedPath
+            FROM SprCategories c
+            INNER JOIN CategoryHierarchy ch ON c.Id = ch.Id";
+
+        await _dbContext.Database.ExecuteSqlRawAsync(computeHierarchySql, cancellationToken);
+
+        _logger.LogInformation("Transformed {Count} categories with hierarchy levels computed", count);
         return count;
     }
 
