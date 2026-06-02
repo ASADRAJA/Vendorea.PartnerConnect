@@ -200,6 +200,20 @@
                                                     }
                                                 </button>
                                             }
+                                            @if (upload.Status == "PushedToMerchant360" && upload.PushedToMerchant360At.HasValue)
+                                            {
+                                                <button class="btn btn-sm btn-outline-success" @onclick="() => PushToMerchant360(upload.Id)"
+                                                        disabled="@(pushingUploadId == upload.Id)" title="Re-push to Merchant360">
+                                                    @if (pushingUploadId == upload.Id)
+                                                    {
+                                                        <span class="spinner-border spinner-border-sm"></span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="oi oi-loop-circular"></span>
+                                                    }
+                                                </button>
+                                            }
                                         </td>
                                     </tr>
                                 }
