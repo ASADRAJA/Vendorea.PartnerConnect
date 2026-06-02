@@ -398,7 +398,8 @@ public class PriceFeedService : IPriceFeedService
             return new PushToMerchant360Result(false, 0, "Upload not found");
         }
 
-        if (upload.Status != PriceFeedUploadStatus.Completed)
+        if (upload.Status != PriceFeedUploadStatus.Completed &&
+            upload.Status != PriceFeedUploadStatus.PushedToMerchant360)
         {
             return new PushToMerchant360Result(false, 0, "Upload has not been processed yet");
         }
