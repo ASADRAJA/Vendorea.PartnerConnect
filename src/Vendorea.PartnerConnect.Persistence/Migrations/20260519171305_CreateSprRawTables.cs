@@ -13,6 +13,38 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
             migrationBuilder.EnsureSchema(
                 name: "spr");
 
+            // Drop existing tables created by AddSprRawSchema migration (if they exist)
+            // These tables were created with composite PKs and native types, but we need
+            // surrogate identity PKs and nvarchar columns for the XML import process
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[search_attribute]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[search_attribute_values]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productattribute]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productaccessories]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productsimilar]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productupsell]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productfeatures]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productdescriptions]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productimages]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productkeywords]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productlocales]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productresources]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[productskus]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[product]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[categorydisplayattributes]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[categoryheader]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[categorysearchattributes]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[categorynames]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[category]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[attributenames]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[headernames]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[unitnames]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[units]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[locales]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[manufacturer]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[mapped_category]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[mapped_category_names]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[mapped_category_taxonomy]");
+
             migrationBuilder.CreateTable(
                 name: "attributenames",
                 schema: "spr",
