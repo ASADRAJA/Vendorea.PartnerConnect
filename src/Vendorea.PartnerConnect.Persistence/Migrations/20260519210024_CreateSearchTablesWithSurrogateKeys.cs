@@ -10,6 +10,11 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Drop existing tables created by AddSprRawSchema migration (if they exist)
+            // These tables were created with composite PKs, but we need surrogate identity PKs
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[search_attribute]");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS [spr].[search_attribute_values]");
+
             migrationBuilder.CreateTable(
                 name: "search_attribute",
                 schema: "spr",
