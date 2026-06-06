@@ -32,6 +32,7 @@ public static class ServiceCollectionExtensions
         // Multi-Tenant and Order Services
         services.AddScoped<ITenantManagementService, TenantManagementService>();
         services.AddScoped<IOrderService, OrderService>();
+        services.AddScoped<ITenantSyncService, TenantSyncService>();
 
         // EDI Document Processing Services
         services.AddScoped<IEdiResponseService, EdiResponseService>();

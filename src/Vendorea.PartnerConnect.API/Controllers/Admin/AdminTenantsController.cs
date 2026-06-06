@@ -17,6 +17,7 @@ public class AdminTenantsController : ControllerBase
     private readonly IOrganizationRepository _organizationRepository;
     private readonly ITenantPartnerAccountRepository _accountRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
+    private readonly ITenantSyncService _tenantSyncService;
     private readonly ILogger<AdminTenantsController> _logger;
 
     public AdminTenantsController(
@@ -24,12 +25,14 @@ public class AdminTenantsController : ControllerBase
         IOrganizationRepository organizationRepository,
         ITenantPartnerAccountRepository accountRepository,
         ITradingPartnerRepository partnerRepository,
+        ITenantSyncService tenantSyncService,
         ILogger<AdminTenantsController> logger)
     {
         _tenantRepository = tenantRepository;
         _organizationRepository = organizationRepository;
         _accountRepository = accountRepository;
         _partnerRepository = partnerRepository;
+        _tenantSyncService = tenantSyncService;
         _logger = logger;
     }
 
@@ -184,6 +187,33 @@ public class AdminTenantsController : ControllerBase
         _logger.LogInformation("Suspended tenant {TenantId}", id);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Synchronizes tenants from Merchant360.
+    /// Fetches merchants from M360 and creates/updates them as tenants under the M360 organization.
+    /// </summary>
+    [HttpPost("sync-from-m360")]
+    public async Task<IActionResult> SyncFromM360(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Admin triggered M360 tenant sync");
+
+        var result = await _tenantSyncService.SyncFromMerchant360Async(cancellationToken);
+
+        return Ok(new TenantSyncResultDto
+        {
+            Success = result.Success,
+            OrganizationId = result.OrganizationId,
+            OrganizationCode = result.OrganizationCode,
+            TotalMerchants = result.TotalMerchants,
+            TenantsCreated = result.TenantsCreated,
+            TenantsUpdated = result.TenantsUpdated,
+            TenantsDeactivated = result.TenantsDeactivated,
+            Errors = result.Errors,
+            ErrorMessages = result.ErrorMessages,
+            SyncedAt = result.SyncedAt,
+            DurationMs = (int)result.Duration.TotalMilliseconds
+        });
     }
 
     /// <summary>
@@ -359,4 +389,19 @@ public class CreateTenantPartnerAccountRequest
 {
     public int TradingPartnerId { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
+}
+
+public class TenantSyncResultDto
+{
+    public bool Success { get; set; }
+    public int OrganizationId { get; set; }
+    public string OrganizationCode { get; set; } = string.Empty;
+    public int TotalMerchants { get; set; }
+    public int TenantsCreated { get; set; }
+    public int TenantsUpdated { get; set; }
+    public int TenantsDeactivated { get; set; }
+    public int Errors { get; set; }
+    public List<string> ErrorMessages { get; set; } = new();
+    public DateTime SyncedAt { get; set; }
+    public int DurationMs { get; set; }
 }

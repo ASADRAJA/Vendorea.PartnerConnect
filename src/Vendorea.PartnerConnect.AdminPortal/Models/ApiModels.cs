@@ -614,6 +614,21 @@ public class CreateTenantPartnerAccountRequest
     public string AccountNumber { get; set; } = string.Empty;
 }
 
+public class TenantSyncResultDto
+{
+    public bool Success { get; set; }
+    public int OrganizationId { get; set; }
+    public string OrganizationCode { get; set; } = string.Empty;
+    public int TotalMerchants { get; set; }
+    public int TenantsCreated { get; set; }
+    public int TenantsUpdated { get; set; }
+    public int TenantsDeactivated { get; set; }
+    public int Errors { get; set; }
+    public List<string> ErrorMessages { get; set; } = new();
+    public DateTime SyncedAt { get; set; }
+    public int DurationMs { get; set; }
+}
+
 // Order Models
 public class OrderDto
 {

@@ -977,6 +977,25 @@ public class ApiClient
         }
     }
 
+    public async Task<TenantSyncResultDto?> SyncTenantsFromM360Async()
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync("/api/admin/tenants/sync-from-m360", null);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<TenantSyncResultDto>();
+            }
+            _logger.LogWarning("Failed to sync tenants from M360: {StatusCode}", response.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to sync tenants from M360");
+            return null;
+        }
+    }
+
     // Tenant Partner Account endpoints
     public async Task<List<TenantPartnerAccountDto>> GetTenantPartnerAccountsAsync(int tenantId)
     {
