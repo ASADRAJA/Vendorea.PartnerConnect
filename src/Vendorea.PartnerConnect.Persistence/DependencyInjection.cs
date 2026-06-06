@@ -66,6 +66,12 @@ public static class DependencyInjection
         services.AddScoped<ISprProductContentRepository, SprProductContentRepository>();
         services.AddScoped<IDealerContentSubscriptionRepository, DealerContentSubscriptionRepository>();
 
+        // Multi-Tenant and Orders
+        services.AddScoped<IOrganizationRepository, OrganizationRepository>();
+        services.AddScoped<ITenantRepository, TenantRepository>();
+        services.AddScoped<ITenantPartnerAccountRepository, TenantPartnerAccountRepository>();
+        services.AddScoped<IOrderRepository, OrderRepository>();
+
         services.AddScoped<IContentSyncJobRepository, ContentSyncJobRepository>();
         services.AddScoped<IDocumentStateHistoryRepository, DocumentStateHistoryRepository>();
         services.AddScoped<IQuarantinedDocumentRepository, QuarantinedDocumentRepository>();

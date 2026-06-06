@@ -15,6 +15,12 @@ public class UsageSummaryConfiguration : IEntityTypeConfiguration<UsageSummary>
 
         builder.HasKey(u => u.Id);
 
+        // Ignore the TenantId alias property
+        builder.Ignore(u => u.TenantId);
+
+        // OrganizationId is nullable for backward compatibility
+        builder.Property(u => u.OrganizationId);
+
         builder.Property(u => u.MetricType)
             .IsRequired()
             .HasConversion<string>()
@@ -59,5 +65,12 @@ public class UsageSummaryConfiguration : IEntityTypeConfiguration<UsageSummary>
         builder.HasIndex(u => new { u.DealerId, u.MetricType, u.Granularity, u.PeriodStart })
             .IsUnique()
             .HasDatabaseName("UK_UsageSummaries_Unique");
+
+        // OrganizationId indexes for billing rollup
+        builder.HasIndex(u => u.OrganizationId)
+            .HasDatabaseName("IX_UsageSummaries_OrganizationId");
+
+        builder.HasIndex(u => new { u.OrganizationId, u.PeriodStart, u.PeriodEnd })
+            .HasDatabaseName("IX_UsageSummaries_OrganizationId_Period");
     }
 }

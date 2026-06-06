@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vendorea.PartnerConnect.Persistence;
 
@@ -11,9 +12,11 @@ using Vendorea.PartnerConnect.Persistence;
 namespace Vendorea.PartnerConnect.Persistence.Migrations
 {
     [DbContext(typeof(PartnerConnectDbContext))]
-    partial class PartnerConnectDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260605224443_AddMultiTenantAndOrders")]
+    partial class AddMultiTenantAndOrders
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -5389,9 +5392,6 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("int");
-
                     b.Property<string>("ResourceId")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -5416,9 +5416,6 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.HasIndex("IsAggregated")
                         .HasDatabaseName("IX_UsageRecords_IsAggregated");
 
-                    b.HasIndex("OrganizationId")
-                        .HasDatabaseName("IX_UsageRecords_OrganizationId");
-
                     b.HasIndex("Timestamp")
                         .HasDatabaseName("IX_UsageRecords_Timestamp");
 
@@ -5427,9 +5424,6 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
 
                     b.HasIndex("IsAggregated", "Timestamp")
                         .HasDatabaseName("IX_UsageRecords_IsAggregated_Timestamp");
-
-                    b.HasIndex("OrganizationId", "Timestamp")
-                        .HasDatabaseName("IX_UsageRecords_OrganizationId_Timestamp");
 
                     b.HasIndex("DealerId", "MetricType", "Timestamp")
                         .HasDatabaseName("IX_UsageRecords_DealerId_MetricType_Timestamp");
@@ -5471,9 +5465,6 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
 
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime>("PeriodEnd")
                         .HasColumnType("datetime2");
 
@@ -5497,17 +5488,11 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.HasIndex("DealerId")
                         .HasDatabaseName("IX_UsageSummaries_DealerId");
 
-                    b.HasIndex("OrganizationId")
-                        .HasDatabaseName("IX_UsageSummaries_OrganizationId");
-
                     b.HasIndex("PeriodStart")
                         .HasDatabaseName("IX_UsageSummaries_PeriodStart");
 
                     b.HasIndex("DealerId", "PeriodStart", "PeriodEnd")
                         .HasDatabaseName("IX_UsageSummaries_DealerId_Period");
-
-                    b.HasIndex("OrganizationId", "PeriodStart", "PeriodEnd")
-                        .HasDatabaseName("IX_UsageSummaries_OrganizationId_Period");
 
                     b.HasIndex("DealerId", "MetricType", "Granularity", "PeriodStart")
                         .IsUnique()

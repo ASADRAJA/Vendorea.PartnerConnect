@@ -29,6 +29,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISprContentImportService, SprContentImportService>();
         services.AddScoped<ISprContentQueryService, SprContentQueryService>();
 
+        // Multi-Tenant and Order Services
+        services.AddScoped<ITenantManagementService, TenantManagementService>();
+        services.AddScoped<IOrderService, OrderService>();
+
         // EDI Document Processing Services
         services.AddScoped<IEdiResponseService, EdiResponseService>();
         services.AddScoped<IEdiDocumentProcessingService, EdiDocumentProcessingService>();

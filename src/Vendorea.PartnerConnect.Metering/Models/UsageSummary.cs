@@ -8,9 +8,19 @@ public class UsageSummary
     public Guid Id { get; set; } = Guid.NewGuid();
 
     /// <summary>
-    /// The dealer ID this summary is for.
+    /// The organization ID this summary is for (for billing rollup).
+    /// </summary>
+    public int? OrganizationId { get; set; }
+
+    /// <summary>
+    /// The dealer/tenant ID this summary is for.
     /// </summary>
     public int DealerId { get; set; }
+
+    /// <summary>
+    /// Alias for DealerId, for new multi-tenant code.
+    /// </summary>
+    public int TenantId { get => DealerId; set => DealerId = value; }
 
     /// <summary>
     /// The type of metric being summarized.

@@ -1,0 +1,318 @@
+My high-level reaction:
+
+What I agree with
+Organization + Tenant model is the right move.
+This is important if PC will serve Merchant360, other Vendorea products, and eventually external customers.
+TenantPartnerAccount is necessary.
+A tenant may have multiple supplier accounts, even with the same trading partner. This is especially important for SPR, Essendant, etc.
+Org-level billing + tenant-level usage tracking is correct.
+Usage should be tracked by tenant but rolled up to the billable organization.
+Order and OrderLine entities are needed.
+PC needs to persist orders independently instead of just passing files around.
+Order APIs are the next major missing piece.
+POST /api/v1/orders, order listing, order detail, and order status are exactly the kind of APIs PC needs.
+The migration path is logical.
+Foundation first, then refactor, then metering, then orders, then EDI flow.
+What I would adjust
+1. Do not trust orgId and tenantId only from the request body
+
+The payload example includes:
+
+orgId
+tenantId
+tradingPartnerId
+accountNumber
+
+That is fine for internal testing, but in production PC should derive or validate these from the authenticated client/application context. Otherwise, one client could accidentally or maliciously submit orders for another org/tenant.
+
+Better model:
+
+Auth/API key/OAuth client identifies Org/Application
+Request header or route identifies Tenant
+Body identifies trading partner/account/order details
+2. Add an Application / SourceSystem concept
+
+If PC is becoming a true exchange, you probably need something between Organization and API usage:
+
+Organization
+  → Application / Source System
+  → Tenant
+  → Trading Partner Account
+
+Example:
+
+Org: Vendorea
+Application: Merchant360
+Tenant: Dealer A
+Trading Partner: SPR
+
+Later:
+
+Org: ABC Dealer Group
+Application: External ERP
+Tenant: Branch 001
+Trading Partner: Essendant
+
+This matters because PC should know which system submitted the order, not only which tenant owns it.
+
+3. Add webhook/event model explicitly
+
+The summary covers order submission and 855 status update, but it does not go far enough on webhook/event delivery back to M360.
+
+You need entities or services for:
+
+WebhookSubscription
+WebhookDelivery
+EventOutbox
+EventDeliveryAttempt
+
+Without this, PC can process supplier responses but M360 will not reliably know about them.
+
+4. Add document lifecycle, not just order status
+
+Order status is important, but PC also needs document-level tracking:
+
+Order submitted
+850 generated
+850 transmitted
+997 received
+855 received
+856 received
+810 received
+Webhook delivered to M360
+
+So I would separate:
+
+Order Status = business state
+Document Status = EDI/message processing state
+Webhook Status = callback delivery state
+5. Be careful with cancel API
+
+The proposed endpoint is:
+
+PUT /api/v1/orders/{id}/cancel
+
+I would make that:
+
+POST /api/v1/orders/{id}/cancel
+
+Because canceling an EDI order is a business action, not a normal update. Later this may need to generate an 860 order change/cancel document depending on supplier support.
+
+================================================================================
+## UPDATED DESIGN SUMMARY (Post-Refinement)
+================================================================================
+
+### ARCHITECTURE OVERVIEW
+
+PartnerConnect (PC) is a platform that enables Organizations (Orgs) and their
+Tenants to exchange data and place orders with Trading Partners via EDI.
+
+### Hierarchy
+
+```
+                     PartnerConnect (Platform)
+                              |
+         +--------------------+--------------------+
+         |                    |                    |
+    +----v----+          +----v----+          +----v----+
+    |   Org   |          |   Org   |          |   Org   |
+    |  (M360) |          | (OrgXYZ)|          |(SmallCo)|
+    | Platform|          | Platform|          | Single  |
+    +----+----+          +----+----+          | Dealer  |
+         |                    |               +----+----+
+    +----+----+          +----+----+               |
+    |         |          |         |               |
+ Tenant A  Tenant B   Tenant C  Tenant D      Tenant E
+    |         |          |                    (default)
+    v         v          v
++-----------------------------------------------+
+|           TenantPartnerAccount                |
+|  TenantA + SPR + Acct#123                     |
+|  TenantA + SPR + Acct#456 (multiple allowed)  |
+|  TenantB + SPR + Acct#789                     |
+|  TenantC + ABC + Acct#111                     |
++-----------------------------------------------+
+```
+
+### Key Concepts
+
+- **Organization (Org)**: Billable account holder. Must be registered and active.
+  Examples: M360 (platform), individual dealers with their own org.
+
+- **Tenant**: End user within an Org who places orders and receives data.
+  A tenant must belong to exactly one Org.
+
+- **TenantPartnerAccount**: Direct relationship between a Tenant and a Trading
+  Partner. Contains the account number. A tenant can have multiple accounts
+  with the same partner. Independent of the Org.
+
+- **Trading Partner**: Supplier (e.g., SPR) that provides data and receives orders.
+
+================================================================================
+### DATA SCOPING
+================================================================================
+
+| Data Type      | Scope   | Storage              | Push Target          |
+|----------------|---------|----------------------|----------------------|
+| Econtent       | Global  | PC (one copy/partner)| Subscribed Orgs      |
+| Price Files    | Tenant  | PC (per tenant)      | That tenant          |
+| Orders         | Tenant  | PC (OrgId + TenantId)| Partner (via EDI)    |
+| Usage/Metering | Tenant  | PC (tracked/tenant)  | Billed to Org        |
+
+### Econtent Flow
+```
+Partner (SPR) --> PC downloads (global copy) --> Push to subscribed Orgs
+```
+- PC maintains ONE global copy of econtent per partner
+- Pushed to Orgs that have subscribed to that partner
+- Not all Orgs will have relationship with every partner
+
+### Price File Flow
+```
+Partner --> PC downloads for specific Tenant (using tenant's account#)
+        --> Store locally --> Push to that tenant
+```
+- Price files are tenant-specific
+- Downloaded using tenant's own account number with partner
+- Each tenant has their own pricing
+
+### Order Flow
+```
+Tenant --> PC (JSON API) --> PC converts to EDI 850 --> Partner
+Partner --> EDI 855 (Ack) --> PC parses --> Update order status --> Tenant
+```
+- Orders placed by tenant, include OrgId + TenantId + AccountNumber
+- PC handles all EDI internally - tenants only see JSON
+- Validated against TenantPartnerAccount before processing
+
+================================================================================
+### METERING & BILLING
+================================================================================
+
+### Metering Structure
+```
+UsageRecord:
+  - OrgId      --> Billing rollup (who gets invoice)
+  - TenantId   --> Granular tracking (which tenant made request)
+  - MetricType --> What was used (API call, EDI transaction, etc.)
+  - Value      --> Quantity
+  - Timestamp  --> When
+```
+
+### Billing Flow
+```
+Tenant A --+
+           |    +------------------------+
+Tenant B --+--> | PartnerConnect API     |
+           |    |                        |
+Tenant C --+    | 1. Validate Org Active |
+                | 2. Process request     |
+                | 3. Record usage:       |
+                |    - OrgId (billing)   |
+                |    - TenantId (detail) |
+                +------------------------+
+                           |
+                           v
+                +------------------------+
+                | Aggregate to Org level |
+                +------------------------+
+                           |
+                           v
+                +------------------------+
+                | Invoice to Org         |
+                +------------------------+
+```
+
+### Enforcement Rules
+1. Org must be registered with PC before any tenant can use services
+2. Org.Status must be Active for any API calls
+3. TenantId must belong to the specified OrgId
+4. For orders: TenantPartnerAccount must exist (tenant + partner + account#)
+
+================================================================================
+### ENTITIES
+================================================================================
+
+### New Entities Required
+
+1. **Organization**
+   - Id, Name, Code (unique), Status (Pending/Active/Suspended/Closed)
+   - BillingPlanId, IsMultiTenant
+   - CreatedAt, UpdatedAt, ActivatedAt, SuspendedAt
+
+2. **Tenant**
+   - Id, OrgId (FK), Name, Code, Status, IsDefault
+   - CreatedAt, UpdatedAt
+
+3. **TenantPartnerAccount**
+   - Id, TenantId (FK), TradingPartnerId (FK), AccountNumber, IsActive
+   - Unique constraint: (TenantId, TradingPartnerId, AccountNumber)
+
+4. **Order**
+   - Id, OrgId, TenantId, TradingPartnerId, AccountNumber
+   - PoNumber, Status, OrderDate, RequestedDeliveryDate
+   - ShipToJson, BillToJson, TotalAmount, Currency
+   - EdiDocumentId, AcknowledgmentDocumentId
+
+5. **OrderLine**
+   - Id, OrderId (FK), LineNumber, Sku, Description
+   - Quantity, UnitOfMeasure, UnitPrice, LineTotal
+
+### Entity Modifications Required
+
+| Entity                      | Change                                      |
+|-----------------------------|---------------------------------------------|
+| MerchantSubscriptionRequest | Add OrgId                                   |
+| SprContentUpload            | Add OrgId (for push scoping)                |
+| PriceFeedUpload             | Rename DealerId -> TenantId, add OrgId      |
+| UsageRecord                 | Add OrgId, rename DealerId -> TenantId      |
+| UsageSummary                | Add OrgId, rename DealerId -> TenantId      |
+| Subscription/Billing        | Link to OrgId instead of DealerId           |
+
+================================================================================
+### ORDER APIs
+================================================================================
+
+| Method | Endpoint                   | Purpose                         |
+|--------|----------------------------|---------------------------------|
+| POST   | /api/v1/orders             | Submit order (JSON)             |
+| GET    | /api/v1/orders             | List orders (filter by org/tenant) |
+| GET    | /api/v1/orders/{id}        | Get order details/status        |
+| POST   | /api/v1/orders/{id}/cancel | Cancel order                    |
+
+### Order Validation Flow
+1. Validate OrgId exists and Org.Status == Active
+2. Validate TenantId belongs to OrgId
+3. Validate TenantPartnerAccount exists (TenantId + PartnerId + AccountNumber)
+4. If all valid -> Create Order, return OrderId
+5. If invalid -> Reject with specific error
+
+================================================================================
+### IMPLEMENTATION PHASES
+================================================================================
+
+| Phase | Tasks                                                        |
+|-------|--------------------------------------------------------------|
+| 1     | Create Organization, Tenant, TenantPartnerAccount entities  |
+| 2     | Refactor existing entities (add OrgId, rename DealerId)      |
+| 3     | Update metering with OrgId                                   |
+| 4     | Create Order/OrderLine entities and APIs                     |
+| 5     | Connect Order -> EDI 850 -> EDI 855 -> Order Status          |
+| 6     | Scope econtent push to subscribed Orgs                       |
+
+================================================================================
+### CURRENT STATE vs NEEDED
+================================================================================
+
+| Component              | Exists | Status                              |
+|------------------------|--------|-------------------------------------|
+| Organization entity    | No     | Need to create                      |
+| Tenant entity          | Partial| Exists as Dealer, needs OrgId       |
+| TenantPartnerAccount   | No     | Need to create                      |
+| Order entity           | No     | Need to create                      |
+| Order APIs             | No     | Need to create                      |
+| EDI 850/855 generators | Yes    | Need to connect to Order flow       |
+| Metering (OrgId)       | No     | Need to add OrgId                   |
+| Billing (OrgId)        | Partial| Uses DealerId, needs OrgId          |
+| Subscription API       | Yes    | Needs OrgId                         |
+| Content push scoping   | No     | Currently global, needs Org scope   |

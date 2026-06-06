@@ -15,6 +15,12 @@ public class UsageRecordConfiguration : IEntityTypeConfiguration<UsageRecord>
 
         builder.HasKey(u => u.Id);
 
+        // Ignore the TenantId alias property
+        builder.Ignore(u => u.TenantId);
+
+        // OrganizationId is nullable for backward compatibility
+        builder.Property(u => u.OrganizationId);
+
         builder.Property(u => u.MetricType)
             .IsRequired()
             .HasConversion<string>()
@@ -55,5 +61,12 @@ public class UsageRecordConfiguration : IEntityTypeConfiguration<UsageRecord>
 
         builder.HasIndex(u => new { u.IsAggregated, u.Timestamp })
             .HasDatabaseName("IX_UsageRecords_IsAggregated_Timestamp");
+
+        // OrganizationId indexes for billing rollup
+        builder.HasIndex(u => u.OrganizationId)
+            .HasDatabaseName("IX_UsageRecords_OrganizationId");
+
+        builder.HasIndex(u => new { u.OrganizationId, u.Timestamp })
+            .HasDatabaseName("IX_UsageRecords_OrganizationId_Timestamp");
     }
 }

@@ -8,9 +8,19 @@ public class UsageRecord
     public Guid Id { get; set; } = Guid.NewGuid();
 
     /// <summary>
-    /// The dealer ID this usage is associated with.
+    /// The organization ID this usage is billed to.
+    /// </summary>
+    public int? OrganizationId { get; set; }
+
+    /// <summary>
+    /// The dealer/tenant ID this usage is associated with.
     /// </summary>
     public int DealerId { get; set; }
+
+    /// <summary>
+    /// Alias for DealerId, for new multi-tenant code.
+    /// </summary>
+    public int TenantId { get => DealerId; set => DealerId = value; }
 
     /// <summary>
     /// The type of metric being recorded.
@@ -96,5 +106,20 @@ public enum MetricType
     /// <summary>
     /// Data transfer in bytes.
     /// </summary>
-    DataTransfer
+    DataTransfer,
+
+    /// <summary>
+    /// Order placed.
+    /// </summary>
+    OrderPlaced,
+
+    /// <summary>
+    /// Order line item.
+    /// </summary>
+    OrderLineItem,
+
+    /// <summary>
+    /// Order cancelled.
+    /// </summary>
+    OrderCancelled
 }

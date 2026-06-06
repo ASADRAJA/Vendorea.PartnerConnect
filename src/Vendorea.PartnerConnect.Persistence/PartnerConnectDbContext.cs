@@ -77,6 +77,14 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<ExternalDealer> ExternalDealers => Set<ExternalDealer>();
     public DbSet<DealerOnboardingRequest> DealerOnboardingRequests => Set<DealerOnboardingRequest>();
 
+    // Multi-Tenant and Orders
+    public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<TenantPartnerAccount> TenantPartnerAccounts => Set<TenantPartnerAccount>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+    public DbSet<OrderStatusHistory> OrderStatusHistory => Set<OrderStatusHistory>();
+
     // RBAC
     public DbSet<User> Users => Set<User>();
     public DbSet<Role> Roles => Set<Role>();
