@@ -1,0 +1,396 @@
+@page "/organizations"
+@inject ApiClient Api
+
+<PageTitle>Organizations - PartnerConnect Admin</PageTitle>
+
+<h1>Organizations</h1>
+<p class="text-muted">Manage billable accounts and their multi-tenant settings</p>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <ul class="nav nav-tabs card-header-tabs">
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "active" ? "active" : "")" @onclick='() => SetTab("active")'>
+                            <span class="oi oi-check me-1"></span> Active
+                            <span class="badge bg-success ms-1">@orgResult.ActiveCount</span>
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "pending" ? "active" : "")" @onclick='() => SetTab("pending")'>
+                            <span class="oi oi-clock me-1"></span> Pending
+                            @if (orgResult.PendingCount > 0)
+                            {
+                                <span class="badge bg-warning text-dark ms-1">@orgResult.PendingCount</span>
+                            }
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "all" ? "active" : "")" @onclick='() => SetTab("all")'>
+                            <span class="oi oi-list me-1"></span> All
+                            <span class="badge bg-secondary ms-1">@orgResult.Total</span>
+                        </button>
+                    </li>
+                </ul>
+                <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
+                    <span class="oi oi-plus me-1"></span> New Organization
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadOrganizations">
+                            <span class="oi oi-reload me-1"></span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2">Loading organizations...</p>
+                    </div>
+                }
+                else if (filteredOrganizations.Count == 0)
+                {
+                    <div class="text-center py-4 text-muted">
+                        <span class="oi oi-inbox" style="font-size: 3rem;"></span>
+                        <p class="mt-2">No organizations found</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Name</th>
+                                    <th>Status</th>
+                                    <th>Billing Plan</th>
+                                    <th>Multi-Tenant</th>
+                                    <th>Tenants</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var org in filteredOrganizations)
+                                {
+                                    <tr>
+                                        <td><code>@org.Code</code></td>
+                                        <td><strong>@org.Name</strong></td>
+                                        <td>
+                                            <span class="badge @GetStatusBadgeClass(org.Status)">@org.Status</span>
+                                        </td>
+                                        <td>@(org.BillingPlanName ?? "-")</td>
+                                        <td>
+                                            @if (org.IsMultiTenant)
+                                            {
+                                                <span class="badge bg-info">Multi-Tenant</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Single</span>
+                                            }
+                                        </td>
+                                        <td>@org.TenantCount</td>
+                                        <td>@org.CreatedAt.ToLocalTime().ToString("d")</td>
+                                        <td>
+                                            @if (org.Status == "Pending")
+                                            {
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ActivateOrganization(org.Id)" title="Activate">
+                                                    <span class="oi oi-check"></span>
+                                                </button>
+                                            }
+                                            else if (org.Status == "Active")
+                                            {
+                                                <button class="btn btn-sm btn-warning me-1" @onclick="() => SuspendOrganization(org.Id)" title="Suspend">
+                                                    <span class="oi oi-ban"></span>
+                                                </button>
+                                            }
+                                            else if (org.Status == "Suspended")
+                                            {
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ActivateOrganization(org.Id)" title="Reactivate">
+                                                    <span class="oi oi-action-redo"></span>
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(org)" title="Edit">
+                                                <span class="oi oi-pencil"></span>
+                                            </button>
+                                            <a href="/tenants?organizationId=@org.Id" class="btn btn-sm btn-outline-info" title="View Tenants">
+                                                <span class="oi oi-people"></span>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Create Organization Modal *@
+@if (showCreateModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Organization</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Code <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="createRequest.Code" placeholder="e.g., ACME, M360" />
+                        <small class="text-muted">Unique identifier for the organization</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="createRequest.Name" placeholder="e.g., Acme Corporation" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Billing Plan</label>
+                        <select class="form-select" @bind="selectedBillingPlanId">
+                            <option value="">Select Billing Plan...</option>
+                            @foreach (var plan in billingPlans)
+                            {
+                                <option value="@plan.Id">@plan.Name - @plan.MonthlyPrice.ToString("C")/mo</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="isMultiTenant" @bind="createRequest.IsMultiTenant" />
+                        <label class="form-check-label" for="isMultiTenant">
+                            Multi-Tenant Organization
+                        </label>
+                        <br><small class="text-muted">Enable if this organization will have multiple tenants (e.g., M360)</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateOrganization" disabled="@(!CanCreate || isSubmitting)">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Edit Organization Modal *@
+@if (showEditModal && selectedOrganization != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Organization</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Code</label>
+                        <input type="text" class="form-control" value="@selectedOrganization.Code" disabled />
+                        <small class="text-muted">Code cannot be changed</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="updateRequest.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Billing Plan</label>
+                        <select class="form-select" @bind="selectedBillingPlanId">
+                            <option value="">Select Billing Plan...</option>
+                            @foreach (var plan in billingPlans)
+                            {
+                                <option value="@plan.Id">@plan.Name - @plan.MonthlyPrice.ToString("C")/mo</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="UpdateOrganization" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private OrganizationListResult orgResult = new();
+    private List<BillingPlanDto> billingPlans = new();
+
+    private string activeTab = "active";
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+
+    // Modals
+    private bool showCreateModal = false;
+    private bool showEditModal = false;
+
+    private OrganizationDto? selectedOrganization;
+    private CreateOrganizationRequest createRequest = new();
+    private UpdateOrganizationRequest updateRequest = new();
+    private string selectedBillingPlanId = "";
+
+    private bool CanCreate => !string.IsNullOrWhiteSpace(createRequest.Code) && !string.IsNullOrWhiteSpace(createRequest.Name);
+
+    private List<OrganizationDto> filteredOrganizations => activeTab switch
+    {
+        "active" => orgResult.Items.Where(o => o.Status == "Active").ToList(),
+        "pending" => orgResult.Items.Where(o => o.Status == "Pending").ToList(),
+        _ => orgResult.Items
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgsTask = LoadOrganizationsAsync();
+        var plansTask = Api.GetBillingPlansAsync();
+
+        await Task.WhenAll(orgsTask, plansTask);
+        billingPlans = await plansTask;
+    }
+
+    private async Task LoadOrganizations()
+    {
+        await LoadOrganizationsAsync();
+    }
+
+    private async Task LoadOrganizationsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            orgResult = await Api.GetOrganizationsAsync();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void ShowCreateModal()
+    {
+        createRequest = new CreateOrganizationRequest();
+        selectedBillingPlanId = "";
+        showCreateModal = true;
+    }
+
+    private void ShowEditModal(OrganizationDto org)
+    {
+        selectedOrganization = org;
+        updateRequest = new UpdateOrganizationRequest { Name = org.Name };
+        selectedBillingPlanId = org.BillingPlanId?.ToString() ?? "";
+        showEditModal = true;
+    }
+
+    private void CloseModals()
+    {
+        showCreateModal = false;
+        showEditModal = false;
+        selectedOrganization = null;
+    }
+
+    private async Task CreateOrganization()
+    {
+        if (!CanCreate) return;
+
+        isSubmitting = true;
+        try
+        {
+            if (Guid.TryParse(selectedBillingPlanId, out var planId))
+            {
+                createRequest.BillingPlanId = planId;
+            }
+
+            var result = await Api.CreateOrganizationAsync(createRequest);
+            if (result != null)
+            {
+                CloseModals();
+                await LoadOrganizations();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task UpdateOrganization()
+    {
+        if (selectedOrganization == null) return;
+
+        isSubmitting = true;
+        try
+        {
+            if (Guid.TryParse(selectedBillingPlanId, out var planId))
+            {
+                updateRequest.BillingPlanId = planId;
+            }
+
+            var success = await Api.UpdateOrganizationAsync(selectedOrganization.Id, updateRequest);
+            if (success)
+            {
+                CloseModals();
+                await LoadOrganizations();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task ActivateOrganization(int id)
+    {
+        var success = await Api.ActivateOrganizationAsync(id);
+        if (success)
+        {
+            await LoadOrganizations();
+        }
+    }
+
+    private async Task SuspendOrganization(int id)
+    {
+        var success = await Api.SuspendOrganizationAsync(id);
+        if (success)
+        {
+            await LoadOrganizations();
+        }
+    }
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        "Pending" => "bg-warning text-dark",
+        "Active" => "bg-success",
+        "Suspended" => "bg-danger",
+        "Closed" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+}

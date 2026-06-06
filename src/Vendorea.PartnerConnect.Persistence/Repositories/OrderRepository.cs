@@ -95,6 +95,49 @@ public class OrderRepository : IOrderRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Order>> GetAllAsync(
+        OrderStatus? status = null,
+        int? limit = null,
+        int? offset = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Orders
+            .Include(o => o.Organization)
+            .Include(o => o.Tenant)
+            .Include(o => o.TradingPartner)
+            .AsQueryable();
+
+        if (status.HasValue)
+            query = query.Where(o => o.Status == status.Value);
+
+        query = query.OrderByDescending(o => o.OrderDate);
+
+        if (offset.HasValue)
+            query = query.Skip(offset.Value);
+        if (limit.HasValue)
+            query = query.Take(limit.Value);
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> GetCountAsync(
+        int? organizationId = null,
+        int? tenantId = null,
+        OrderStatus? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Orders.AsQueryable();
+
+        if (organizationId.HasValue)
+            query = query.Where(o => o.OrganizationId == organizationId.Value);
+        if (tenantId.HasValue)
+            query = query.Where(o => o.TenantId == tenantId.Value);
+        if (status.HasValue)
+            query = query.Where(o => o.Status == status.Value);
+
+        return await query.CountAsync(cancellationToken);
+    }
+
     public async Task<int> GetCountByTenantIdAsync(
         int tenantId,
         OrderStatus? status = null,

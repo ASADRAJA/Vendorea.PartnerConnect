@@ -515,3 +515,183 @@ public class FtpConnectionTestResult
     public int FilesFound { get; set; }
     public string? ErrorMessage { get; set; }
 }
+
+// Organization Models (Multi-Tenant)
+public class OrganizationDto
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public Guid? BillingPlanId { get; set; }
+    public string? BillingPlanName { get; set; }
+    public bool IsMultiTenant { get; set; }
+    public int TenantCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ActivatedAt { get; set; }
+    public DateTime? SuspendedAt { get; set; }
+}
+
+public class OrganizationListResult
+{
+    public int Total { get; set; }
+    public int ActiveCount { get; set; }
+    public int SuspendedCount { get; set; }
+    public int PendingCount { get; set; }
+    public List<OrganizationDto> Items { get; set; } = new();
+}
+
+public class CreateOrganizationRequest
+{
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public Guid? BillingPlanId { get; set; }
+    public bool IsMultiTenant { get; set; }
+}
+
+public class UpdateOrganizationRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public Guid? BillingPlanId { get; set; }
+}
+
+// Tenant Models (Multi-Tenant)
+public class TenantDto
+{
+    public int Id { get; set; }
+    public int OrganizationId { get; set; }
+    public string? OrganizationName { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? ExternalId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public bool IsDefault { get; set; }
+    public int PartnerAccountCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class TenantListResult
+{
+    public int Total { get; set; }
+    public int ActiveCount { get; set; }
+    public int SuspendedCount { get; set; }
+    public List<TenantDto> Items { get; set; } = new();
+}
+
+public class CreateTenantRequest
+{
+    public int OrganizationId { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? ExternalId { get; set; }
+    public bool IsDefault { get; set; }
+}
+
+public class UpdateTenantRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string? ExternalId { get; set; }
+}
+
+// Tenant Partner Account Models
+public class TenantPartnerAccountDto
+{
+    public int Id { get; set; }
+    public int TenantId { get; set; }
+    public string? TenantName { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? TradingPartnerCode { get; set; }
+    public string? TradingPartnerName { get; set; }
+    public string AccountNumber { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class CreateTenantPartnerAccountRequest
+{
+    public int TenantId { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string AccountNumber { get; set; } = string.Empty;
+}
+
+// Order Models
+public class OrderDto
+{
+    public Guid Id { get; set; }
+    public int OrganizationId { get; set; }
+    public string? OrganizationName { get; set; }
+    public int TenantId { get; set; }
+    public string? TenantName { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? TradingPartnerName { get; set; }
+    public string AccountNumber { get; set; } = string.Empty;
+    public string PoNumber { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public decimal SubTotal { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal ShippingAmount { get; set; }
+    public decimal TotalAmount { get; set; }
+    public int LineCount { get; set; }
+    public DateTime OrderDate { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? AcknowledgedAt { get; set; }
+}
+
+public class OrderDetailDto : OrderDto
+{
+    public DateTime? RequestedShipDate { get; set; }
+    public DateTime? RequestedDeliveryDate { get; set; }
+    public string? ShippingMethod { get; set; }
+    public string? Notes { get; set; }
+    public AddressDto? ShipTo { get; set; }
+    public AddressDto? BillTo { get; set; }
+    public List<OrderLineDto> Lines { get; set; } = new();
+    public List<OrderStatusHistoryDto> StatusHistory { get; set; } = new();
+}
+
+public class OrderLineDto
+{
+    public Guid Id { get; set; }
+    public int LineNumber { get; set; }
+    public string Sku { get; set; } = string.Empty;
+    public string? VendorSku { get; set; }
+    public string? Description { get; set; }
+    public int QuantityOrdered { get; set; }
+    public int QuantityShipped { get; set; }
+    public int QuantityCancelled { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+public class OrderStatusHistoryDto
+{
+    public Guid Id { get; set; }
+    public string FromStatus { get; set; } = string.Empty;
+    public string ToStatus { get; set; } = string.Empty;
+    public string? ChangedByUserId { get; set; }
+    public string? Reason { get; set; }
+    public DateTime ChangedAt { get; set; }
+}
+
+public class AddressDto
+{
+    public string? Name { get; set; }
+    public string? Line1 { get; set; }
+    public string? Line2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Country { get; set; }
+}
+
+public class OrderListResult
+{
+    public int Total { get; set; }
+    public int DraftCount { get; set; }
+    public int SubmittedCount { get; set; }
+    public int ProcessingCount { get; set; }
+    public int CompletedCount { get; set; }
+    public int CancelledCount { get; set; }
+    public List<OrderDto> Items { get; set; } = new();
+}

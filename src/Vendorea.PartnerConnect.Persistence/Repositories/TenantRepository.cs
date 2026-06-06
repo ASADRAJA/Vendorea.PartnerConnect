@@ -45,6 +45,15 @@ public class TenantRepository : ITenantRepository
             .FirstOrDefaultAsync(t => t.OrganizationId == organizationId && t.IsDefault, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Tenant>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.Tenants
+            .Include(t => t.Organization)
+            .OrderBy(t => t.Organization!.Name)
+            .ThenBy(t => t.Name)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Tenant>> GetByOrganizationIdAsync(int organizationId, CancellationToken cancellationToken = default)
     {
         return await _context.Tenants

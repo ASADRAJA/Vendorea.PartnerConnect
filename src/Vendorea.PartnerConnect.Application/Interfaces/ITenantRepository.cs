@@ -12,6 +12,7 @@ public interface ITenantRepository
     Task<Tenant?> GetByCodeAsync(int organizationId, string code, CancellationToken cancellationToken = default);
     Task<Tenant?> GetByExternalIdAsync(string externalId, CancellationToken cancellationToken = default);
     Task<Tenant?> GetDefaultTenantAsync(int organizationId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Tenant>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Tenant>> GetByOrganizationIdAsync(int organizationId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Tenant>> GetByStatusAsync(int organizationId, TenantStatus status, CancellationToken cancellationToken = default);
     Task<Tenant> AddAsync(Tenant tenant, CancellationToken cancellationToken = default);

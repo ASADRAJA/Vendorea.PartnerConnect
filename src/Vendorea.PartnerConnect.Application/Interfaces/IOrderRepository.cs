@@ -25,6 +25,18 @@ public interface IOrderRepository
         int? offset = null,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<Order>> GetAllAsync(
+        OrderStatus? status = null,
+        int? limit = null,
+        int? offset = null,
+        CancellationToken cancellationToken = default);
+
+    Task<int> GetCountAsync(
+        int? organizationId = null,
+        int? tenantId = null,
+        OrderStatus? status = null,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Order>> GetByPoNumberAsync(
         int tenantId,
         string poNumber,

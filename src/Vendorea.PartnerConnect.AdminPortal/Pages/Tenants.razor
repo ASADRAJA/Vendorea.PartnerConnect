@@ -1,0 +1,597 @@
+@page "/tenants"
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Tenants - PartnerConnect Admin</PageTitle>
+
+<h1>Tenants</h1>
+<p class="text-muted">Manage end-user tenants within organizations</p>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <ul class="nav nav-tabs card-header-tabs">
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "active" ? "active" : "")" @onclick='() => SetTab("active")'>
+                            <span class="oi oi-check me-1"></span> Active
+                            <span class="badge bg-success ms-1">@tenantResult.ActiveCount</span>
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "all" ? "active" : "")" @onclick='() => SetTab("all")'>
+                            <span class="oi oi-list me-1"></span> All
+                            <span class="badge bg-secondary ms-1">@tenantResult.Total</span>
+                        </button>
+                    </li>
+                </ul>
+                <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
+                    <span class="oi oi-plus me-1"></span> New Tenant
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Filter by Organization</label>
+                        <select class="form-select form-select-sm" @bind="filterOrganizationId" @bind:after="LoadTenants">
+                            <option value="0">All Organizations</option>
+                            @foreach (var org in organizations)
+                            {
+                                <option value="@org.Id">@org.Name (@org.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadTenants">
+                            <span class="oi oi-reload me-1"></span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2">Loading tenants...</p>
+                    </div>
+                }
+                else if (filteredTenants.Count == 0)
+                {
+                    <div class="text-center py-4 text-muted">
+                        <span class="oi oi-inbox" style="font-size: 3rem;"></span>
+                        <p class="mt-2">No tenants found</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Name</th>
+                                    <th>Organization</th>
+                                    <th>Status</th>
+                                    <th>Default</th>
+                                    <th>External ID</th>
+                                    <th>Partner Accounts</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var tenant in filteredTenants)
+                                {
+                                    <tr>
+                                        <td><code>@tenant.Code</code></td>
+                                        <td><strong>@tenant.Name</strong></td>
+                                        <td>@tenant.OrganizationName</td>
+                                        <td>
+                                            <span class="badge @GetStatusBadgeClass(tenant.Status)">@tenant.Status</span>
+                                        </td>
+                                        <td>
+                                            @if (tenant.IsDefault)
+                                            {
+                                                <span class="badge bg-info">Default</span>
+                                            }
+                                        </td>
+                                        <td><small class="text-muted">@(tenant.ExternalId ?? "-")</small></td>
+                                        <td>@tenant.PartnerAccountCount</td>
+                                        <td>@tenant.CreatedAt.ToLocalTime().ToString("d")</td>
+                                        <td>
+                                            @if (tenant.Status == "Active")
+                                            {
+                                                <button class="btn btn-sm btn-warning me-1" @onclick="() => SuspendTenant(tenant.Id)" title="Suspend">
+                                                    <span class="oi oi-ban"></span>
+                                                </button>
+                                            }
+                                            else if (tenant.Status == "Suspended")
+                                            {
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ActivateTenant(tenant.Id)" title="Reactivate">
+                                                    <span class="oi oi-action-redo"></span>
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(tenant)" title="Edit">
+                                                <span class="oi oi-pencil"></span>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info" @onclick="() => ShowAccountsModal(tenant)" title="Partner Accounts">
+                                                <span class="oi oi-key"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Create Tenant Modal *@
+@if (showCreateModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Tenant</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Organization <span class="text-danger">*</span></label>
+                        <select class="form-select" @bind="createRequest.OrganizationId">
+                            <option value="0">Select Organization...</option>
+                            @foreach (var org in organizations.Where(o => o.Status == "Active"))
+                            {
+                                <option value="@org.Id">@org.Name (@org.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Code <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="createRequest.Code" placeholder="e.g., TENANT001" />
+                        <small class="text-muted">Unique identifier within the organization</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="createRequest.Name" placeholder="e.g., Main Tenant" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">External ID</label>
+                        <input type="text" class="form-control" @bind="createRequest.ExternalId" placeholder="e.g., M360 Tenant ID" />
+                        <small class="text-muted">External system identifier (e.g., M360 tenant ID)</small>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="isDefault" @bind="createRequest.IsDefault" />
+                        <label class="form-check-label" for="isDefault">
+                            Default Tenant
+                        </label>
+                        <br><small class="text-muted">Set as default tenant for single-tenant organizations</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateTenant" disabled="@(!CanCreate || isSubmitting)">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Edit Tenant Modal *@
+@if (showEditModal && selectedTenant != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Tenant</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Organization</label>
+                        <input type="text" class="form-control" value="@selectedTenant.OrganizationName" disabled />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Code</label>
+                        <input type="text" class="form-control" value="@selectedTenant.Code" disabled />
+                        <small class="text-muted">Code cannot be changed</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="updateRequest.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">External ID</label>
+                        <input type="text" class="form-control" @bind="updateRequest.ExternalId" placeholder="e.g., M360 Tenant ID" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="UpdateTenant" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Partner Accounts Modal *@
+@if (showAccountsModal && selectedTenant != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Partner Accounts - @selectedTenant.Name</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span>Trading partner accounts linked to this tenant</span>
+                        <button class="btn btn-sm btn-primary" @onclick="ShowAddAccountModal">
+                            <span class="oi oi-plus me-1"></span> Link Account
+                        </button>
+                    </div>
+
+                    @if (isLoadingAccounts)
+                    {
+                        <div class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary"></div>
+                        </div>
+                    }
+                    else if (tenantAccounts.Count == 0)
+                    {
+                        <div class="text-center py-3 text-muted">
+                            <p>No partner accounts linked</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Trading Partner</th>
+                                    <th>Account Number</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var account in tenantAccounts)
+                                {
+                                    <tr>
+                                        <td>
+                                            @account.TradingPartnerName
+                                            <br><small class="text-muted">@account.TradingPartnerCode</small>
+                                        </td>
+                                        <td><code>@account.AccountNumber</code></td>
+                                        <td>
+                                            @if (account.IsActive)
+                                            {
+                                                <span class="badge bg-success">Active</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Inactive</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (account.IsActive)
+                                            {
+                                                <button class="btn btn-sm btn-outline-warning" @onclick="() => DeactivateAccount(account.Id)" title="Deactivate">
+                                                    <span class="oi oi-ban"></span>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Add Account Modal *@
+@if (showAddAccountModal && selectedTenant != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Link Partner Account</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAddAccountModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Trading Partner <span class="text-danger">*</span></label>
+                        <select class="form-select" @bind="createAccountRequest.TradingPartnerId">
+                            <option value="0">Select Trading Partner...</option>
+                            @foreach (var partner in tradingPartners)
+                            {
+                                <option value="@partner.Id">@partner.Name (@partner.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account Number <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="createAccountRequest.AccountNumber" placeholder="e.g., ACCT-12345" />
+                        <small class="text-muted">The tenant's account number with the trading partner</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAddAccountModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateAccount" disabled="@(!CanCreateAccount || isSubmitting)">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Link Account
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery]
+    public int? organizationId { get; set; }
+
+    private TenantListResult tenantResult = new();
+    private List<OrganizationDto> organizations = new();
+    private List<TradingPartnerDto> tradingPartners = new();
+    private List<TenantPartnerAccountDto> tenantAccounts = new();
+
+    private string activeTab = "active";
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private bool isLoadingAccounts = false;
+    private int filterOrganizationId = 0;
+
+    // Modals
+    private bool showCreateModal = false;
+    private bool showEditModal = false;
+    private bool showAccountsModal = false;
+    private bool showAddAccountModal = false;
+
+    private TenantDto? selectedTenant;
+    private CreateTenantRequest createRequest = new();
+    private UpdateTenantRequest updateRequest = new();
+    private CreateTenantPartnerAccountRequest createAccountRequest = new();
+
+    private bool CanCreate => createRequest.OrganizationId > 0 && !string.IsNullOrWhiteSpace(createRequest.Code) && !string.IsNullOrWhiteSpace(createRequest.Name);
+    private bool CanCreateAccount => createAccountRequest.TradingPartnerId > 0 && !string.IsNullOrWhiteSpace(createAccountRequest.AccountNumber);
+
+    private List<TenantDto> filteredTenants => activeTab switch
+    {
+        "active" => tenantResult.Items.Where(t => t.Status == "Active").ToList(),
+        _ => tenantResult.Items
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (organizationId.HasValue)
+        {
+            filterOrganizationId = organizationId.Value;
+        }
+
+        var orgsTask = Api.GetOrganizationsAsync();
+        var partnersTask = Api.GetTradingPartnersAsync();
+        var tenantsTask = LoadTenantsAsync();
+
+        await Task.WhenAll(orgsTask, partnersTask, tenantsTask);
+
+        var orgResult = await orgsTask;
+        organizations = orgResult.Items;
+        tradingPartners = await partnersTask;
+    }
+
+    private async Task LoadTenants()
+    {
+        await LoadTenantsAsync();
+    }
+
+    private async Task LoadTenantsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            tenantResult = await Api.GetTenantsAsync(
+                organizationId: filterOrganizationId > 0 ? filterOrganizationId : null
+            );
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void ShowCreateModal()
+    {
+        createRequest = new CreateTenantRequest();
+        if (filterOrganizationId > 0)
+        {
+            createRequest.OrganizationId = filterOrganizationId;
+        }
+        showCreateModal = true;
+    }
+
+    private void ShowEditModal(TenantDto tenant)
+    {
+        selectedTenant = tenant;
+        updateRequest = new UpdateTenantRequest { Name = tenant.Name, ExternalId = tenant.ExternalId };
+        showEditModal = true;
+    }
+
+    private async Task ShowAccountsModal(TenantDto tenant)
+    {
+        selectedTenant = tenant;
+        showAccountsModal = true;
+        await LoadTenantAccounts();
+    }
+
+    private async Task LoadTenantAccounts()
+    {
+        if (selectedTenant == null) return;
+
+        isLoadingAccounts = true;
+        StateHasChanged();
+
+        try
+        {
+            tenantAccounts = await Api.GetTenantPartnerAccountsAsync(selectedTenant.Id);
+        }
+        finally
+        {
+            isLoadingAccounts = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowAddAccountModal()
+    {
+        if (selectedTenant == null) return;
+        createAccountRequest = new CreateTenantPartnerAccountRequest { TenantId = selectedTenant.Id };
+        showAddAccountModal = true;
+    }
+
+    private void CloseAddAccountModal()
+    {
+        showAddAccountModal = false;
+    }
+
+    private void CloseModals()
+    {
+        showCreateModal = false;
+        showEditModal = false;
+        showAccountsModal = false;
+        showAddAccountModal = false;
+        selectedTenant = null;
+        tenantAccounts = new();
+    }
+
+    private async Task CreateTenant()
+    {
+        if (!CanCreate) return;
+
+        isSubmitting = true;
+        try
+        {
+            var result = await Api.CreateTenantAsync(createRequest);
+            if (result != null)
+            {
+                CloseModals();
+                await LoadTenants();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task UpdateTenant()
+    {
+        if (selectedTenant == null) return;
+
+        isSubmitting = true;
+        try
+        {
+            var success = await Api.UpdateTenantAsync(selectedTenant.Id, updateRequest);
+            if (success)
+            {
+                CloseModals();
+                await LoadTenants();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task ActivateTenant(int id)
+    {
+        var success = await Api.ActivateTenantAsync(id);
+        if (success)
+        {
+            await LoadTenants();
+        }
+    }
+
+    private async Task SuspendTenant(int id)
+    {
+        var success = await Api.SuspendTenantAsync(id);
+        if (success)
+        {
+            await LoadTenants();
+        }
+    }
+
+    private async Task CreateAccount()
+    {
+        if (!CanCreateAccount || selectedTenant == null) return;
+
+        isSubmitting = true;
+        try
+        {
+            var result = await Api.CreateTenantPartnerAccountAsync(createAccountRequest);
+            if (result != null)
+            {
+                CloseAddAccountModal();
+                await LoadTenantAccounts();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task DeactivateAccount(int accountId)
+    {
+        var success = await Api.DeactivateTenantPartnerAccountAsync(accountId);
+        if (success)
+        {
+            await LoadTenantAccounts();
+        }
+    }
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        "Active" => "bg-success",
+        "Suspended" => "bg-danger",
+        "Inactive" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+}

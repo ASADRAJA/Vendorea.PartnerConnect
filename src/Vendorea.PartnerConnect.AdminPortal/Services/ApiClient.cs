@@ -786,4 +786,315 @@ public class ApiClient
             return new();
         }
     }
+
+    // Organization endpoints
+    public async Task<OrganizationListResult> GetOrganizationsAsync(string? status = null)
+    {
+        try
+        {
+            var url = "/api/admin/organizations";
+            if (!string.IsNullOrEmpty(status))
+                url += $"?status={status}";
+
+            return await _httpClient.GetFromJsonAsync<OrganizationListResult>(url) ?? new OrganizationListResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get organizations");
+            return new OrganizationListResult();
+        }
+    }
+
+    public async Task<OrganizationDto?> GetOrganizationAsync(int id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<OrganizationDto>($"/api/admin/organizations/{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get organization {Id}", id);
+            return null;
+        }
+    }
+
+    public async Task<OrganizationDto?> CreateOrganizationAsync(CreateOrganizationRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/organizations", request);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<OrganizationDto>();
+            }
+            _logger.LogWarning("Failed to create organization: {StatusCode}", response.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create organization");
+            return null;
+        }
+    }
+
+    public async Task<bool> UpdateOrganizationAsync(int id, UpdateOrganizationRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PutAsJsonAsync($"/api/admin/organizations/{id}", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update organization {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> ActivateOrganizationAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/organizations/{id}/activate", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to activate organization {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> SuspendOrganizationAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/organizations/{id}/suspend", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to suspend organization {Id}", id);
+            return false;
+        }
+    }
+
+    // Tenant endpoints
+    public async Task<TenantListResult> GetTenantsAsync(int? organizationId = null, string? status = null)
+    {
+        try
+        {
+            var queryParams = new List<string>();
+            if (organizationId.HasValue)
+                queryParams.Add($"organizationId={organizationId}");
+            if (!string.IsNullOrEmpty(status))
+                queryParams.Add($"status={status}");
+
+            var url = "/api/admin/tenants";
+            if (queryParams.Count > 0)
+                url += "?" + string.Join("&", queryParams);
+
+            return await _httpClient.GetFromJsonAsync<TenantListResult>(url) ?? new TenantListResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get tenants");
+            return new TenantListResult();
+        }
+    }
+
+    public async Task<TenantDto?> GetTenantAsync(int id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<TenantDto>($"/api/admin/tenants/{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get tenant {Id}", id);
+            return null;
+        }
+    }
+
+    public async Task<TenantDto?> CreateTenantAsync(CreateTenantRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/tenants", request);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<TenantDto>();
+            }
+            _logger.LogWarning("Failed to create tenant: {StatusCode}", response.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create tenant");
+            return null;
+        }
+    }
+
+    public async Task<bool> UpdateTenantAsync(int id, UpdateTenantRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PutAsJsonAsync($"/api/admin/tenants/{id}", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update tenant {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> ActivateTenantAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/tenants/{id}/activate", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to activate tenant {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> SuspendTenantAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/tenants/{id}/suspend", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to suspend tenant {Id}", id);
+            return false;
+        }
+    }
+
+    // Tenant Partner Account endpoints
+    public async Task<List<TenantPartnerAccountDto>> GetTenantPartnerAccountsAsync(int tenantId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<TenantPartnerAccountDto>>(
+                $"/api/admin/tenants/{tenantId}/accounts") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get tenant partner accounts for tenant {TenantId}", tenantId);
+            return new();
+        }
+    }
+
+    public async Task<TenantPartnerAccountDto?> CreateTenantPartnerAccountAsync(CreateTenantPartnerAccountRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/admin/tenants/{request.TenantId}/accounts", request);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<TenantPartnerAccountDto>();
+            }
+            _logger.LogWarning("Failed to create tenant partner account: {StatusCode}", response.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create tenant partner account");
+            return null;
+        }
+    }
+
+    public async Task<bool> DeactivateTenantPartnerAccountAsync(int accountId)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/accounts/{accountId}/deactivate", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deactivate tenant partner account {AccountId}", accountId);
+            return false;
+        }
+    }
+
+    // Order endpoints
+    public async Task<OrderListResult> GetOrdersAsync(
+        int? organizationId = null,
+        int? tenantId = null,
+        string? status = null,
+        int skip = 0,
+        int take = 50)
+    {
+        try
+        {
+            var queryParams = new List<string> { $"skip={skip}", $"take={take}" };
+            if (organizationId.HasValue)
+                queryParams.Add($"organizationId={organizationId}");
+            if (tenantId.HasValue)
+                queryParams.Add($"tenantId={tenantId}");
+            if (!string.IsNullOrEmpty(status))
+                queryParams.Add($"status={status}");
+
+            var url = "/api/admin/orders?" + string.Join("&", queryParams);
+
+            return await _httpClient.GetFromJsonAsync<OrderListResult>(url) ?? new OrderListResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get orders");
+            return new OrderListResult();
+        }
+    }
+
+    public async Task<OrderDetailDto?> GetOrderAsync(Guid id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<OrderDetailDto>($"/api/admin/orders/{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get order {Id}", id);
+            return null;
+        }
+    }
+
+    public async Task<bool> CancelOrderAsync(Guid id, string? reason = null)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/admin/orders/{id}/cancel",
+                new { reason });
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cancel order {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> AcknowledgeOrderAsync(Guid id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/orders/{id}/acknowledge", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to acknowledge order {Id}", id);
+            return false;
+        }
+    }
 }

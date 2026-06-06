@@ -1,0 +1,597 @@
+@page "/orders"
+@inject ApiClient Api
+
+<PageTitle>Orders - PartnerConnect Admin</PageTitle>
+
+<h1>Orders</h1>
+<p class="text-muted">View and manage orders placed by tenants</p>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <ul class="nav nav-tabs card-header-tabs">
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "submitted" ? "active" : "")" @onclick='() => SetTab("submitted")'>
+                            <span class="oi oi-inbox me-1"></span> Submitted
+                            @if (orderResult.SubmittedCount > 0)
+                            {
+                                <span class="badge bg-primary ms-1">@orderResult.SubmittedCount</span>
+                            }
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "processing" ? "active" : "")" @onclick='() => SetTab("processing")'>
+                            <span class="oi oi-loop-circular me-1"></span> Processing
+                            <span class="badge bg-info ms-1">@orderResult.ProcessingCount</span>
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "completed" ? "active" : "")" @onclick='() => SetTab("completed")'>
+                            <span class="oi oi-check me-1"></span> Completed
+                            <span class="badge bg-success ms-1">@orderResult.CompletedCount</span>
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link @(activeTab == "all" ? "active" : "")" @onclick='() => SetTab("all")'>
+                            <span class="oi oi-list me-1"></span> All
+                            <span class="badge bg-secondary ms-1">@orderResult.Total</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Filter by Organization</label>
+                        <select class="form-select form-select-sm" @bind="filterOrganizationId" @bind:after="LoadOrders">
+                            <option value="0">All Organizations</option>
+                            @foreach (var org in organizations)
+                            {
+                                <option value="@org.Id">@org.Name (@org.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Filter by Tenant</label>
+                        <select class="form-select form-select-sm" @bind="filterTenantId" @bind:after="LoadOrders">
+                            <option value="0">All Tenants</option>
+                            @foreach (var tenant in filteredTenantOptions)
+                            {
+                                <option value="@tenant.Id">@tenant.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadOrders">
+                            <span class="oi oi-reload me-1"></span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2">Loading orders...</p>
+                    </div>
+                }
+                else if (filteredOrders.Count == 0)
+                {
+                    <div class="text-center py-4 text-muted">
+                        <span class="oi oi-inbox" style="font-size: 3rem;"></span>
+                        <p class="mt-2">No orders found</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>PO Number</th>
+                                    <th>Tenant</th>
+                                    <th>Trading Partner</th>
+                                    <th>Status</th>
+                                    <th>Lines</th>
+                                    <th>Total</th>
+                                    <th>Order Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var order in filteredOrders)
+                                {
+                                    <tr>
+                                        <td><code>@order.PoNumber</code></td>
+                                        <td>
+                                            <strong>@order.TenantName</strong>
+                                            <br><small class="text-muted">@order.OrganizationName</small>
+                                        </td>
+                                        <td>@order.TradingPartnerName</td>
+                                        <td>
+                                            <span class="badge @GetStatusBadgeClass(order.Status)">@order.Status</span>
+                                        </td>
+                                        <td>@order.LineCount</td>
+                                        <td>@order.TotalAmount.ToString("C")</td>
+                                        <td>@order.OrderDate.ToLocalTime().ToString("g")</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ShowDetailsModal(order)" title="View Details">
+                                                <span class="oi oi-eye"></span>
+                                            </button>
+                                            @if (order.Status == "Submitted")
+                                            {
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => AcknowledgeOrder(order.Id)" title="Acknowledge">
+                                                    <span class="oi oi-check"></span>
+                                                </button>
+                                            }
+                                            @if (CanCancel(order.Status))
+                                            {
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowCancelModal(order)" title="Cancel">
+                                                    <span class="oi oi-x"></span>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (orderResult.Total > pageSize)
+                    {
+                        <nav>
+                            <ul class="pagination pagination-sm justify-content-center">
+                                <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(currentPage - 1)">Previous</button>
+                                </li>
+                                @for (int i = 1; i <= totalPages; i++)
+                                {
+                                    var pageNum = i;
+                                    <li class="page-item @(currentPage == pageNum ? "active" : "")">
+                                        <button class="page-link" @onclick="() => GoToPage(pageNum)">@pageNum</button>
+                                    </li>
+                                }
+                                <li class="page-item @(currentPage == totalPages ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(currentPage + 1)">Next</button>
+                                </li>
+                            </ul>
+                        </nav>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Order Details Modal *@
+@if (showDetailsModal && selectedOrder != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Order Details - @selectedOrder.PoNumber</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoadingDetails)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary"></div>
+                        </div>
+                    }
+                    else if (orderDetail != null)
+                    {
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <h6>Order Information</h6>
+                                <dl>
+                                    <dt>PO Number</dt>
+                                    <dd><code>@orderDetail.PoNumber</code></dd>
+                                    <dt>Status</dt>
+                                    <dd><span class="badge @GetStatusBadgeClass(orderDetail.Status)">@orderDetail.Status</span></dd>
+                                    <dt>Order Date</dt>
+                                    <dd>@orderDetail.OrderDate.ToLocalTime().ToString("F")</dd>
+                                    @if (orderDetail.SubmittedAt.HasValue)
+                                    {
+                                        <dt>Submitted</dt>
+                                        <dd>@orderDetail.SubmittedAt.Value.ToLocalTime().ToString("F")</dd>
+                                    }
+                                    @if (orderDetail.AcknowledgedAt.HasValue)
+                                    {
+                                        <dt>Acknowledged</dt>
+                                        <dd>@orderDetail.AcknowledgedAt.Value.ToLocalTime().ToString("F")</dd>
+                                    }
+                                </dl>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>Customer</h6>
+                                <dl>
+                                    <dt>Organization</dt>
+                                    <dd>@orderDetail.OrganizationName</dd>
+                                    <dt>Tenant</dt>
+                                    <dd>@orderDetail.TenantName</dd>
+                                    <dt>Trading Partner</dt>
+                                    <dd>@orderDetail.TradingPartnerName</dd>
+                                    <dt>Account #</dt>
+                                    <dd><code>@orderDetail.AccountNumber</code></dd>
+                                </dl>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>Totals</h6>
+                                <dl>
+                                    <dt>Subtotal</dt>
+                                    <dd>@orderDetail.SubTotal.ToString("C")</dd>
+                                    <dt>Tax</dt>
+                                    <dd>@orderDetail.TaxAmount.ToString("C")</dd>
+                                    <dt>Shipping</dt>
+                                    <dd>@orderDetail.ShippingAmount.ToString("C")</dd>
+                                    <dt class="fw-bold">Total</dt>
+                                    <dd class="fw-bold">@orderDetail.TotalAmount.ToString("C")</dd>
+                                </dl>
+                            </div>
+                        </div>
+
+                        @if (orderDetail.ShipTo != null || orderDetail.BillTo != null)
+                        {
+                            <div class="row mb-4">
+                                @if (orderDetail.ShipTo != null)
+                                {
+                                    <div class="col-md-6">
+                                        <h6>Ship To</h6>
+                                        <address>
+                                            <strong>@orderDetail.ShipTo.Name</strong><br>
+                                            @orderDetail.ShipTo.Line1<br>
+                                            @if (!string.IsNullOrEmpty(orderDetail.ShipTo.Line2))
+                                            {
+                                                @orderDetail.ShipTo.Line2<br>
+                                            }
+                                            @orderDetail.ShipTo.City, @orderDetail.ShipTo.State @orderDetail.ShipTo.PostalCode<br>
+                                            @orderDetail.ShipTo.Country
+                                        </address>
+                                    </div>
+                                }
+                                @if (orderDetail.BillTo != null)
+                                {
+                                    <div class="col-md-6">
+                                        <h6>Bill To</h6>
+                                        <address>
+                                            <strong>@orderDetail.BillTo.Name</strong><br>
+                                            @orderDetail.BillTo.Line1<br>
+                                            @if (!string.IsNullOrEmpty(orderDetail.BillTo.Line2))
+                                            {
+                                                @orderDetail.BillTo.Line2<br>
+                                            }
+                                            @orderDetail.BillTo.City, @orderDetail.BillTo.State @orderDetail.BillTo.PostalCode<br>
+                                            @orderDetail.BillTo.Country
+                                        </address>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <h6>Order Lines</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>SKU</th>
+                                        <th>Description</th>
+                                        <th class="text-end">Qty</th>
+                                        <th class="text-end">Shipped</th>
+                                        <th class="text-end">Unit Price</th>
+                                        <th class="text-end">Total</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var line in orderDetail.Lines)
+                                    {
+                                        <tr>
+                                            <td>@line.LineNumber</td>
+                                            <td>
+                                                <code>@line.Sku</code>
+                                                @if (!string.IsNullOrEmpty(line.VendorSku))
+                                                {
+                                                    <br><small class="text-muted">Vendor: @line.VendorSku</small>
+                                                }
+                                            </td>
+                                            <td>@(line.Description ?? "-")</td>
+                                            <td class="text-end">@line.QuantityOrdered</td>
+                                            <td class="text-end">@line.QuantityShipped</td>
+                                            <td class="text-end">@line.UnitPrice.ToString("C")</td>
+                                            <td class="text-end">@line.LineTotal.ToString("C")</td>
+                                            <td><span class="badge @GetLineStatusBadgeClass(line.Status)">@line.Status</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        @if (orderDetail.StatusHistory?.Count > 0)
+                        {
+                            <h6 class="mt-4">Status History</h6>
+                            <ul class="list-group list-group-flush">
+                                @foreach (var history in orderDetail.StatusHistory.OrderByDescending(h => h.ChangedAt))
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="badge @GetStatusBadgeClass(history.FromStatus)">@history.FromStatus</span>
+                                            <span class="oi oi-arrow-right mx-2"></span>
+                                            <span class="badge @GetStatusBadgeClass(history.ToStatus)">@history.ToStatus</span>
+                                            @if (!string.IsNullOrEmpty(history.Reason))
+                                            {
+                                                <br><small class="text-muted">@history.Reason</small>
+                                            }
+                                        </div>
+                                        <small class="text-muted">@history.ChangedAt.ToLocalTime().ToString("g")</small>
+                                    </li>
+                                }
+                            </ul>
+                        }
+
+                        @if (!string.IsNullOrEmpty(orderDetail.Notes))
+                        {
+                            <div class="alert alert-info mt-4">
+                                <strong>Notes:</strong> @orderDetail.Notes
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    @if (orderDetail != null && orderDetail.Status == "Submitted")
+                    {
+                        <button type="button" class="btn btn-success" @onclick="() => AcknowledgeOrderFromDetail()">
+                            <span class="oi oi-check me-1"></span> Acknowledge
+                        </button>
+                    }
+                    @if (orderDetail != null && CanCancel(orderDetail.Status))
+                    {
+                        <button type="button" class="btn btn-danger" @onclick="() => ShowCancelFromDetail()">
+                            <span class="oi oi-x me-1"></span> Cancel Order
+                        </button>
+                    }
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Cancel Order Modal *@
+@if (showCancelModal && selectedOrder != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Cancel Order</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to cancel order <strong>@selectedOrder.PoNumber</strong>?</p>
+                    <p class="text-danger">This action cannot be undone.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Reason for cancellation</label>
+                        <textarea class="form-control" rows="2" @bind="cancelReason" placeholder="e.g., Customer requested cancellation"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Keep Order</button>
+                    <button type="button" class="btn btn-danger" @onclick="CancelOrder" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Cancel Order
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private OrderListResult orderResult = new();
+    private List<OrganizationDto> organizations = new();
+    private List<TenantDto> tenants = new();
+
+    private string activeTab = "submitted";
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private bool isLoadingDetails = false;
+
+    private int filterOrganizationId = 0;
+    private int filterTenantId = 0;
+
+    private int currentPage = 1;
+    private int pageSize = 25;
+    private int totalPages => (int)Math.Ceiling((double)orderResult.Total / pageSize);
+
+    // Modals
+    private bool showDetailsModal = false;
+    private bool showCancelModal = false;
+
+    private OrderDto? selectedOrder;
+    private OrderDetailDto? orderDetail;
+    private string cancelReason = "";
+
+    private List<TenantDto> filteredTenantOptions => filterOrganizationId > 0
+        ? tenants.Where(t => t.OrganizationId == filterOrganizationId).ToList()
+        : tenants;
+
+    private List<OrderDto> filteredOrders => activeTab switch
+    {
+        "submitted" => orderResult.Items.Where(o => o.Status == "Submitted").ToList(),
+        "processing" => orderResult.Items.Where(o => o.Status == "Acknowledged" || o.Status == "Processing" || o.Status == "PartiallyShipped").ToList(),
+        "completed" => orderResult.Items.Where(o => o.Status == "Completed" || o.Status == "Shipped" || o.Status == "Delivered").ToList(),
+        _ => orderResult.Items
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgsTask = Api.GetOrganizationsAsync();
+        var tenantsTask = Api.GetTenantsAsync();
+        var ordersTask = LoadOrdersAsync();
+
+        await Task.WhenAll(orgsTask, tenantsTask, ordersTask);
+
+        var orgResult = await orgsTask;
+        organizations = orgResult.Items;
+
+        var tenantResult = await tenantsTask;
+        tenants = tenantResult.Items;
+    }
+
+    private async Task LoadOrders()
+    {
+        currentPage = 1;
+        await LoadOrdersAsync();
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var skip = (currentPage - 1) * pageSize;
+            orderResult = await Api.GetOrdersAsync(
+                organizationId: filterOrganizationId > 0 ? filterOrganizationId : null,
+                tenantId: filterTenantId > 0 ? filterTenantId : null,
+                skip: skip,
+                take: pageSize
+            );
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GoToPage(int page)
+    {
+        if (page < 1 || page > totalPages) return;
+        currentPage = page;
+        await LoadOrdersAsync();
+    }
+
+    private void SetTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private async Task ShowDetailsModal(OrderDto order)
+    {
+        selectedOrder = order;
+        showDetailsModal = true;
+        isLoadingDetails = true;
+        StateHasChanged();
+
+        try
+        {
+            orderDetail = await Api.GetOrderAsync(order.Id);
+        }
+        finally
+        {
+            isLoadingDetails = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowCancelModal(OrderDto order)
+    {
+        selectedOrder = order;
+        cancelReason = "";
+        showCancelModal = true;
+    }
+
+    private void ShowCancelFromDetail()
+    {
+        if (orderDetail == null) return;
+        selectedOrder = new OrderDto { Id = orderDetail.Id, PoNumber = orderDetail.PoNumber };
+        cancelReason = "";
+        showCancelModal = true;
+    }
+
+    private void CloseModals()
+    {
+        showDetailsModal = false;
+        showCancelModal = false;
+        selectedOrder = null;
+        orderDetail = null;
+    }
+
+    private async Task AcknowledgeOrder(Guid orderId)
+    {
+        var success = await Api.AcknowledgeOrderAsync(orderId);
+        if (success)
+        {
+            await LoadOrders();
+        }
+    }
+
+    private async Task AcknowledgeOrderFromDetail()
+    {
+        if (orderDetail == null) return;
+
+        var success = await Api.AcknowledgeOrderAsync(orderDetail.Id);
+        if (success)
+        {
+            CloseModals();
+            await LoadOrders();
+        }
+    }
+
+    private async Task CancelOrder()
+    {
+        if (selectedOrder == null) return;
+
+        isSubmitting = true;
+        try
+        {
+            var success = await Api.CancelOrderAsync(selectedOrder.Id, cancelReason);
+            if (success)
+            {
+                CloseModals();
+                await LoadOrders();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private static bool CanCancel(string status) =>
+        status == "Draft" || status == "Submitted" || status == "Acknowledged";
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        "Draft" => "bg-secondary",
+        "Submitted" => "bg-primary",
+        "Acknowledged" => "bg-info",
+        "Processing" => "bg-info",
+        "PartiallyShipped" => "bg-warning text-dark",
+        "Shipped" => "bg-success",
+        "Delivered" => "bg-success",
+        "Completed" => "bg-success",
+        "Cancelled" => "bg-danger",
+        "Failed" => "bg-danger",
+        _ => "bg-light text-dark"
+    };
+
+    private static string GetLineStatusBadgeClass(string status) => status switch
+    {
+        "Pending" => "bg-secondary",
+        "Acknowledged" => "bg-info",
+        "Backordered" => "bg-warning text-dark",
+        "Shipped" => "bg-success",
+        "Cancelled" => "bg-danger",
+        _ => "bg-light text-dark"
+    };
+}
