@@ -16,6 +16,22 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasMaxLength(50)
             .IsRequired();
 
+        // Integration tracking fields
+        builder.Property(e => e.SourcePlatform)
+            .HasMaxLength(50);
+
+        builder.Property(e => e.ExternalOrderId)
+            .HasMaxLength(100);
+
+        builder.Property(e => e.IdempotencyKey)
+            .HasMaxLength(100);
+
+        builder.Property(e => e.SubmittedBy)
+            .HasMaxLength(200);
+
+        builder.Property(e => e.FulfillmentPreference)
+            .HasMaxLength(50);
+
         builder.Property(e => e.Status)
             .HasConversion<string>()
             .HasMaxLength(50);
@@ -68,6 +84,17 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         // Composite index for tenant + status queries
         builder.HasIndex(e => new { e.TenantId, e.Status });
+
+        // Unique index for idempotency (scoped to organization)
+        builder.HasIndex(e => new { e.OrganizationId, e.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("[IdempotencyKey] IS NOT NULL");
+
+        // Index for external order lookup
+        builder.HasIndex(e => new { e.SourcePlatform, e.ExternalOrderId });
+
+        // Index for correlation tracking
+        builder.HasIndex(e => e.CorrelationId);
 
         builder.HasOne(e => e.Organization)
             .WithMany()

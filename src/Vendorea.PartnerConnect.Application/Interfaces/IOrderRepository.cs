@@ -42,6 +42,31 @@ public interface IOrderRepository
         string poNumber,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets an order by idempotency key within an organization.
+    /// </summary>
+    Task<Order?> GetByIdempotencyKeyAsync(
+        int organizationId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets an order by external order ID and source platform.
+    /// </summary>
+    Task<Order?> GetByExternalOrderIdAsync(
+        string sourcePlatform,
+        string externalOrderId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets orders with a custom filter.
+    /// </summary>
+    Task<IReadOnlyList<Order>> GetAllAsync(
+        Func<Order, bool>? filter = null,
+        int? limit = null,
+        int? offset = null,
+        CancellationToken cancellationToken = default);
+
     Task<int> GetCountByTenantIdAsync(
         int tenantId,
         OrderStatus? status = null,

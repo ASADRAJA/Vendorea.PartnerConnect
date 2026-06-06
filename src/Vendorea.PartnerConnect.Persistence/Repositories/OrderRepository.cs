@@ -95,6 +95,54 @@ public class OrderRepository : IOrderRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<Order?> GetByIdempotencyKeyAsync(
+        int organizationId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Orders
+            .FirstOrDefaultAsync(o =>
+                o.OrganizationId == organizationId &&
+                o.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+    }
+
+    public async Task<Order?> GetByExternalOrderIdAsync(
+        string sourcePlatform,
+        string externalOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Orders
+            .FirstOrDefaultAsync(o =>
+                o.SourcePlatform == sourcePlatform &&
+                o.ExternalOrderId == externalOrderId,
+                cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Order>> GetAllAsync(
+        Func<Order, bool>? filter = null,
+        int? limit = null,
+        int? offset = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Orders.AsQueryable();
+
+        query = query.OrderByDescending(o => o.OrderDate);
+
+        if (offset.HasValue)
+            query = query.Skip(offset.Value);
+        if (limit.HasValue)
+            query = query.Take(limit.Value);
+
+        var results = await query.ToListAsync(cancellationToken);
+
+        // Apply in-memory filter if provided
+        if (filter != null)
+            return results.Where(filter).ToList();
+
+        return results;
+    }
+
     public async Task<IReadOnlyList<Order>> GetAllAsync(
         OrderStatus? status = null,
         int? limit = null,

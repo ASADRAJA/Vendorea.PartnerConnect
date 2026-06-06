@@ -28,6 +28,63 @@ public class Order
     /// </summary>
     public int TenantPartnerAccountId { get; set; }
 
+    // ===== INTEGRATION TRACKING =====
+
+    /// <summary>
+    /// Source platform that submitted this order (e.g., "Merchant360", "DirectAPI").
+    /// </summary>
+    public string? SourcePlatform { get; set; }
+
+    /// <summary>
+    /// External order ID from the source platform (e.g., M360 order ID).
+    /// </summary>
+    public string? ExternalOrderId { get; set; }
+
+    /// <summary>
+    /// Correlation ID for distributed tracing.
+    /// </summary>
+    public Guid CorrelationId { get; set; } = Guid.NewGuid();
+
+    /// <summary>
+    /// Idempotency key for duplicate submission detection.
+    /// Must be unique per organization.
+    /// </summary>
+    public string? IdempotencyKey { get; set; }
+
+    /// <summary>
+    /// Who submitted this order (username, service account, etc.).
+    /// </summary>
+    public string? SubmittedBy { get; set; }
+
+    /// <summary>
+    /// Additional external references as JSON.
+    /// </summary>
+    public string? ExternalReferencesJson { get; set; }
+
+    // ===== BUSINESS OPTIONS =====
+
+    /// <summary>
+    /// Allow partial shipment of order.
+    /// </summary>
+    public bool AllowPartialShipment { get; set; } = true;
+
+    /// <summary>
+    /// Allow backordering of out-of-stock items.
+    /// </summary>
+    public bool AllowBackorder { get; set; } = true;
+
+    /// <summary>
+    /// Allow product substitutions.
+    /// </summary>
+    public bool AllowSubstitutions { get; set; } = false;
+
+    /// <summary>
+    /// Fulfillment preference (e.g., "Standard", "Expedited").
+    /// </summary>
+    public string? FulfillmentPreference { get; set; }
+
+    // ===== ORDER HEADER =====
+
     /// <summary>
     /// Purchase order number (provided by tenant).
     /// </summary>

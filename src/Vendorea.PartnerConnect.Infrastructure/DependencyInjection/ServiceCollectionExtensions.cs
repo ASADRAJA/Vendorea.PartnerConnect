@@ -36,6 +36,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrderService, OrderService>();
         services.AddScoped<ITenantSyncService, TenantSyncService>();
 
+        // Integration Order Intake Services
+        services.AddScoped<ISupplierOrderIntakeService, SupplierOrderIntakeService>();
+        services.AddScoped<IPartnerOrderResolutionService, PartnerOrderResolutionService>();
+
         // EDI Document Processing Services
         services.AddScoped<IEdiResponseService, EdiResponseService>();
         services.AddScoped<IEdiDocumentProcessingService, EdiDocumentProcessingService>();
