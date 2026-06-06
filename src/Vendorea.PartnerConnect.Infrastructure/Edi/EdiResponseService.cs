@@ -6,6 +6,7 @@ using Vendorea.PartnerConnect.Domain.Entities;
 using Vendorea.PartnerConnect.Domain.StateMachine;
 using Vendorea.PartnerConnect.Edi.X12.Documents;
 using Vendorea.PartnerConnect.Edi.X12.Generation;
+using X12PoAck = Vendorea.PartnerConnect.Edi.X12.Documents.PurchaseOrderAcknowledgment;
 using Vendorea.PartnerConnect.Edi.X12.Parser;
 using Vendorea.PartnerConnect.PartnerAdapters.SPR;
 
@@ -218,7 +219,7 @@ public class EdiResponseService : IEdiResponseService
                 connection.Id, "ST", cancellationToken);
 
             // Build acknowledgment model
-            var acknowledgment = new PurchaseOrderAcknowledgment
+            var acknowledgment = new X12PoAck
             {
                 PurchaseOrderNumber = purchaseOrder.PoNumber,
                 AcknowledgmentDate = DateTime.UtcNow,
@@ -303,7 +304,7 @@ public class EdiResponseService : IEdiResponseService
                 OriginalDocumentId = ediDocumentId,
                 BusinessReference = purchaseOrder.PoNumber,
                 LineItemCount = acknowledgment.LineItems.Count,
-                CanonicalType = nameof(PurchaseOrderAcknowledgment),
+                CanonicalType = nameof(X12PoAck),
                 CanonicalJson = JsonSerializer.Serialize(acknowledgment)
             };
 

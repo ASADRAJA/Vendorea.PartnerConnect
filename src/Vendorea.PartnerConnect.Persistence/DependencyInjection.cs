@@ -54,6 +54,7 @@ public static class DependencyInjection
         services.AddScoped<IDealerPartnerConnectionRepository, DealerPartnerConnectionRepository>();
         services.AddScoped<IPartnerDocumentRepository, PartnerDocumentRepository>();
         services.AddScoped<IEdiDocumentRepository, EdiDocumentRepository>();
+        services.AddScoped<ISprXmlDocumentRepository, SprXmlDocumentRepository>();
         services.AddScoped<IDocumentFingerprintRepository, DocumentFingerprintRepository>();
         services.AddScoped<IPriceFeedBatchRepository, PriceFeedBatchRepository>();
         services.AddScoped<IInventoryFeedBatchRepository, InventoryFeedBatchRepository>();
@@ -100,6 +101,13 @@ public static class DependencyInjection
         // FTP Ingestion
         services.AddScoped<IFtpIngestionRunRepository, FtpIngestionRunRepository>();
         services.AddScoped<IPartnerIngestionConfigRepository, PartnerIngestionConfigRepository>();
+
+        // Supplier Inventory (Full-Refresh Workflow)
+        services.AddScoped<ISupplierInventorySnapshotRepository, SupplierInventorySnapshotRepository>();
+        services.AddScoped<ISupplierInventoryItemRepository, SupplierInventoryItemRepository>();
+
+        // Document Correlation
+        services.AddScoped<IDocumentCorrelationRepository, DocumentCorrelationRepository>();
 
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();

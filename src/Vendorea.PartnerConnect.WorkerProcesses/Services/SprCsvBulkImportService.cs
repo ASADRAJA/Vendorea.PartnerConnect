@@ -259,9 +259,13 @@ public class SprCsvBulkImportService : ISprCsvBulkImportService
         {
             try
             {
+                // Table name comes from hardcoded whitelist above - safe from SQL injection.
+                // SQL parameters cannot be used for identifiers (table/column names).
+#pragma warning disable EF1002
                 await _dbContext.Database.ExecuteSqlRawAsync(
                     $"TRUNCATE TABLE spr.{table}",
                     cancellationToken);
+#pragma warning restore EF1002
                 _logger.LogDebug("Truncated spr.{Table}", table);
             }
             catch (Exception ex)

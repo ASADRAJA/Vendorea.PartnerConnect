@@ -48,6 +48,12 @@ public class PartnerDocument
     public DealerPartnerConnection? DealerPartnerConnection { get; set; }
     public ICollection<DocumentStateHistory> StateHistory { get; set; } = new List<DocumentStateHistory>();
     public QuarantinedDocument? QuarantineEntry { get; set; }
+    public RawDocumentArchive? Archive { get; set; }
+    public ICollection<PartnerDocumentProcessingAttempt> ProcessingAttempts { get; set; } = new List<PartnerDocumentProcessingAttempt>();
+    public ICollection<DocumentValidationError> ValidationErrors { get; set; } = new List<DocumentValidationError>();
+    public ICollection<DocumentCorrelation> SourceCorrelations { get; set; } = new List<DocumentCorrelation>();
+    public ICollection<DocumentCorrelation> TargetCorrelations { get; set; } = new List<DocumentCorrelation>();
+    public ICollection<DocumentIdempotencyKey> IdempotencyKeys { get; set; } = new List<DocumentIdempotencyKey>();
 
     /// <summary>
     /// Creates a state machine for this document.
@@ -126,10 +132,13 @@ public enum DocumentDirection
 public enum DocumentStatus
 {
     Received,
+    Pending,
     Queued,
     Processing,
+    ValidationFailed,
     Completed,
     PartiallyCompleted,
     Failed,
+    FailedPermanent,
     Cancelled
 }

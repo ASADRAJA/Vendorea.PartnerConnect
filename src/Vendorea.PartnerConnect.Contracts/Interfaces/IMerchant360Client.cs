@@ -1,5 +1,3 @@
-using System.ComponentModel;
-
 namespace Vendorea.PartnerConnect.Contracts.Interfaces;
 
 /// <summary>
@@ -50,18 +48,55 @@ public interface IMerchant360Client
         CategoryBatchRequest request,
         CancellationToken cancellationToken = default);
 
-    #region Phase 2 - Inventory (Disabled)
+    #region Order Updates
+
+    /// <summary>
+    /// Pushes order status updates to Merchant360.
+    /// Called when we receive POA (855), ASN (856), or Invoice (810) from supplier.
+    /// </summary>
+    Task<OrderStatusUpdateResult> PushOrderStatusUpdateAsync(
+        int merchantId,
+        OrderStatusUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes shipment tracking information to Merchant360.
+    /// Called when we receive ASN (856) with tracking details.
+    /// </summary>
+    Task<ShipmentUpdateResult> PushShipmentUpdateAsync(
+        int merchantId,
+        ShipmentUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes invoice information to Merchant360.
+    /// Called when we receive Invoice (810) from supplier.
+    /// </summary>
+    Task<InvoiceUpdateResult> PushInvoiceUpdateAsync(
+        int merchantId,
+        InvoiceUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Inventory Updates
 
     /// <summary>
     /// Updates inventory levels in Merchant360 for a specific merchant.
     /// </summary>
-    /// <remarks>Phase 2 - Not implemented in current release.</remarks>
-    [Obsolete("Inventory push is Phase 2. Do not use in Phase 1.")]
-    [EditorBrowsable(EditorBrowsableState.Never)]
     Task<InventoryUpdateResult> UpdateInventoryAsync(
         int merchantId,
         int tradingPartnerId,
         IEnumerable<InventoryUpdateItem> items,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes a full inventory snapshot to Merchant360.
+    /// Used for full-refresh inventory updates.
+    /// </summary>
+    Task<InventorySnapshotResult> PushInventorySnapshotAsync(
+        int merchantId,
+        InventorySnapshotRequest request,
         CancellationToken cancellationToken = default);
 
     #endregion
@@ -305,22 +340,254 @@ public class CategoryBatchResponse
 
 #endregion
 
-#region Inventory DTOs (Phase 2 - Disabled)
+#region Order Status Update DTOs
 
-[Obsolete("Inventory is Phase 2. Do not use in Phase 1.")]
+/// <summary>
+/// Request to push order status updates to M360.
+/// </summary>
+public class OrderStatusUpdateRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string PoNumber { get; set; } = string.Empty;
+    public string? SupplierOrderNumber { get; set; }
+    public OrderStatusType StatusType { get; set; }
+    public string StatusCode { get; set; } = string.Empty;
+    public string? StatusMessage { get; set; }
+    public DateTime StatusDate { get; set; }
+    public string? SourceDocumentType { get; set; }
+    public int? SourceDocumentId { get; set; }
+    public List<OrderLineStatusUpdate> LineUpdates { get; set; } = new();
+}
+
+public enum OrderStatusType
+{
+    Acknowledged = 0,
+    Processing = 10,
+    PartiallyShipped = 20,
+    Shipped = 30,
+    Delivered = 40,
+    Invoiced = 50,
+    Completed = 60,
+    Cancelled = 70,
+    Backordered = 80
+}
+
+public class OrderLineStatusUpdate
+{
+    public int LineNumber { get; set; }
+    public string StockNumber { get; set; } = string.Empty;
+    public int QuantityOrdered { get; set; }
+    public int? QuantityAcknowledged { get; set; }
+    public int? QuantityShipped { get; set; }
+    public int? QuantityBackordered { get; set; }
+    public int? QuantityCancelled { get; set; }
+    public string? LineStatusCode { get; set; }
+    public string? LineStatusMessage { get; set; }
+    public DateTime? EstimatedShipDate { get; set; }
+    public DateTime? EstimatedDeliveryDate { get; set; }
+}
+
+public class OrderStatusUpdateResult
+{
+    public bool Success { get; set; }
+    public int MerchantId { get; set; }
+    public string? PoNumber { get; set; }
+    public string? NewStatus { get; set; }
+    public int LinesUpdated { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+#endregion
+
+#region Shipment Update DTOs
+
+/// <summary>
+/// Request to push shipment tracking information to M360.
+/// </summary>
+public class ShipmentUpdateRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string PoNumber { get; set; } = string.Empty;
+    public string? SupplierOrderNumber { get; set; }
+    public string ShipmentId { get; set; } = string.Empty;
+    public string? BillOfLadingNumber { get; set; }
+    public string? CarrierCode { get; set; }
+    public string? CarrierName { get; set; }
+    public string? TrackingNumber { get; set; }
+    public string? TrackingUrl { get; set; }
+    public string? ShipMethod { get; set; }
+    public DateTime? ShipDate { get; set; }
+    public DateTime? EstimatedDeliveryDate { get; set; }
+    public DateTime? ActualDeliveryDate { get; set; }
+    public ShipmentAddress? ShipFrom { get; set; }
+    public ShipmentAddress? ShipTo { get; set; }
+    public decimal? TotalWeight { get; set; }
+    public string? WeightUnit { get; set; }
+    public int? PackageCount { get; set; }
+    public List<ShipmentLineItem> Lines { get; set; } = new();
+    public List<ShipmentCarton> Cartons { get; set; } = new();
+}
+
+public class ShipmentAddress
+{
+    public string? Name { get; set; }
+    public string? AddressLine1 { get; set; }
+    public string? AddressLine2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Country { get; set; }
+}
+
+public class ShipmentLineItem
+{
+    public int LineNumber { get; set; }
+    public string StockNumber { get; set; } = string.Empty;
+    public int QuantityShipped { get; set; }
+    public string? LotNumber { get; set; }
+    public DateTime? ExpirationDate { get; set; }
+    public string? SerialNumber { get; set; }
+}
+
+public class ShipmentCarton
+{
+    public string CartonId { get; set; } = string.Empty;
+    public string? TrackingNumber { get; set; }
+    public decimal? Weight { get; set; }
+    public List<ShipmentCartonItem> Items { get; set; } = new();
+}
+
+public class ShipmentCartonItem
+{
+    public string StockNumber { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+}
+
+public class ShipmentUpdateResult
+{
+    public bool Success { get; set; }
+    public int MerchantId { get; set; }
+    public string? PoNumber { get; set; }
+    public string? ShipmentId { get; set; }
+    public int LinesUpdated { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+#endregion
+
+#region Invoice Update DTOs
+
+/// <summary>
+/// Request to push invoice information to M360.
+/// </summary>
+public class InvoiceUpdateRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string PoNumber { get; set; } = string.Empty;
+    public string? SupplierOrderNumber { get; set; }
+    public string InvoiceNumber { get; set; } = string.Empty;
+    public DateTime InvoiceDate { get; set; }
+    public DateTime? DueDate { get; set; }
+    public string? PaymentTerms { get; set; }
+    public decimal SubTotal { get; set; }
+    public decimal? TaxAmount { get; set; }
+    public decimal? ShippingAmount { get; set; }
+    public decimal? DiscountAmount { get; set; }
+    public decimal TotalAmount { get; set; }
+    public string? Currency { get; set; }
+    public List<InvoiceLineItem> Lines { get; set; } = new();
+}
+
+public class InvoiceLineItem
+{
+    public int LineNumber { get; set; }
+    public string StockNumber { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal ExtendedPrice { get; set; }
+    public decimal? TaxAmount { get; set; }
+    public decimal? DiscountAmount { get; set; }
+}
+
+public class InvoiceUpdateResult
+{
+    public bool Success { get; set; }
+    public int MerchantId { get; set; }
+    public string? PoNumber { get; set; }
+    public string? InvoiceNumber { get; set; }
+    public int LinesProcessed { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+#endregion
+
+#region Inventory DTOs
+
 public record InventoryUpdateItem(
     string StockNumber,
     int QuantityAvailable,
     int? QuantityOnOrder,
-    string? WarehouseCode);
+    string? WarehouseCode,
+    string? Status,
+    DateTime? LastUpdated);
 
-[Obsolete("Inventory is Phase 2. Do not use in Phase 1.")]
-public record InventoryUpdateResult(
-    bool Success,
-    int UpdatedCount,
-    int SkippedCount,
-    int ErrorCount,
-    IReadOnlyList<string>? Errors);
+public class InventoryUpdateResult
+{
+    public bool Success { get; set; }
+    public int MerchantId { get; set; }
+    public int TradingPartnerId { get; set; }
+    public int UpdatedCount { get; set; }
+    public int SkippedCount { get; set; }
+    public int ErrorCount { get; set; }
+    public List<string>? Errors { get; set; }
+}
+
+/// <summary>
+/// Request to push a full inventory snapshot to M360.
+/// </summary>
+public class InventorySnapshotRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string SnapshotId { get; set; } = string.Empty;
+    public DateTime InventoryDate { get; set; }
+    public bool IsFullRefresh { get; set; } = true;
+    public int SourceSnapshotId { get; set; }
+    public List<InventorySnapshotItem> Items { get; set; } = new();
+}
+
+public class InventorySnapshotItem
+{
+    public string StockNumber { get; set; } = string.Empty;
+    public string? Upc { get; set; }
+    public int QuantityAvailable { get; set; }
+    public int? QuantityOnOrder { get; set; }
+    public int? QuantityOnHand { get; set; }
+    public int? QuantityCommitted { get; set; }
+    public string? Status { get; set; }
+    public string? WarehouseCode { get; set; }
+    public decimal? UnitCost { get; set; }
+    public DateTime? NextAvailableDate { get; set; }
+    public string? LeadTimeDays { get; set; }
+}
+
+public class InventorySnapshotResult
+{
+    public bool Success { get; set; }
+    public int MerchantId { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? SnapshotId { get; set; }
+    public int ItemsReceived { get; set; }
+    public int ItemsUpdated { get; set; }
+    public int ItemsCreated { get; set; }
+    public int ItemsRemoved { get; set; }
+    public int? SyncLogId { get; set; }
+    public List<string>? Errors { get; set; }
+}
 
 #endregion
 

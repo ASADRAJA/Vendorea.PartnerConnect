@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vendorea.PartnerConnect.Billing.Models;
 using Vendorea.PartnerConnect.Domain.Entities;
+using Vendorea.PartnerConnect.Domain.Entities.Supplier;
 using Vendorea.PartnerConnect.Domain.Entities.SprRaw;
 using Vendorea.PartnerConnect.Metering.Models;
 
@@ -18,6 +19,7 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<PartnerCapabilityConfiguration> PartnerCapabilities => Set<PartnerCapabilityConfiguration>();
     public DbSet<PartnerDocument> PartnerDocuments => Set<PartnerDocument>();
     public DbSet<EdiDocument> EdiDocuments => Set<EdiDocument>();
+    public DbSet<SprXmlDocument> SprXmlDocuments => Set<SprXmlDocument>();
     public DbSet<PriceFeedBatch> PriceFeedBatches => Set<PriceFeedBatch>();
     public DbSet<InventoryFeedBatch> InventoryFeedBatches => Set<InventoryFeedBatch>();
 
@@ -104,6 +106,31 @@ public class PartnerConnectDbContext : DbContext
 
     // Partner Ingestion Configuration
     public DbSet<PartnerIngestionConfig> PartnerIngestionConfigs => Set<PartnerIngestionConfig>();
+
+    // Document Pipeline
+    public DbSet<PartnerDocumentProcessingAttempt> ProcessingAttempts => Set<PartnerDocumentProcessingAttempt>();
+    public DbSet<DocumentCorrelation> DocumentCorrelations => Set<DocumentCorrelation>();
+    public DbSet<DocumentValidationError> DocumentValidationErrors => Set<DocumentValidationError>();
+    public DbSet<RawDocumentArchive> RawDocumentArchives => Set<RawDocumentArchive>();
+    public DbSet<DocumentIdempotencyKey> DocumentIdempotencyKeys => Set<DocumentIdempotencyKey>();
+
+    // Canonical Supplier Entities
+    public DbSet<SupplierPurchaseOrder> SupplierPurchaseOrders => Set<SupplierPurchaseOrder>();
+    public DbSet<SupplierPurchaseOrderLine> SupplierPurchaseOrderLines => Set<SupplierPurchaseOrderLine>();
+    public DbSet<SupplierOrderAcknowledgement> SupplierOrderAcknowledgements => Set<SupplierOrderAcknowledgement>();
+    public DbSet<SupplierOrderAcknowledgementLine> SupplierOrderAcknowledgementLines => Set<SupplierOrderAcknowledgementLine>();
+    public DbSet<SupplierShipmentManifest> SupplierShipmentManifests => Set<SupplierShipmentManifest>();
+    public DbSet<SupplierShipmentOrder> SupplierShipmentOrders => Set<SupplierShipmentOrder>();
+    public DbSet<SupplierShipmentLine> SupplierShipmentLines => Set<SupplierShipmentLine>();
+    public DbSet<SupplierCarton> SupplierCartons => Set<SupplierCarton>();
+    public DbSet<SupplierCartonItem> SupplierCartonItems => Set<SupplierCartonItem>();
+    public DbSet<SupplierInventorySnapshot> SupplierInventorySnapshots => Set<SupplierInventorySnapshot>();
+    public DbSet<SupplierInventoryItem> SupplierInventoryItems => Set<SupplierInventoryItem>();
+    public DbSet<SupplierInventoryLocationQuantity> SupplierInventoryLocationQuantities => Set<SupplierInventoryLocationQuantity>();
+    public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
+    public DbSet<SupplierInvoiceLine> SupplierInvoiceLines => Set<SupplierInvoiceLine>();
+    public DbSet<SupplierCreditMemo> SupplierCreditMemos => Set<SupplierCreditMemo>();
+    public DbSet<SupplierCreditMemoLine> SupplierCreditMemoLines => Set<SupplierCreditMemoLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

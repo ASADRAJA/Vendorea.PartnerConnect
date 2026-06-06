@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPR EZPOACK (Purchase Order Acknowledgment) Schema
+
+  TODO: PRODUCTION REQUIREMENT
+  ============================
+  This is a PLACEHOLDER schema. The actual EZPOACK.xsd must be obtained from SPR
+  and placed here before production deployment. This placeholder only validates
+  basic XML structure matching SprPoackParser expectations.
+
+  Contact SPR to obtain the official EZPOACK schema specification.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!-- Root element - matches SprPoackParser expected structure -->
+  <xs:element name="OrderResponse">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="OrderNo" type="xs:string"/>
+        <xs:element name="SellerOrderNo" type="xs:string" minOccurs="0"/>
+        <xs:element name="AckDate" type="xs:string" minOccurs="0"/>
+        <xs:element name="OrderStatus" type="xs:string" minOccurs="0"/>
+        <xs:element name="ExpectedShipDate" type="xs:string" minOccurs="0"/>
+        <xs:element ref="OrderLine" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="OrderLine">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ItemID" type="xs:string"/>
+        <xs:element name="OrderedQty" type="xs:decimal" minOccurs="0"/>
+        <xs:element name="AcknowledgedQty" type="xs:decimal" minOccurs="0"/>
+        <xs:element name="BackorderedQty" type="xs:decimal" minOccurs="0"/>
+        <xs:element name="Status" type="xs:string" minOccurs="0"/>
+        <xs:element name="ExpectedShipDate" type="xs:string" minOccurs="0"/>
+        <xs:element name="Notes" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

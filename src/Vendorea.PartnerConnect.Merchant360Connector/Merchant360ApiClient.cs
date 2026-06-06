@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
@@ -350,29 +349,296 @@ public class Merchant360ApiClient : IMerchant360Client
         }
     }
 
-    #region Phase 2 - Inventory (Disabled)
+    #region Order Updates
 
-    /// <summary>
-    /// Updates inventory levels in Merchant360 for a specific merchant.
-    /// </summary>
-    /// <remarks>Phase 2 - Not implemented in current release.</remarks>
-    [Obsolete("Inventory push is Phase 2. Do not use in Phase 1.")]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public Task<InventoryUpdateResult> UpdateInventoryAsync(
+    public async Task<OrderStatusUpdateResult> PushOrderStatusUpdateAsync(
+        int merchantId,
+        OrderStatusUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Pushing order status update for merchant {MerchantId}, PO {PoNumber}, Status {StatusType}",
+            merchantId, request.PoNumber, request.StatusType);
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/v1/partner-connect/merchants/{merchantId}/orders/status",
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<OrderStatusUpdateResult>(cancellationToken);
+                if (result != null)
+                {
+                    _logger.LogInformation(
+                        "Order status update success for merchant {MerchantId}, PO {PoNumber}",
+                        merchantId, request.PoNumber);
+                    return result;
+                }
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Order status update failed for merchant {MerchantId}, PO {PoNumber}: {StatusCode} - {Error}",
+                merchantId, request.PoNumber, response.StatusCode, errorContent);
+
+            return new OrderStatusUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                PoNumber = request.PoNumber,
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while pushing order status for merchant {MerchantId}, PO {PoNumber}",
+                merchantId, request.PoNumber);
+            return new OrderStatusUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                PoNumber = request.PoNumber,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    public async Task<ShipmentUpdateResult> PushShipmentUpdateAsync(
+        int merchantId,
+        ShipmentUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Pushing shipment update for merchant {MerchantId}, PO {PoNumber}, Shipment {ShipmentId}",
+            merchantId, request.PoNumber, request.ShipmentId);
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/v1/partner-connect/merchants/{merchantId}/shipments",
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ShipmentUpdateResult>(cancellationToken);
+                if (result != null)
+                {
+                    _logger.LogInformation(
+                        "Shipment update success for merchant {MerchantId}, PO {PoNumber}, Shipment {ShipmentId}",
+                        merchantId, request.PoNumber, request.ShipmentId);
+                    return result;
+                }
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Shipment update failed for merchant {MerchantId}, PO {PoNumber}: {StatusCode} - {Error}",
+                merchantId, request.PoNumber, response.StatusCode, errorContent);
+
+            return new ShipmentUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                PoNumber = request.PoNumber,
+                ShipmentId = request.ShipmentId,
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while pushing shipment for merchant {MerchantId}, PO {PoNumber}",
+                merchantId, request.PoNumber);
+            return new ShipmentUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                PoNumber = request.PoNumber,
+                ShipmentId = request.ShipmentId,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    public async Task<InvoiceUpdateResult> PushInvoiceUpdateAsync(
+        int merchantId,
+        InvoiceUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Pushing invoice update for merchant {MerchantId}, PO {PoNumber}, Invoice {InvoiceNumber}",
+            merchantId, request.PoNumber, request.InvoiceNumber);
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/v1/partner-connect/merchants/{merchantId}/invoices",
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<InvoiceUpdateResult>(cancellationToken);
+                if (result != null)
+                {
+                    _logger.LogInformation(
+                        "Invoice update success for merchant {MerchantId}, PO {PoNumber}, Invoice {InvoiceNumber}",
+                        merchantId, request.PoNumber, request.InvoiceNumber);
+                    return result;
+                }
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Invoice update failed for merchant {MerchantId}, PO {PoNumber}: {StatusCode} - {Error}",
+                merchantId, request.PoNumber, response.StatusCode, errorContent);
+
+            return new InvoiceUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                PoNumber = request.PoNumber,
+                InvoiceNumber = request.InvoiceNumber,
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while pushing invoice for merchant {MerchantId}, PO {PoNumber}",
+                merchantId, request.PoNumber);
+            return new InvoiceUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                PoNumber = request.PoNumber,
+                InvoiceNumber = request.InvoiceNumber,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    #endregion
+
+    #region Inventory Updates
+
+    public async Task<InventoryUpdateResult> UpdateInventoryAsync(
         int merchantId,
         int tradingPartnerId,
         IEnumerable<InventoryUpdateItem> items,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning("Inventory push is disabled in Phase 1. MerchantId={MerchantId}, TradingPartnerId={TradingPartnerId}",
-            merchantId, tradingPartnerId);
+        var itemList = items.ToList();
+        _logger.LogInformation(
+            "Updating inventory for merchant {MerchantId}, TradingPartnerId {TradingPartnerId}, {Count} items",
+            merchantId, tradingPartnerId, itemList.Count);
 
-        return Task.FromResult(new InventoryUpdateResult(
-            Success: false,
-            UpdatedCount: 0,
-            SkippedCount: 0,
-            ErrorCount: items.Count(),
-            Errors: new[] { "Inventory push is disabled in Phase 1" }));
+        try
+        {
+            var request = new
+            {
+                TradingPartnerId = tradingPartnerId,
+                Items = itemList
+            };
+
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/v1/partner-connect/merchants/{merchantId}/inventory",
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<InventoryUpdateResult>(cancellationToken);
+                if (result != null)
+                {
+                    _logger.LogInformation(
+                        "Inventory update success for merchant {MerchantId}: Updated={Updated}, Skipped={Skipped}",
+                        merchantId, result.UpdatedCount, result.SkippedCount);
+                    return result;
+                }
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Inventory update failed for merchant {MerchantId}: {StatusCode} - {Error}",
+                merchantId, response.StatusCode, errorContent);
+
+            return new InventoryUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                TradingPartnerId = tradingPartnerId,
+                ErrorCount = itemList.Count,
+                Errors = new List<string> { $"API returned {response.StatusCode}: {errorContent}" }
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while updating inventory for merchant {MerchantId}", merchantId);
+            return new InventoryUpdateResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                TradingPartnerId = tradingPartnerId,
+                ErrorCount = itemList.Count,
+                Errors = new List<string> { ex.Message }
+            };
+        }
+    }
+
+    public async Task<InventorySnapshotResult> PushInventorySnapshotAsync(
+        int merchantId,
+        InventorySnapshotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Pushing inventory snapshot for merchant {MerchantId}, TradingPartnerId {TradingPartnerId}, Snapshot {SnapshotId}, {Count} items",
+            merchantId, request.TradingPartnerId, request.SnapshotId, request.Items.Count);
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/v1/partner-connect/merchants/{merchantId}/inventory/snapshot",
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<InventorySnapshotResult>(cancellationToken);
+                if (result != null)
+                {
+                    _logger.LogInformation(
+                        "Inventory snapshot success for merchant {MerchantId}: Received={Received}, Created={Created}, Updated={Updated}, Removed={Removed}",
+                        merchantId, result.ItemsReceived, result.ItemsCreated, result.ItemsUpdated, result.ItemsRemoved);
+                    return result;
+                }
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Inventory snapshot failed for merchant {MerchantId}: {StatusCode} - {Error}",
+                merchantId, response.StatusCode, errorContent);
+
+            return new InventorySnapshotResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                TradingPartnerId = request.TradingPartnerId,
+                SnapshotId = request.SnapshotId,
+                ItemsReceived = request.Items.Count,
+                Errors = new List<string> { $"API returned {response.StatusCode}: {errorContent}" }
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while pushing inventory snapshot for merchant {MerchantId}", merchantId);
+            return new InventorySnapshotResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                TradingPartnerId = request.TradingPartnerId,
+                SnapshotId = request.SnapshotId,
+                ItemsReceived = request.Items.Count,
+                Errors = new List<string> { ex.Message }
+            };
+        }
     }
 
     #endregion

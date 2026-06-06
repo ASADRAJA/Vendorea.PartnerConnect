@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPR EZPO4 (Purchase Order) Schema
+
+  TODO: PRODUCTION REQUIREMENT
+  ============================
+  This is a PLACEHOLDER schema. The actual EZPO4.xsd must be obtained from SPR
+  and placed here before production deployment. This placeholder only validates
+  basic XML well-formedness.
+
+  Contact SPR to obtain the official EZPO4 schema specification.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!-- Root element - matches SprEzpo4Generator output structure -->
+  <xs:element name="purchase_orders">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="purchase_order" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="purchase_order">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="po_header"/>
+        <xs:element ref="po_lines"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="po_header">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="po_number" type="xs:string"/>
+        <xs:element name="order_date" type="xs:string"/>
+        <xs:element name="buyer_org_code" type="xs:string"/>
+        <xs:element name="seller_org_code" type="xs:string"/>
+        <xs:element name="enterprise_code" type="xs:string"/>
+        <xs:element name="account_number" type="xs:string" minOccurs="0"/>
+        <xs:element name="requested_ship_date" type="xs:string" minOccurs="0"/>
+        <xs:element name="requested_delivery_date" type="xs:string" minOccurs="0"/>
+        <xs:element name="shipping_method" type="xs:string" minOccurs="0"/>
+        <xs:element name="notes" type="xs:string" minOccurs="0"/>
+        <xs:element ref="ship_to" minOccurs="0"/>
+        <xs:element ref="bill_to" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="ship_to">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="name" type="xs:string" minOccurs="0"/>
+        <xs:element name="address1" type="xs:string" minOccurs="0"/>
+        <xs:element name="address2" type="xs:string" minOccurs="0"/>
+        <xs:element name="city" type="xs:string" minOccurs="0"/>
+        <xs:element name="state" type="xs:string" minOccurs="0"/>
+        <xs:element name="postal_code" type="xs:string" minOccurs="0"/>
+        <xs:element name="country" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="bill_to">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="name" type="xs:string" minOccurs="0"/>
+        <xs:element name="address1" type="xs:string" minOccurs="0"/>
+        <xs:element name="address2" type="xs:string" minOccurs="0"/>
+        <xs:element name="city" type="xs:string" minOccurs="0"/>
+        <xs:element name="state" type="xs:string" minOccurs="0"/>
+        <xs:element name="postal_code" type="xs:string" minOccurs="0"/>
+        <xs:element name="country" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="po_lines">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="line_item" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="line_item">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="line_number" type="xs:integer"/>
+        <xs:element name="vendor_sku" type="xs:string"/>
+        <xs:element name="buyer_sku" type="xs:string" minOccurs="0"/>
+        <xs:element name="quantity" type="xs:decimal"/>
+        <xs:element name="unit_price" type="xs:decimal" minOccurs="0"/>
+        <xs:element name="description" type="xs:string" minOccurs="0"/>
+        <xs:element name="upc" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

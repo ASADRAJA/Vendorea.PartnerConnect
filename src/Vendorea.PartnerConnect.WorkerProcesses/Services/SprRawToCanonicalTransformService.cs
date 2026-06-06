@@ -329,8 +329,8 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
         var count = await _dbContext.Database.ExecuteSqlRawAsync(
             sql, new object[] { _options.Locale, DefaultLocaleId }, cancellationToken);
 
-        // Update the upload record with final counts
-        await _dbContext.Database.ExecuteSqlRawAsync($@"
+        // Update the upload record with final counts (using parameterized query to avoid SQL injection)
+        await _dbContext.Database.ExecuteSqlAsync($@"
             UPDATE SprContentUploads
             SET TotalProducts = {count},
                 ProcessedProducts = {count},

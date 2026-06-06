@@ -160,6 +160,63 @@ public class SprConfiguration
     /// </summary>
     public string GsApplicationReceiverCode { get; set; } = string.Empty;
 
+    // SPR XML EDI Configuration (SOAP Web Services)
+
+    /// <summary>
+    /// SOAP web service endpoint URL for SPR.
+    /// </summary>
+    public string? SoapEndpointUrl { get; set; }
+
+    /// <summary>
+    /// SOAP web service username.
+    /// </summary>
+    public string? SoapUsername { get; set; }
+
+    /// <summary>
+    /// SOAP web service password.
+    /// </summary>
+    public string? SoapPassword { get; set; }
+
+    /// <summary>
+    /// SPR enterprise code for XML EDI.
+    /// </summary>
+    public string? EnterpriseCode { get; set; }
+
+    /// <summary>
+    /// Buyer organization code for SPR XML EDI.
+    /// </summary>
+    public string? BuyerOrgCode { get; set; }
+
+    /// <summary>
+    /// Seller organization code for SPR XML EDI (usually "SPR").
+    /// </summary>
+    public string? SellerOrgCode { get; set; } = "SPR";
+
+    /// <summary>
+    /// Path to inbound SPR XML documents on the SFTP server.
+    /// </summary>
+    public string SprXmlInboundPath { get; set; } = "/xml/inbound";
+
+    /// <summary>
+    /// Path to outbound SPR XML documents on the SFTP server.
+    /// </summary>
+    public string SprXmlOutboundPath { get; set; } = "/xml/outbound";
+
+    /// <summary>
+    /// File pattern for SPR XML files.
+    /// </summary>
+    public string SprXmlFilePattern { get; set; } = "*.xml";
+
+    /// <summary>
+    /// Whether to use SOAP for real-time order submission (vs file-based).
+    /// </summary>
+    public bool UseSoapForOrders { get; set; } = false;
+
+    /// <summary>
+    /// SOAP request timeout in seconds.
+    /// </summary>
+    public int SoapTimeoutSeconds { get; set; } = 60;
+
     /// <summary>
     /// Deserializes configuration from JSON.
     /// </summary>

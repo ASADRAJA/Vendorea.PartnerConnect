@@ -13,6 +13,24 @@ public interface IPartnerDocumentRepository
     Task<PartnerDocument> AddAsync(PartnerDocument document, CancellationToken cancellationToken = default);
     Task UpdateAsync(PartnerDocument document, CancellationToken cancellationToken = default);
     Task<DocumentStats> GetDocumentStatsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets documents by status and direction.
+    /// </summary>
+    Task<IReadOnlyList<PartnerDocument>> GetByStatusAndDirectionAsync(
+        DocumentStatus status,
+        DocumentDirection direction,
+        int? tradingPartnerId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets failed documents eligible for retry.
+    /// </summary>
+    Task<IReadOnlyList<PartnerDocument>> GetFailedDocumentsForRetryAsync(
+        int maxAttempts,
+        int take = 25,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

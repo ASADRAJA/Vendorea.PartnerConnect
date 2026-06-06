@@ -4,8 +4,10 @@ using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Application.Services;
 using Vendorea.PartnerConnect.Infrastructure.CrossCutting;
 using Vendorea.PartnerConnect.Infrastructure.Edi;
+using Vendorea.PartnerConnect.Infrastructure.Services;
 using Vendorea.PartnerConnect.Infrastructure.SprContent;
 using Vendorea.PartnerConnect.Infrastructure.SprContent.Parsers;
+using XsdValidationService = Vendorea.PartnerConnect.Application.Services.XsdValidationService;
 
 namespace Vendorea.PartnerConnect.Infrastructure.DependencyInjection;
 
@@ -38,6 +40,26 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEdiResponseService, EdiResponseService>();
         services.AddScoped<IEdiDocumentProcessingService, EdiDocumentProcessingService>();
 
+        // SPR XML Document Processing Service
+        // Note: XML parsers are registered in PartnerAdapters.DependencyInjection
+        services.AddScoped<ISprXmlDocumentProcessingService, SprXmlDocumentProcessingService>();
+
+        // XSD Validation Services (part of document pipeline, not SOAP)
+        services.AddScoped<IXsdValidationService, XsdValidationService>();
+        services.AddSingleton<IXsdSchemaProvider, XsdSchemaProvider>();
+
+        // Worker Orchestration Services
+        services.AddScoped<IDocumentProcessingOrchestrator, DocumentProcessingOrchestrator>();
+        services.AddScoped<IInventoryImportOrchestrator, InventoryImportOrchestrator>();
+        services.AddScoped<IInventoryFullRefreshService, InventoryFullRefreshService>();
+
+        // Document Content Provider (bridges Application to Storage)
+        services.AddScoped<IDocumentContentProvider, DocumentContentProvider>();
+
+        // NOTE: SPR SOAP client for interactive services is registered in
+        // PartnerAdapters.DependencyInjection.AddPartnerAdapters()
+        // SOAP is isolated from the document pipeline.
+
         // SPR Content Parsers
         services.AddScoped<ISprContentZipExtractor, SprContentZipExtractor>();
         services.AddScoped<SprContentFileParser>();
@@ -54,10 +76,13 @@ public static class ServiceCollectionExtensions
         {
             services.Configure<DuplicateDetectionOptions>(
                 configuration.GetSection(DuplicateDetectionOptions.SectionName));
+            services.Configure<XsdSchemaProviderOptions>(
+                configuration.GetSection(XsdSchemaProviderOptions.SectionName));
         }
         else
         {
             services.Configure<DuplicateDetectionOptions>(_ => { });
+            services.Configure<XsdSchemaProviderOptions>(_ => { });
         }
 
         return services;

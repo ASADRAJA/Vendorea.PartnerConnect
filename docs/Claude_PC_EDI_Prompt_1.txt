@@ -1,0 +1,395 @@
+ You are working inside the `Vendorea.PartnerConnect` solution.
+
+Your task is to implement the next major build phase for the SPR integration inside PartnerConnect.
+
+Important context:
+
+* This is a separate solution from Merchant360, but it must integrate cleanly with Merchant360 as client #1.
+* Tech stack must stay aligned with Merchant360: .NET 8, ASP.NET Core, EF Core, SQL Server, same general engineering conventions.
+* Do not make this an SPR-only architecture. Build it so SPR is the first partner adapter, while the platform remains reusable for future partners and external dealer commercialization.
+* Do not modify Merchant360 unless absolutely necessary and explicitly isolated through connector/contracts work.
+* Preserve clean architecture boundaries already established in the solution.
+* Assume SPR-specific behavior belongs in partner adapters and transport/config layers, not in the core domain model.
+
+What you have available:
+
+* SPR XML PO guide
+* SPR XML POACK guide
+* SPR EZASNS layout/spec
+* SPR invoice/credit memo guide and any related XSDs
+* SPR XML DC inventory guide
+* SPR web services developer guide
+* SPR FTP/GIS/SFTP transport notes
+* XSD files for validation where available
+
+Your implementation objective:
+Build the first production-grade SPR integration slice with:
+
+1. outbound XML PO generation
+2. inbound XML POACK parsing
+3. inbound XML EZASNS parsing
+4. daily XML inventory import
+5. SOAP web-service client scaffolding
+6. Merchant360 integration contracts and update flow
+7. document pipeline, storage, validation, retry, audit, and operational visibility
+
+Do NOT wait for unresolved SPR environment questions to build the parts that are already fully spec-driven.
+
+==================================================
+ARCHITECTURAL PRINCIPLES
+========================
+
+Follow these non-negotiable rules:
+
+1. Keep PartnerConnect decoupled from Merchant360.
+
+   * Merchant360 is client #1, not the internal domain model.
+   * Merchant360-specific mapping belongs in the Merchant360 connector layer.
+
+2. Separate concerns clearly:
+
+   * Domain = canonical business concepts
+   * Application = orchestration/use cases
+   * Persistence = EF Core + SQL Server
+   * PartnerAdapters = SPR XML mappers/parsers and future partner-specific logic
+   * Transport = SFTP/file transport mechanics
+   * BackgroundWorkers = polling/import/dispatch/retry jobs
+   * API = platform-facing endpoints
+   * Merchant360Connector = normalized updates to Merchant360
+
+3. Never let raw SPR XML shapes leak into Merchant360-facing contracts.
+
+4. Store both:
+
+   * raw source documents/files
+   * normalized/canonical representations
+
+5. Everything must be idempotent and auditable.
+
+6. Build with future commercialization in mind:
+
+   * multi-dealer
+   * multi-partner
+   * metering-ready
+   * operational support tooling
+
+==================================================
+PHASE 1 SCOPE TO BUILD NOW
+==========================
+
+Implement the following now.
+
+A. CORE CANONICAL MODELS
+Create or refine canonical models for:
+
+* SupplierPurchaseOrder
+* SupplierPurchaseOrderLine
+* SupplierOrderAcknowledgement
+* SupplierOrderAcknowledgementLine
+* SupplierShipmentManifest
+* SupplierShipmentOrder
+* SupplierShipmentLine
+* SupplierCarton
+* SupplierCartonItem
+* SupplierInventorySnapshot
+* SupplierInventoryItem
+* SupplierInventoryLocationQuantity
+* SupplierInvoice
+* SupplierCreditMemo
+* PartnerDocument
+* PartnerDocumentProcessingAttempt
+* PartnerConnection
+* DealerPartnerConnection
+* PartnerCapabilityConfiguration
+
+Use canonical naming and structure.
+Do not model these as SPR-specific classes in the domain layer.
+
+B. DOCUMENT PIPELINE FOUNDATION
+Implement the full document-processing framework:
+
+* raw document ingestion model
+* document type classification
+* source channel classification (upload, inbound SFTP, scheduled fetch, internal generation, etc.)
+* XSD validation service abstraction
+* XML parse/serialize abstraction
+* processing states:
+
+  * Received
+  * Validated
+  * Parsed
+  * Mapped
+  * Applied
+  * Failed
+  * Retriable
+  * Archived
+* correlation and idempotency support
+* audit trail and processing attempt history
+* raw payload retention
+* error capture with structured diagnostics
+
+C. OUTBOUND XML PO
+Implement outbound PO generation:
+
+* canonical order -> SPR XML PO mapper
+* XML serialization
+* XSD validation hook
+* file naming strategy abstraction
+* outbound document record creation
+* unit tests using examples from the SPR PO guide
+* support key order attributes like:
+
+  * BuyerOrganizationCode
+  * OrderType
+  * ShipNode
+  * IsShipComplete
+  * PersonInfoShipTo
+  * OrderLines
+  * line-level item/UOM/qty/substitution/backorder flags
+
+Do not hardcode Gemini values.
+Everything dealer-specific must be configurable.
+
+D. INBOUND XML POACK
+Implement POACK processing:
+
+* XML parser
+* map to canonical order acknowledgement model
+* line-level status mapping
+* capture quantities shipped / backordered / pricing / ack description
+* support status translation for values such as accepted, backorder, discontinued, invalid, etc.
+* correlate POACK back to original outbound order/document
+* tests using sample POACK payloads and guide examples
+
+E. INBOUND XML EZASNS
+Implement EZASNS processing:
+
+* parser for manifests, manifest header, sales orders, order summary, line groups, cartons, carton items
+* canonical shipment manifest mapping
+* capture:
+
+  * SPR/DC sales order numbers
+  * dealer PO/reference data
+  * ship-to
+  * carrier
+  * carrier number / tracking / BOL
+  * cartons
+  * carton items
+  * line shipped quantities
+* support multiple sales orders in one file
+* correlate shipment data back to original order / acknowledgement / Merchant360 order where possible
+* tests based on provided layout and XSD where available
+
+F. DAILY XML INVENTORY IMPORT
+Implement inventory import pipeline:
+
+* scheduled retrieval abstraction
+* inventory XML parser
+* full refresh job
+* staging then atomic apply strategy
+* explicit “zero out then load” refresh behavior
+* audit/log each inventory run
+* track counts:
+
+  * items processed
+  * locations processed
+  * failures
+  * elapsed time
+* store normalized inventory snapshot data
+* expose latest snapshot metadata in API/admin surface
+
+Build this as a worker-driven import process, not a manual one-off script.
+
+G. SOAP WEB SERVICE CLIENT SCAFFOLDING
+Build a reusable SOAP client layer for SPR services.
+Do not hardcode all Gemini behavior yet.
+
+Create service abstractions for:
+
+* Stock Check
+* Dealer Stock Check
+* Sprinter Stock Check
+* Zip-Code Stock Check
+* Quick Check Plus
+* Find Freight Rates
+* Lowest Freight Rate
+
+Implement:
+
+* shared SOAP envelope/client infrastructure
+* config model for endpoints, credentials, versions
+* DTOs for requests/responses
+* ping/health style validation if applicable
+* XML serialization/deserialization
+* service wrappers, even if some are initially stubbed or partially implemented
+
+Do not assume all services are enabled yet.
+Keep them feature-flag/config driven.
+
+H. MERCHANT360 CONNECTOR
+Implement Merchant360-facing integration contracts for:
+
+* submit supplier order request
+* receive supplier acknowledgement update
+* receive supplier shipment update
+* receive supplier inventory refresh completion/update
+* receive supplier document failure/update
+* query document/order integration status
+
+Keep Merchant360-specific transformations in the Merchant360 connector.
+Do not let Merchant360-specific types pollute domain logic.
+
+I. OPERATIONS / ADMIN API SUPPORT
+Provide minimal but real operational support surface via API:
+
+* list documents
+* document detail
+* processing history
+* retry/reprocess endpoint
+* inventory job history
+* partner connection health/status
+* raw document metadata
+* parsed/canonical summary view
+
+This can be API-first.
+A polished UI is not required yet.
+
+==================================================
+THINGS TO LEAVE CONFIGURABLE / NOT FINALIZE YET
+===============================================
+
+Do not hardcode assumptions for the following until SPR confirms them:
+
+* final Gemini test/prod SFTP endpoints and credentials
+* whether production uses same transport pattern as test
+* invoice/credit final runtime format if still ambiguous
+* exact phase 1 rollout expectations from SPR
+* which web services are enabled for Gemini
+* any Gemini-specific account prefixes or operational overrides
+
+Design these behind configuration and feature flags.
+
+==================================================
+DATABASE / PERSISTENCE EXPECTATIONS
+===================================
+
+Use EF Core + SQL Server.
+
+Add or refine persistence for:
+
+* PartnerDocument
+* PartnerDocumentArchive
+* PartnerDocumentProcessingAttempt
+* DealerPartnerConnection
+* PartnerCapabilityConfiguration
+* SupplierOrder / acknowledgement / shipment canonical records
+* Inventory snapshot header
+* Inventory snapshot item/location quantities
+* worker job history / execution log
+* partner endpoint configuration
+* transport mailbox / polling checkpoint state if applicable
+
+Store raw XML/file content in an appropriate raw document store pattern.
+If blob storage is not wired yet, use database/file-system abstraction cleanly so it can be upgraded later.
+
+==================================================
+TRANSPORT / WORKER EXPECTATIONS
+===============================
+
+Implement or refine background workers for:
+
+* outbound dispatch preparation
+* inbound file polling
+* document processing
+* inventory import scheduling
+* retry/reprocess
+* cleanup/archive policies
+
+If actual SFTP live connectivity is not ready, build:
+
+* transport interfaces
+* mailbox abstractions
+* local/test doubles
+* file drop harness for integration tests
+
+==================================================
+TESTING EXPECTATIONS
+====================
+
+Add strong automated coverage:
+
+* unit tests for mappers/parsers
+* integration tests for XML processing pipeline
+* sample payload-based tests
+* XSD validation tests where possible
+* idempotency tests
+* correlation tests
+* inventory full-refresh tests
+* failure/retry tests
+
+Use the SPR sample structures and guides as fixtures where possible.
+
+==================================================
+DELIVERABLE STYLE
+=================
+
+Before coding:
+
+1. inspect existing solution structure
+2. show me a concise implementation plan
+3. show project-by-project impact
+4. show DB objects/entities you will add or modify
+5. identify any assumptions
+
+Then execute.
+
+After implementation:
+
+1. build the solution
+2. run tests
+3. fix failures
+4. provide:
+
+   * summary of completed work
+   * file tree / major files changed
+   * schema changes
+   * API endpoints added
+   * worker jobs added
+   * unresolved items still waiting on SPR
+
+==================================================
+ADDITIONAL GUIDANCE
+===================
+
+Use these implementation priorities in order:
+
+Priority 1:
+
+* canonical document pipeline
+* outbound PO
+* inbound POACK
+
+Priority 2:
+
+* inbound EZASNS
+* inventory import
+
+Priority 3:
+
+* SOAP client scaffolding
+* Merchant360 connector refinements
+* ops/admin API surface
+
+Maintain production-quality code:
+
+* strong typing
+* clear naming
+* configuration-driven behavior
+* error handling
+* structured logging
+* comments where useful, but do not overcomment obvious code
+
+Do not produce placeholder architecture with no execution path.
+Build real working slices.
+
+If a spec detail is unclear, isolate it behind configuration or a clearly marked assumption rather than hardcoding a guess.

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
+using Vendorea.PartnerConnect.Domain.StateMachine;
 
 namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 
@@ -18,6 +19,9 @@ public class AdminDocumentsController : ControllerBase
     private readonly IDealerPartnerConnectionRepository _connectionRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IMerchant360Client _merchant360Client;
+    private readonly IDocumentCorrelationRepository _correlationRepository;
+    private readonly IDocumentStateHistoryRepository _stateHistoryRepository;
+    private readonly IDocumentProcessingOrchestrator _orchestrator;
     private readonly ILogger<AdminDocumentsController> _logger;
 
     public AdminDocumentsController(
@@ -25,12 +29,18 @@ public class AdminDocumentsController : ControllerBase
         IDealerPartnerConnectionRepository connectionRepository,
         ITradingPartnerRepository partnerRepository,
         IMerchant360Client merchant360Client,
+        IDocumentCorrelationRepository correlationRepository,
+        IDocumentStateHistoryRepository stateHistoryRepository,
+        IDocumentProcessingOrchestrator orchestrator,
         ILogger<AdminDocumentsController> logger)
     {
         _documentRepository = documentRepository;
         _connectionRepository = connectionRepository;
         _partnerRepository = partnerRepository;
         _merchant360Client = merchant360Client;
+        _correlationRepository = correlationRepository;
+        _stateHistoryRepository = stateHistoryRepository;
+        _orchestrator = orchestrator;
         _logger = logger;
     }
 
@@ -257,6 +267,172 @@ public class AdminDocumentsController : ControllerBase
         return Ok(new { DocumentId = id, Status = newStatus.ToString() });
     }
 
+    /// <summary>
+    /// Gets document processing history (state transitions).
+    /// </summary>
+    [HttpGet("{id:int}/history")]
+    public async Task<IActionResult> GetDocumentHistory(int id, CancellationToken cancellationToken)
+    {
+        var document = await _documentRepository.GetByIdAsync(id, cancellationToken);
+        if (document == null)
+        {
+            return NotFound();
+        }
+
+        var history = await _stateHistoryRepository.GetByDocumentIdAsync(id, cancellationToken);
+
+        return Ok(new DocumentHistoryResponse
+        {
+            DocumentId = id,
+            CurrentState = document.State.ToString(),
+            CurrentStatus = document.Status.ToString(),
+            RetryCount = document.RetryCount,
+            ReceivedAt = document.ReceivedAt,
+            ProcessingStartedAt = document.ProcessingStartedAt,
+            ProcessingCompletedAt = document.ProcessingCompletedAt,
+            StateTransitions = history.Select(h => new StateTransitionDto
+            {
+                Id = h.Id,
+                FromState = h.FromState.ToString(),
+                ToState = h.ToState.ToString(),
+                TransitionedAt = h.OccurredAt,
+                TransitionedBy = h.PerformedBy,
+                Reason = h.Reason
+            }).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Gets correlated documents (related PO, ACK, ASN, Invoice chain).
+    /// </summary>
+    [HttpGet("{id:int}/correlations")]
+    public async Task<IActionResult> GetDocumentCorrelations(int id, CancellationToken cancellationToken)
+    {
+        var document = await _documentRepository.GetByIdAsync(id, cancellationToken);
+        if (document == null)
+        {
+            return NotFound();
+        }
+
+        var correlatedDocuments = await _correlationRepository.GetCorrelatedDocumentsAsync(id, cancellationToken);
+
+        return Ok(new DocumentCorrelationResponse
+        {
+            DocumentId = id,
+            DocumentType = document.DocumentType.ToString(),
+            ExternalReference = document.ExternalReference,
+            CorrelatedDocuments = correlatedDocuments.Select(d => new CorrelatedDocumentDto
+            {
+                Id = d.Id,
+                DocumentType = d.DocumentType.ToString(),
+                Direction = d.Direction.ToString(),
+                Status = d.Status.ToString(),
+                ExternalReference = d.ExternalReference,
+                ReceivedAt = d.ReceivedAt
+            }).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Batch retry all failed documents.
+    /// </summary>
+    [HttpPost("batch-retry")]
+    public async Task<IActionResult> BatchRetryFailedDocuments(
+        [FromQuery] int maxAttempts = 3,
+        [FromQuery] int batchSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Starting batch retry of failed documents (maxAttempts={MaxAttempts}, batchSize={BatchSize})",
+            maxAttempts, batchSize);
+
+        var result = await _orchestrator.RetryFailedDocumentsAsync(maxAttempts, batchSize, cancellationToken);
+
+        return Ok(new BatchRetryResponse
+        {
+            TotalAttempted = result.TotalAttempted,
+            Succeeded = result.Succeeded,
+            Failed = result.Failed,
+            Exhausted = result.Exhausted,
+            ProcessingTimeMs = result.ProcessingTimeMs,
+            Results = result.Results.Select(r => new RetryResultDto
+            {
+                DocumentId = r.DocumentId,
+                AttemptNumber = r.AttemptNumber,
+                Success = r.Success,
+                IsExhausted = r.IsExhausted,
+                ErrorMessage = r.ErrorMessage
+            }).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Gets document statistics for dashboard.
+    /// </summary>
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetDocumentStats(CancellationToken cancellationToken)
+    {
+        var stats = await _documentRepository.GetDocumentStatsAsync(cancellationToken);
+
+        return Ok(new DocumentStatsResponse
+        {
+            Total = stats.Total,
+            Pending = stats.Pending,
+            Failed = stats.Failed,
+            Quarantined = stats.Quarantined,
+            RetrievedAt = DateTime.UtcNow
+        });
+    }
+
+    /// <summary>
+    /// Process pending inbound documents.
+    /// </summary>
+    [HttpPost("process-inbound")]
+    public async Task<IActionResult> ProcessInboundDocuments(
+        [FromQuery] int? tradingPartnerId = null,
+        [FromQuery] int batchSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Processing inbound documents (partner={PartnerId}, batchSize={BatchSize})",
+            tradingPartnerId?.ToString() ?? "all", batchSize);
+
+        var result = await _orchestrator.ProcessInboundDocumentsAsync(tradingPartnerId, batchSize, cancellationToken);
+
+        return Ok(new ProcessingBatchResponse
+        {
+            TotalProcessed = result.TotalProcessed,
+            Succeeded = result.Succeeded,
+            Failed = result.Failed,
+            ProcessingTimeMs = result.ProcessingTimeMs,
+            StartedAt = result.StartedAt,
+            CompletedAt = result.CompletedAt
+        });
+    }
+
+    /// <summary>
+    /// Process pending outbound documents.
+    /// </summary>
+    [HttpPost("process-outbound")]
+    public async Task<IActionResult> ProcessOutboundDocuments(
+        [FromQuery] int? tradingPartnerId = null,
+        [FromQuery] int batchSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Processing outbound documents (partner={PartnerId}, batchSize={BatchSize})",
+            tradingPartnerId?.ToString() ?? "all", batchSize);
+
+        var result = await _orchestrator.ProcessOutboundDocumentsAsync(tradingPartnerId, batchSize, cancellationToken);
+
+        return Ok(new ProcessingBatchResponse
+        {
+            TotalProcessed = result.TotalProcessed,
+            Succeeded = result.Succeeded,
+            Failed = result.Failed,
+            ProcessingTimeMs = result.ProcessingTimeMs,
+            StartedAt = result.StartedAt,
+            CompletedAt = result.CompletedAt
+        });
+    }
+
     private static DocumentResponse MapDocumentResponse(PartnerDocument doc)
     {
         return new DocumentResponse
@@ -310,4 +486,82 @@ public class AdminDocumentResponse
     public string? ContentHash { get; set; }
     public string? StoragePath { get; set; }
     public DateTime ReceivedAt { get; set; }
+}
+
+public class DocumentHistoryResponse
+{
+    public int DocumentId { get; set; }
+    public string CurrentState { get; set; } = string.Empty;
+    public string CurrentStatus { get; set; } = string.Empty;
+    public int RetryCount { get; set; }
+    public DateTime ReceivedAt { get; set; }
+    public DateTime? ProcessingStartedAt { get; set; }
+    public DateTime? ProcessingCompletedAt { get; set; }
+    public List<StateTransitionDto> StateTransitions { get; set; } = new();
+}
+
+public class StateTransitionDto
+{
+    public int Id { get; set; }
+    public string FromState { get; set; } = string.Empty;
+    public string ToState { get; set; } = string.Empty;
+    public DateTime TransitionedAt { get; set; }
+    public string? TransitionedBy { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class DocumentCorrelationResponse
+{
+    public int DocumentId { get; set; }
+    public string DocumentType { get; set; } = string.Empty;
+    public string? ExternalReference { get; set; }
+    public List<CorrelatedDocumentDto> CorrelatedDocuments { get; set; } = new();
+}
+
+public class CorrelatedDocumentDto
+{
+    public int Id { get; set; }
+    public string DocumentType { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? ExternalReference { get; set; }
+    public DateTime ReceivedAt { get; set; }
+}
+
+public class BatchRetryResponse
+{
+    public int TotalAttempted { get; set; }
+    public int Succeeded { get; set; }
+    public int Failed { get; set; }
+    public int Exhausted { get; set; }
+    public long ProcessingTimeMs { get; set; }
+    public List<RetryResultDto> Results { get; set; } = new();
+}
+
+public class RetryResultDto
+{
+    public int DocumentId { get; set; }
+    public int AttemptNumber { get; set; }
+    public bool Success { get; set; }
+    public bool IsExhausted { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+public class DocumentStatsResponse
+{
+    public int Total { get; set; }
+    public int Pending { get; set; }
+    public int Failed { get; set; }
+    public int Quarantined { get; set; }
+    public DateTime RetrievedAt { get; set; }
+}
+
+public class ProcessingBatchResponse
+{
+    public int TotalProcessed { get; set; }
+    public int Succeeded { get; set; }
+    public int Failed { get; set; }
+    public long ProcessingTimeMs { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
 }

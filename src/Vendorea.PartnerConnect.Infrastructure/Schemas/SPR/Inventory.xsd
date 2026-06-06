@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPR Inventory Feed Schema
+
+  TODO: PRODUCTION REQUIREMENT
+  ============================
+  This is a PLACEHOLDER schema. The actual Inventory.xsd must be obtained from SPR
+  and placed here before production deployment. This placeholder validates basic
+  inventory document structure.
+
+  Contact SPR to obtain the official Inventory schema specification.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <xs:element name="InventoryFeed">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="FeedDate" type="xs:string" minOccurs="0"/>
+        <xs:element name="TotalItems" type="xs:integer" minOccurs="0"/>
+        <xs:element ref="Item" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="Item">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="SKU" type="xs:string"/>
+        <xs:element name="UPC" type="xs:string" minOccurs="0"/>
+        <xs:element name="QuantityAvailable" type="xs:integer"/>
+        <xs:element name="QuantityOnOrder" type="xs:integer" minOccurs="0"/>
+        <xs:element name="QuantityOnHand" type="xs:integer" minOccurs="0"/>
+        <xs:element name="UnitCost" type="xs:decimal" minOccurs="0"/>
+        <xs:element name="Status" type="xs:string" minOccurs="0"/>
+        <xs:element name="WarehouseCode" type="xs:string" minOccurs="0"/>
+        <xs:element name="LastUpdated" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>
