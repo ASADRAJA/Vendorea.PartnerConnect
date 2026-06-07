@@ -322,6 +322,15 @@ public class AdminSubscriptionsController : ControllerBase
             await CreateOrUpdateConnectionAsync(subscription, ConnectionStatus.Suspended, cancellationToken);
         }
 
+        // Get the connection ID for approved/suspended subscriptions
+        int? connectionId = null;
+        if (subscription.Status == SubscriptionRequestStatus.Approved || subscription.Status == SubscriptionRequestStatus.Suspended)
+        {
+            var connection = await _connectionRepository.GetByDealerAndPartnerAsync(
+                subscription.TenantId, subscription.TradingPartnerId, cancellationToken);
+            connectionId = connection?.Id;
+        }
+
         var statusChange = new SubscriptionStatusChangedDto
         {
             TenantId = subscription.TenantId,
@@ -333,7 +342,11 @@ public class AdminSubscriptionsController : ControllerBase
             ChangedAt = DateTime.UtcNow,
             ChangedBy = "admin-resync",
             Reason = subscription.DenialReason,
-            Notes = subscription.Notes
+            Notes = subscription.Notes,
+            // Include PC integration IDs
+            PartnerConnectConnectionId = connectionId,
+            PCOrganizationId = connectionId != null ? 1 : null,
+            PCMerchantId = connectionId != null ? subscription.TenantId : null
         };
 
         var success = await _merchant360Client.NotifySubscriptionStatusChangedAsync(statusChange, cancellationToken);
@@ -454,6 +467,15 @@ public class AdminSubscriptionsController : ControllerBase
         SubscriptionRequestStatus previousStatus,
         CancellationToken cancellationToken)
     {
+        // Get the connection ID for approved subscriptions
+        int? connectionId = null;
+        if (subscription.Status == SubscriptionRequestStatus.Approved)
+        {
+            var connection = await _connectionRepository.GetByDealerAndPartnerAsync(
+                subscription.TenantId, subscription.TradingPartnerId, cancellationToken);
+            connectionId = connection?.Id;
+        }
+
         var statusChange = new SubscriptionStatusChangedDto
         {
             TenantId = subscription.TenantId,
@@ -465,7 +487,11 @@ public class AdminSubscriptionsController : ControllerBase
             ChangedAt = DateTime.UtcNow,
             ChangedBy = "admin", // TODO: Get actual admin user from context
             Reason = subscription.DenialReason,
-            Notes = subscription.Notes
+            Notes = subscription.Notes,
+            // Include PC integration IDs for approved subscriptions
+            PartnerConnectConnectionId = connectionId,
+            PCOrganizationId = subscription.Status == SubscriptionRequestStatus.Approved ? 1 : null,
+            PCMerchantId = subscription.Status == SubscriptionRequestStatus.Approved ? subscription.TenantId : null
         };
 
         try

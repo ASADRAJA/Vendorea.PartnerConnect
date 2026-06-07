@@ -1074,7 +1074,7 @@ public class ApiClient
         }
     }
 
-    public async Task<OrderDetailDto?> GetOrderAsync(Guid id)
+    public async Task<OrderDetailDto?> GetOrderAsync(int id)
     {
         try
         {
@@ -1087,7 +1087,7 @@ public class ApiClient
         }
     }
 
-    public async Task<bool> CancelOrderAsync(Guid id, string? reason = null)
+    public async Task<bool> CancelOrderAsync(int id, string? reason = null)
     {
         try
         {
@@ -1103,7 +1103,7 @@ public class ApiClient
         }
     }
 
-    public async Task<bool> AcknowledgeOrderAsync(Guid id)
+    public async Task<bool> AcknowledgeOrderAsync(int id)
     {
         try
         {

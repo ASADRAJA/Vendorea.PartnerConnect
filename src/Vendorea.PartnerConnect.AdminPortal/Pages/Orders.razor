@@ -526,7 +526,7 @@
         orderDetail = null;
     }
 
-    private async Task AcknowledgeOrder(Guid orderId)
+    private async Task AcknowledgeOrder(int orderId)
     {
         var success = await Api.AcknowledgeOrderAsync(orderId);
         if (success)

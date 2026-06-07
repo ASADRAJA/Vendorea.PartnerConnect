@@ -712,6 +712,24 @@ public class SubscriptionStatusChangedDto
     /// Additional notes about the change.
     /// </summary>
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// The PartnerConnect connection ID linking the merchant to this trading partner.
+    /// Populated when status changes to Approved.
+    /// </summary>
+    public int? PartnerConnectConnectionId { get; set; }
+
+    /// <summary>
+    /// The PartnerConnect organization ID for the merchant's tenant.
+    /// Populated when status changes to Approved.
+    /// </summary>
+    public int? PCOrganizationId { get; set; }
+
+    /// <summary>
+    /// The PartnerConnect merchant ID for the merchant's tenant.
+    /// Populated when status changes to Approved.
+    /// </summary>
+    public int? PCMerchantId { get; set; }
 }
 
 #endregion

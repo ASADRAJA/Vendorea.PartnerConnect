@@ -138,7 +138,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.DealerPartnerConnectionId,
                         principalTable: "DealerPartnerConnections",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_DocumentIdempotencyKeys_PartnerDocuments_PartnerDocumentId",
                         column: x => x.PartnerDocumentId,
@@ -306,13 +306,13 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.PartnerDocumentId,
                         principalTable: "PartnerDocuments",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierInventorySnapshots_SupplierInventorySnapshots_PreviousSnapshotId",
                         column: x => x.PreviousSnapshotId,
                         principalTable: "SupplierInventorySnapshots",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierInventorySnapshots_TradingPartners_TradingPartnerId",
                         column: x => x.TradingPartnerId,
@@ -376,7 +376,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.PartnerDocumentId,
                         principalTable: "PartnerDocuments",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierPurchaseOrders_Tenants_TenantId",
                         column: x => x.TenantId,
@@ -433,7 +433,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.PartnerDocumentId,
                         principalTable: "PartnerDocuments",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierShipmentManifests_TradingPartners_TradingPartnerId",
                         column: x => x.TradingPartnerId,
@@ -478,7 +478,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.ProcessingAttemptId,
                         principalTable: "ProcessingAttempts",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                 });
 
             migrationBuilder.CreateTable(
@@ -552,7 +552,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.PartnerDocumentId,
                         principalTable: "PartnerDocuments",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierOrderAcknowledgements_SupplierPurchaseOrders_SupplierPurchaseOrderId",
                         column: x => x.SupplierPurchaseOrderId,
@@ -687,19 +687,19 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.PartnerDocumentId,
                         principalTable: "PartnerDocuments",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierInvoices_SupplierPurchaseOrders_SupplierPurchaseOrderId",
                         column: x => x.SupplierPurchaseOrderId,
                         principalTable: "SupplierPurchaseOrders",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierInvoices_SupplierShipmentManifests_SupplierShipmentManifestId",
                         column: x => x.SupplierShipmentManifestId,
                         principalTable: "SupplierShipmentManifests",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierInvoices_Tenants_TenantId",
                         column: x => x.TenantId,
@@ -743,7 +743,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.SupplierPurchaseOrderId,
                         principalTable: "SupplierPurchaseOrders",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierShipmentOrders_SupplierShipmentManifests_SupplierShipmentManifestId",
                         column: x => x.SupplierShipmentManifestId,
@@ -855,19 +855,19 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.PartnerDocumentId,
                         principalTable: "PartnerDocuments",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierCreditMemos_SupplierInvoices_SupplierInvoiceId",
                         column: x => x.SupplierInvoiceId,
                         principalTable: "SupplierInvoices",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierCreditMemos_SupplierPurchaseOrders_SupplierPurchaseOrderId",
                         column: x => x.SupplierPurchaseOrderId,
                         principalTable: "SupplierPurchaseOrders",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierCreditMemos_Tenants_TenantId",
                         column: x => x.TenantId,
@@ -913,7 +913,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.SupplierPurchaseOrderLineId,
                         principalTable: "SupplierPurchaseOrderLines",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierShipmentLines_SupplierShipmentOrders_SupplierShipmentOrderId",
                         column: x => x.SupplierShipmentOrderId,
@@ -994,13 +994,13 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.SupplierPurchaseOrderLineId,
                         principalTable: "SupplierPurchaseOrderLines",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_SupplierInvoiceLines_SupplierShipmentLines_SupplierShipmentLineId",
                         column: x => x.SupplierShipmentLineId,
                         principalTable: "SupplierShipmentLines",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                 });
 
             migrationBuilder.CreateTable(
@@ -1039,7 +1039,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         column: x => x.SupplierInvoiceLineId,
                         principalTable: "SupplierInvoiceLines",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.NoAction);
                 });
 
             migrationBuilder.CreateIndex(

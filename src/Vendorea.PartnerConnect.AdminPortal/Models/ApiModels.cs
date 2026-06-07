@@ -632,7 +632,7 @@ public class TenantSyncResultDto
 // Order Models
 public class OrderDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
     public int OrganizationId { get; set; }
     public string? OrganizationName { get; set; }
     public int TenantId { get; set; }
@@ -666,7 +666,7 @@ public class OrderDetailDto : OrderDto
 
 public class OrderLineDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
     public int LineNumber { get; set; }
     public string Sku { get; set; } = string.Empty;
     public string? VendorSku { get; set; }
@@ -681,7 +681,7 @@ public class OrderLineDto
 
 public class OrderStatusHistoryDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
     public string FromStatus { get; set; } = string.Empty;
     public string ToStatus { get; set; } = string.Empty;
     public string? ChangedByUserId { get; set; }

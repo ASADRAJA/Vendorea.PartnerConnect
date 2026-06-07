@@ -36,6 +36,6 @@ public class SupplierInventorySnapshotConfiguration : IEntityTypeConfiguration<S
         builder.HasOne(x => x.PreviousSnapshot)
             .WithMany()
             .HasForeignKey(x => x.PreviousSnapshotId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
     }
 }
