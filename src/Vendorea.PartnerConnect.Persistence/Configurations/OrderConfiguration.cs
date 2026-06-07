@@ -32,6 +32,10 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(e => e.FulfillmentPreference)
             .HasMaxLength(50);
 
+        builder.Property(e => e.OrderType)
+            .HasMaxLength(20)
+            .HasDefaultValue("StockOrder");
+
         builder.Property(e => e.Status)
             .HasConversion<string>()
             .HasMaxLength(50);

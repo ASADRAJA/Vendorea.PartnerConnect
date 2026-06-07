@@ -103,6 +103,15 @@ public record SubmitSupplierOrderRequest
     // ===== BUSINESS OPTIONS =====
 
     /// <summary>
+    /// Order type indicating fulfillment model.
+    /// Values: "StockOrder" (default), "DropShip", "WrapAndLabel".
+    /// - StockOrder: Ship to dealer's location (standard replenishment)
+    /// - DropShip: Ship directly to end customer (no dealer branding)
+    /// - WrapAndLabel: Ship to end customer with dealer branding/packaging
+    /// </summary>
+    public string OrderType { get; init; } = "StockOrder";
+
+    /// <summary>
     /// Allow partial shipment of order (default: true).
     /// If false, order must be shipped complete.
     /// </summary>
@@ -121,10 +130,10 @@ public record SubmitSupplierOrderRequest
     public bool AllowSubstitutions { get; init; } = false;
 
     /// <summary>
-    /// Fulfillment preference (e.g., "Standard", "Expedited", "NextDay").
-    /// Optional - partner-specific handling may apply.
+    /// Shipping priority preference.
+    /// Values: "Standard" (default), "Expedited", "NextDay", "Freight".
     /// </summary>
-    public string? FulfillmentPreference { get; init; }
+    public string? ShippingPriority { get; init; }
 
     /// <summary>
     /// Requested ship date.

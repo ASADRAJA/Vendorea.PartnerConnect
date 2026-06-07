@@ -303,10 +303,11 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             ExternalReferencesJson = request.ExternalReferences,
 
             // Business options
+            OrderType = request.OrderType,
             AllowPartialShipment = request.AllowPartialShipment,
             AllowBackorder = request.AllowBackorder,
             AllowSubstitutions = request.AllowSubstitutions,
-            FulfillmentPreference = request.FulfillmentPreference,
+            FulfillmentPreference = request.ShippingPriority,  // Map ShippingPriority → FulfillmentPreference
 
             // Order header
             PoNumber = request.PoNumber,

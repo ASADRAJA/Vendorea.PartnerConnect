@@ -64,6 +64,15 @@ public class Order
     // ===== BUSINESS OPTIONS =====
 
     /// <summary>
+    /// Order type indicating fulfillment model.
+    /// Values: "StockOrder" (default), "DropShip", "WrapAndLabel".
+    /// - StockOrder: Ship to dealer's location (standard replenishment)
+    /// - DropShip: Ship directly to end customer (no dealer branding)
+    /// - WrapAndLabel: Ship to end customer with dealer branding/packaging
+    /// </summary>
+    public string OrderType { get; set; } = "StockOrder";
+
+    /// <summary>
     /// Allow partial shipment of order.
     /// </summary>
     public bool AllowPartialShipment { get; set; } = true;
