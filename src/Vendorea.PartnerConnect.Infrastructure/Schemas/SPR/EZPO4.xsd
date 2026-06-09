@@ -1,102 +1,1252 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  SPR EZPO4 (Purchase Order) Schema
-
-  TODO: PRODUCTION REQUIREMENT
-  ============================
-  This is a PLACEHOLDER schema. The actual EZPO4.xsd must be obtained from SPR
-  and placed here before production deployment. This placeholder only validates
-  basic XML well-formedness.
-
-  Contact SPR to obtain the official EZPO4 schema specification.
+<!-- SPR EZPO4 XML Schema 1.5 -->
+<!--  Version 1.4 March 30th 2009
+In PersonalInfoContact node, All fields are optional now.
+ 
+Version 1.5 April 27th 2009
+Added LinePriceInfo Node with UnitPrice as its attribute.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-
-  <!-- Root element - matches SprEzpo4Generator output structure -->
-  <xs:element name="purchase_orders">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="purchase_order" maxOccurs="unbounded"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="purchase_order">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="po_header"/>
-        <xs:element ref="po_lines"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="po_header">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element name="po_number" type="xs:string"/>
-        <xs:element name="order_date" type="xs:string"/>
-        <xs:element name="buyer_org_code" type="xs:string"/>
-        <xs:element name="seller_org_code" type="xs:string"/>
-        <xs:element name="enterprise_code" type="xs:string"/>
-        <xs:element name="account_number" type="xs:string" minOccurs="0"/>
-        <xs:element name="requested_ship_date" type="xs:string" minOccurs="0"/>
-        <xs:element name="requested_delivery_date" type="xs:string" minOccurs="0"/>
-        <xs:element name="shipping_method" type="xs:string" minOccurs="0"/>
-        <xs:element name="notes" type="xs:string" minOccurs="0"/>
-        <xs:element ref="ship_to" minOccurs="0"/>
-        <xs:element ref="bill_to" minOccurs="0"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="ship_to">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element name="name" type="xs:string" minOccurs="0"/>
-        <xs:element name="address1" type="xs:string" minOccurs="0"/>
-        <xs:element name="address2" type="xs:string" minOccurs="0"/>
-        <xs:element name="city" type="xs:string" minOccurs="0"/>
-        <xs:element name="state" type="xs:string" minOccurs="0"/>
-        <xs:element name="postal_code" type="xs:string" minOccurs="0"/>
-        <xs:element name="country" type="xs:string" minOccurs="0"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="bill_to">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element name="name" type="xs:string" minOccurs="0"/>
-        <xs:element name="address1" type="xs:string" minOccurs="0"/>
-        <xs:element name="address2" type="xs:string" minOccurs="0"/>
-        <xs:element name="city" type="xs:string" minOccurs="0"/>
-        <xs:element name="state" type="xs:string" minOccurs="0"/>
-        <xs:element name="postal_code" type="xs:string" minOccurs="0"/>
-        <xs:element name="country" type="xs:string" minOccurs="0"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="po_lines">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="line_item" maxOccurs="unbounded"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="line_item">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element name="line_number" type="xs:integer"/>
-        <xs:element name="vendor_sku" type="xs:string"/>
-        <xs:element name="buyer_sku" type="xs:string" minOccurs="0"/>
-        <xs:element name="quantity" type="xs:decimal"/>
-        <xs:element name="unit_price" type="xs:decimal" minOccurs="0"/>
-        <xs:element name="description" type="xs:string" minOccurs="0"/>
-        <xs:element name="upc" type="xs:string" minOccurs="0"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-
+	<xs:element name="Order">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="PersonInfoShipTo" minOccurs="0">
+					<xs:complexType>
+						<xs:attribute name="FirstName" use="required">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:minLength value="1"/>
+									<xs:maxLength value="64"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="AddressLine1" use="required">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="70"/>
+									<xs:minLength value="1"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="AddressLine2" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="70"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="AddressLine3" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="70"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="City" use="required">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:minLength value="1"/>
+									<xs:maxLength value="35"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="State" use="required">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="35"/>
+									<xs:minLength value="1"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="ZipCode" use="required">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="35"/>
+									<xs:minLength value="1"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="Country" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="40"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="IsCommercialAddress" use="optional" default="N">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="1"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="EMailID" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="150"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="PersonInfoContact" minOccurs="0">
+					<xs:complexType>
+						<xs:attribute name="FirstName" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:minLength value="1"/>
+									<xs:maxLength value="64"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="AddressLine1" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="70"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="AddressLine2" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="70"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="AddressLine3" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="70"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="City" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:minLength value="0"/>
+									<xs:maxLength value="35"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="State" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="35"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="ZipCode" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="35"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="Country" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="40"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="EMailID" use="optional">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="150"/>
+									<xs:minLength value="0"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:attribute>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="OrderLines">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="OrderLine" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="OrderLineTranQuantity">
+											<xs:complexType>
+												<xs:attribute name="TransactionalUOM" use="required">
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:maxLength value="40"/>
+															<xs:minLength value="1"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+												<xs:attribute name="OrderedQty" use="required">
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:maxLength value="14"/>
+															<xs:minLength value="1"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Item">
+											<xs:complexType>
+												<xs:attribute name="ProductClass" use="optional">
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:minLength value="0"/>
+															<xs:maxLength value="10"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+												<xs:attribute name="CustomerItem" use="required">
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:maxLength value="40"/>
+															<xs:minLength value="1"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Instructions" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Instruction" maxOccurs="2">
+														<xs:complexType>
+															<xs:attribute name="InstructionText" use="optional">
+																<xs:simpleType>
+																	<xs:restriction base="xs:string">
+																		<xs:maxLength value="4000"/>
+																		<xs:minLength value="0"/>
+																	</xs:restriction>
+																</xs:simpleType>
+															</xs:attribute>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="LinePriceInfo">
+											<xs:complexType>
+												<xs:attribute name="UnitPrice" use="required">
+													<xs:simpleType>
+														<xs:restriction base="xs:decimal">
+															<xs:totalDigits value="19"/>
+															<xs:fractionDigits value="6"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Notes" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Note" maxOccurs="unbounded">
+														<xs:complexType>
+															<xs:attribute name="SequenceNo" use="optional">
+																<xs:simpleType>
+																	<xs:restriction base="xs:string">
+																		<xs:maxLength value="5"/>
+																		<xs:minLength value="0"/>
+																	</xs:restriction>
+																</xs:simpleType>
+															</xs:attribute>
+															<xs:attribute name="ContactType" use="optional">
+																<xs:simpleType>
+																	<xs:restriction base="xs:string">
+																		<xs:maxLength value="100"/>
+																		<xs:minLength value="0"/>
+																	</xs:restriction>
+																</xs:simpleType>
+															</xs:attribute>
+															<xs:attribute name="ContactReference" use="optional">
+																<xs:simpleType>
+																	<xs:restriction base="xs:string">
+																		<xs:maxLength value="150"/>
+																		<xs:minLength value="0"/>
+																	</xs:restriction>
+																</xs:simpleType>
+															</xs:attribute>
+															<xs:attribute name="ContactUser" use="optional">
+																<xs:simpleType>
+																	<xs:restriction base="xs:string">
+																		<xs:maxLength value="40"/>
+																		<xs:minLength value="0"/>
+																	</xs:restriction>
+																</xs:simpleType>
+															</xs:attribute>
+															<xs:attribute name="NoteText" use="required">
+																<xs:simpleType>
+																	<xs:restriction base="xs:string">
+																		<xs:maxLength value="2000"/>
+																		<xs:minLength value="1"/>
+																	</xs:restriction>
+																</xs:simpleType>
+															</xs:attribute>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Extn" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="EXTNSprOrderLineList" minOccurs="0">
+														<xs:complexType mixed="true">
+															<xs:sequence>
+																<xs:element name="EXTNSprOrderLine" minOccurs="0">
+																	<xs:complexType>
+																		<xs:attribute name="OkProSubs" use="optional" default="Y">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="OkLikeSubs" use="optional" default="N">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="OkFullPacks" use="optional" default="Y">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="OkBackorder" use="optional" default="N">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="OkPartial" use="optional" default="Y">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="DealerList" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="10"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="DealerCost" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="10"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="ConsumerPrice" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="10"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="ConsumerUom" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="3"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="TaxRate" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="7"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="OrigOrder" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="OkBrandSubs" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="BuyerItemNo" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="25"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="PrintDcCommnts" use="optional">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:maxLength value="1"/>
+																					<xs:minLength value="0"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																	</xs:complexType>
+																</xs:element>
+															</xs:sequence>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+									<xs:attribute name="PrimeLineNo" use="required">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="5"/>
+												<xs:minLength value="1"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+									<xs:attribute name="CustomerLinePONo" use="optional">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="10"/>
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Instructions" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Instruction" maxOccurs="2">
+								<xs:complexType>
+									<xs:attribute name="InstructionText" use="optional">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="4000"/>
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Notes" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Note" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:attribute name="SequenceNo" use="optional">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="5"/>
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+									<xs:attribute name="ContactType" use="optional">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="100"/>
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+									<xs:attribute name="ContactReference" use="optional">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="150"/>
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+									<xs:attribute name="ContactUser" use="optional">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="40"/>
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+									<xs:attribute name="CustomerSatIndicator" use="optional">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="1"/>
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+									<xs:attribute name="NoteText" use="required">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="2000"/>
+												<xs:minLength value="1"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Extn" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="EXTNSprOrderHeaderList" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="EXTNSprOrderHeader" minOccurs="0">
+											<xs:complexType>
+												<xs:simpleContent>
+													<xs:extension base="xs:string">
+														<xs:attribute name="EdiPrefix" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ConnectionType" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ShipMethod" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="2"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="LevelOfServ" use="optional" default="D">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="UseSprinters" use="optional" default="">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="SprinterDays" use="optional" default="">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="PricedPackSlip" use="optional" default="D">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="CanNonUps" use="optional" default="N">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ParcelZone" use="optional" default="9">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ShowCost" use="optional" default="D">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ShowList" use="optional" default="D">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="OneOrder" use="optional" default="D">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ListCost" use="optional" default="L">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="StdDescs" use="optional" default="D">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ShowCntry" use="optional" default="N">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="FuturePo" use="optional" default="N">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="FutureDate" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="8"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Language" use="optional" default="E">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="CurrencyCode" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="3"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="FreightCarrier" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="FreightAccnt" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="14"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="OrderSystem" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerSystem" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerRoute" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="20"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerRefNo" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="20"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerAttn" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="25"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerOrder" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="20"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="SplPartnerId" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="SplRouteCode" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="SplStatMsg" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="10"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerField1" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="20"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerField2" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="20"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerField3" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="20"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerField4" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="20"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="LabelCmmnts1" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="25"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="LabelCmmnts2" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="25"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="LabelCmmnts3" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="25"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="PrintBarcode1" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="PrintBarcode2" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="PrintBarcode3" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="BarcodeField1" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="BarcodeField2" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="BarcodeField3" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="BarcodeFormat1" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="BarcodeFormat2" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="BarcodeFormat3" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="HumanReadable1" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="HumanReadable2" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="HumanReadable3" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="CheckDigit1" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="CheckDigit2" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="CheckDigit3" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="LabelCms1Desc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="5"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="LabelCms2Desc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="5"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="LabelCms3Desc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="5"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="PoNoDesc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="5"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="RouteDesc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="5"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="RefNoDesc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="5"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="AttnDesc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="5"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="CntryDesc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="30"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="DealerComp" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="ConsumerPhone" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="16"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp1Type" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="8"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp1Value" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="30"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp1Desc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="60"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp2Type" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="8"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp2Value" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="30"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp2Desc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="60"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp3Type" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="8"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp3Value" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="30"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp3Desc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="60"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp4Type" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="8"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp4Value" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="30"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="Cp4Desc" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="60"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+														<xs:attribute name="UseDcAddr" use="optional">
+															<xs:simpleType>
+																<xs:restriction base="xs:string">
+																	<xs:maxLength value="1"/>
+																	<xs:minLength value="0"/>
+																</xs:restriction>
+															</xs:simpleType>
+														</xs:attribute>
+													</xs:extension>
+												</xs:simpleContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+			<xs:attribute name="EnterpriseCode" use="optional" default="SPR">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="1"/>
+						<xs:maxLength value="24"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="BuyerOrganizationCode" use="required">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="1"/>
+						<xs:maxLength value="24"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="DraftOrderFlag" use="optional" default="N">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="1"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="OrderType" use="optional" default="01">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="2"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="ShipNode" use="optional">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="24"/>
+						<xs:minLength value="0"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="IsShipComplete" use="optional" default="Y">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="1"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="IsShipSingleNode" use="optional" default="N">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="1"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="CancelOrderOnBackorder" use="optional" default="N">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="1"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="BuyerUserId" use="optional">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="60"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="EnteredBy" use="optional">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="250"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="CustomerPONo" use="optional">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="0"/>
+						<xs:maxLength value="100"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="CustomerEMailID" use="optional">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="150"/>
+						<xs:minLength value="0"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="CustCustPONo" use="optional">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="100"/>
+						<xs:minLength value="0"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+		</xs:complexType>
+	</xs:element>
 </xs:schema>

@@ -48,6 +48,9 @@ public static class ServiceCollectionExtensions
         // Note: XML parsers are registered in PartnerAdapters.DependencyInjection
         services.AddScoped<ISprXmlDocumentProcessingService, SprXmlDocumentProcessingService>();
 
+        // SPR outbound order dispatch (map -> generate -> validate -> SFTP send)
+        services.AddScoped<ISprOutboundOrderService, SprOutboundOrderService>();
+
         // XSD Validation Services (part of document pipeline, not SOAP)
         services.AddScoped<IXsdValidationService, XsdValidationService>();
         services.AddSingleton<IXsdSchemaProvider, XsdSchemaProvider>();

@@ -14,7 +14,8 @@ public class SprConfiguration
     public string SftpHost { get; set; } = string.Empty;
 
     /// <summary>
-    /// SFTP port (default 22).
+    /// SFTP port for the general SPR file flows (price feed, inventory feed). Default 22.
+    /// The SPR XML order-exchange transport uses <see cref="SprXmlSftpPort"/> instead.
     /// </summary>
     public int SftpPort { get; set; } = 22;
 
@@ -201,6 +202,14 @@ public class SprConfiguration
     /// Path to outbound SPR XML documents on the SFTP server.
     /// </summary>
     public string SprXmlOutboundPath { get; set; } = "/xml/outbound";
+
+    /// <summary>
+    /// SFTP port for the SPR XML order-exchange transport (outbound EZPO4 / inbound POACK,
+    /// ASN, invoice). SPR's production SFTP for this exchange listens on the non-standard
+    /// port 50022. Scoped to the XML order-exchange path so other SPR SFTP flows
+    /// (price/inventory feeds, which use <see cref="SftpPort"/>) are unaffected.
+    /// </summary>
+    public int SprXmlSftpPort { get; set; } = 50022;
 
     /// <summary>
     /// File pattern for SPR XML files.

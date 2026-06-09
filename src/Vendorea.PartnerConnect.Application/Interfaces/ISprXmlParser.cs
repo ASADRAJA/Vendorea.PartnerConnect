@@ -186,6 +186,25 @@ public record PurchaseOrderAcknowledgment
     /// </summary>
     public string? Notes { get; init; }
 
+    /// <summary>
+    /// True when this is an SPR ERROR acknowledgement — the order was NOT processed by SPR.
+    /// Set for both the structured business-error channel (AckStatus 'E' / header PoAckStatus
+    /// error) and the translation-level error channel (echoed order + appended error text).
+    /// </summary>
+    public bool IsError { get; init; }
+
+    /// <summary>
+    /// Normalized, actionable error text extracted from the ERROR ack (e.g. the appended
+    /// translation message or the SPR AckDesc), suitable for surfacing to Merchant360.
+    /// </summary>
+    public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// The raw returned document as received from SPR (retained for support and audit).
+    /// Populated on the ERROR ack path so the original is never lost.
+    /// </summary>
+    public string? RawDocument { get; init; }
+
     public string? SourceDocumentId { get; init; }
     public DateTime ReceivedAt { get; init; } = DateTime.UtcNow;
 }
@@ -214,7 +233,13 @@ public enum PoAckStatus
     AcceptedWithChanges,
     PartiallyAccepted,
     Rejected,
-    Pending
+    Pending,
+
+    /// <summary>
+    /// SPR ERROR acknowledgement — the order could not be processed (AckStatus 'E' or a
+    /// translation-level error ack). Distinct from a business Rejected.
+    /// </summary>
+    Error
 }
 
 /// <summary>
@@ -227,5 +252,10 @@ public enum PoAckLineStatus
     Substituted,
     Cancelled,
     Rejected,
-    Pending
+    Pending,
+
+    /// <summary>
+    /// SPR line-level error (AckStatus 'E' = order cannot be processed, or 'I'/'Q'/'U' input errors).
+    /// </summary>
+    Error
 }

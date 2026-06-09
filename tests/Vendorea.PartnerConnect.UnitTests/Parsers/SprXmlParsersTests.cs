@@ -119,37 +119,41 @@ public class SprPoackParserTests
     }
 
     [Fact]
-    public void Parse_WithEmptyXml_ReturnsError()
+    public void Parse_WithEmptyXml_ProducesErrorAck_NotDiscarded()
     {
-        // Arrange
-        var xml = "";
+        // Empty/garbage input must not be silently dropped — SPR rules require an actionable
+        // failure state, so the parser yields an ERROR ack rather than a discarded result.
+        var result = _sut.Parse("", dealerId: 1);
 
-        // Act
-        var result = _sut.Parse(xml, dealerId: 1);
-
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Errors.Should().NotBeEmpty();
+        result.Success.Should().BeTrue();
+        result.Result.Should().NotBeNull();
+        result.Result!.IsError.Should().BeTrue();
+        result.Result.Status.Should().Be(PoAckStatus.Error);
     }
 
     [Fact]
-    public void Parse_WithInvalidXml_ReturnsError()
+    public void Parse_WithMalformedXml_ProducesTranslationErrorAck_RetainsRawAndExtractsPo()
     {
-        // Arrange
-        var xml = "not valid xml at all";
+        // SPR translation-level ERROR ack: the original order echoed back with an error message
+        // appended at the bottom (making the document non-conforming / not well-formed XML).
+        var xml = @"<?xml version=""1.0""?>
+<Order BuyerOrganizationCode=""9999999.99"" CustomerPONo=""PO-TX-9"" OrderNo=""38000003"">
+  <OrderLines><OrderLine PrimeLineNo=""1""><Item CustomerItem=""SKU-1"" /></OrderLine></OrderLines>
+</Order>
+ERROR: Translation failed - invalid UOM on line 1. Order not processed.";
 
-        // Act
         var result = _sut.Parse(xml, dealerId: 1);
 
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Contains("XML parsing failed"));
+        result.Success.Should().BeTrue();
+        result.Result!.IsError.Should().BeTrue();
+        result.Result.PoNumber.Should().Be("PO-TX-9");
+        result.Result.ErrorMessage.Should().Contain("Translation failed");
+        result.Result.RawDocument.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
-    public void Parse_WithMissingPoNumber_ReturnsError()
+    public void Parse_WithMissingPoNumber_ProducesErrorAck()
     {
-        // Arrange
         var xml = @"<?xml version=""1.0""?>
 <OrderResponse>
     <SellerOrderNo>SO-98765</SellerOrderNo>
@@ -159,12 +163,74 @@ public class SprPoackParserTests
     </OrderLine>
 </OrderResponse>";
 
-        // Act
         var result = _sut.Parse(xml, dealerId: 1);
 
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Contains("Failed to parse"));
+        result.Success.Should().BeTrue();
+        result.Result!.IsError.Should().BeTrue();
+        result.Result.PoNumber.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Parse_StructuredErrorAck_WithLineAckStatusE_MarksOrderNotProcessed()
+    {
+        // Channel 1: a well-formed echoed Order whose line carries AckStatus 'E' = cannot process.
+        var xml = @"<?xml version=""1.0""?>
+<Order EnterpriseCode=""SPR"" BuyerOrganizationCode=""9999999.99"" CustomerPONo=""PO-ERR-1"" OrderNo=""38000001"">
+  <OrderLines>
+    <OrderLine PrimeLineNo=""1"">
+      <OrderLineTranQuantity TransactionalUOM=""EA"" OrderedQty=""5"" />
+      <Item CustomerItem=""SKU-1"" />
+      <Extn><EXTNSprOrderLineList>
+        <EXTNSprOrderLine AckStatus=""E"" AckDesc=""BAD STOCK #"" QtyShipped=""0"" QtyBackordered=""0"" />
+      </EXTNSprOrderLineList></Extn>
+    </OrderLine>
+  </OrderLines>
+  <Extn><EXTNSprOrderHeaderList>
+    <EXTNSprOrderHeader PoAckStatus=""A"" SprSoNum=""38000001"" DealerAttn=""ATTN"" />
+  </EXTNSprOrderHeaderList></Extn>
+</Order>";
+
+        var result = _sut.Parse(xml, dealerId: 1);
+
+        result.Success.Should().BeTrue();
+        result.Result!.IsError.Should().BeTrue();
+        result.Result.Status.Should().Be(PoAckStatus.Error);
+        result.Result.PoNumber.Should().Be("PO-ERR-1"); // CustomerPONo, not OrderNo
+        result.Result.PartnerOrderNumber.Should().Be("38000001"); // SprSoNum
+        result.Result.ErrorMessage.Should().Contain("BAD STOCK #");
+        result.Result.RawDocument.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void Parse_RealFormatSuccessPoack_CorrelatesOnCustomerPONo()
+    {
+        // Real-format successful POACK: status in EXTNSprOrderLine/@AckStatus, our PO in CustomerPONo.
+        var xml = @"<?xml version=""1.0""?>
+<Order EnterpriseCode=""SPR"" BuyerOrganizationCode=""9999999.99"" CustomerPONo=""PO-OK-1"" OrderNo=""38000002"">
+  <OrderLines>
+    <OrderLine PrimeLineNo=""1"">
+      <OrderLineTranQuantity TransactionalUOM=""EA"" OrderedQty=""5"" />
+      <Item CustomerItem=""SKU-1"" />
+      <LinePriceInfo UnitPrice=""10.00"" />
+      <Extn><EXTNSprOrderLineList>
+        <EXTNSprOrderLine AckStatus=""A"" AckDesc=""ACCEPTED"" QtyShipped=""5"" QtyBackordered=""0"" />
+      </EXTNSprOrderLineList></Extn>
+    </OrderLine>
+  </OrderLines>
+  <Extn><EXTNSprOrderHeaderList>
+    <EXTNSprOrderHeader PoAckStatus=""A"" SprSoNum=""38000002"" />
+  </EXTNSprOrderHeaderList></Extn>
+</Order>";
+
+        var result = _sut.Parse(xml, dealerId: 1);
+
+        result.Success.Should().BeTrue();
+        result.Result!.IsError.Should().BeFalse();
+        result.Result.PoNumber.Should().Be("PO-OK-1");
+        result.Result.PartnerOrderNumber.Should().Be("38000002");
+        result.Result.Lines.Should().HaveCount(1);
+        result.Result.Lines.First().Status.Should().Be(PoAckLineStatus.Accepted);
+        result.Result.Lines.First().QuantityAcknowledged.Should().Be(5);
     }
 
     [Fact]

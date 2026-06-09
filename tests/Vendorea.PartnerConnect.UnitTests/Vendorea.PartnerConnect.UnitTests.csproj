@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.Contracts\Vendorea.PartnerConnect.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.Application\Vendorea.PartnerConnect.Application.csproj" />
     <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.PartnerAdapters\Vendorea.PartnerConnect.PartnerAdapters.csproj" />
+    <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.Infrastructure\Vendorea.PartnerConnect.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

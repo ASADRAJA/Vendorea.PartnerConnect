@@ -15,13 +15,16 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 public class AdminOrdersController : ControllerBase
 {
     private readonly IOrderRepository _orderRepository;
+    private readonly ISprOutboundOrderService _outboundOrderService;
     private readonly ILogger<AdminOrdersController> _logger;
 
     public AdminOrdersController(
         IOrderRepository orderRepository,
+        ISprOutboundOrderService outboundOrderService,
         ILogger<AdminOrdersController> logger)
     {
         _orderRepository = orderRepository;
+        _outboundOrderService = outboundOrderService;
         _logger = logger;
     }
 
@@ -129,6 +132,32 @@ public class AdminOrdersController : ControllerBase
         _logger.LogInformation("Acknowledged order {OrderId}", id);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Transmits the order to SPR as an outbound EZPO4 PO (generate -> strict XSD validate ->
+    /// SFTP send) and advances it to Processing. This is the explicit supplier-dispatch action
+    /// and is also the manual retry path; it is intentionally separate from acknowledge.
+    /// </summary>
+    [HttpPost("{id:int}/transmit")]
+    public async Task<IActionResult> TransmitOrder(int id, CancellationToken cancellationToken)
+    {
+        var result = await _outboundOrderService.TransmitOrderAsync(id, cancellationToken);
+
+        if (result.NotFound)
+            return NotFound();
+
+        if (result.InvalidState)
+            return BadRequest(new { error = result.ErrorMessage });
+
+        if (result.ValidationFailed)
+            return UnprocessableEntity(new { error = result.ErrorMessage, errors = result.Errors });
+
+        if (!result.Success)
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = result.ErrorMessage });
+
+        _logger.LogInformation("Transmitted order {OrderId} to SPR (document {DocumentId})", id, result.DocumentId);
+        return Ok(new { documentId = result.DocumentId, status = "Processing" });
     }
 
     /// <summary>

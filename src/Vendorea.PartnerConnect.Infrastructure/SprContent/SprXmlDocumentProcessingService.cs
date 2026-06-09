@@ -1,11 +1,14 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Canonical.Models;
+using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 using Vendorea.PartnerConnect.Domain.StateMachine;
 using Vendorea.PartnerConnect.PartnerAdapters.SPR;
+using Vendorea.PartnerConnect.Transport.Interfaces;
 using SprPoAck = Vendorea.PartnerConnect.Application.Interfaces.PurchaseOrderAcknowledgment;
 
 namespace Vendorea.PartnerConnect.Infrastructure.SprContent;
@@ -27,6 +30,10 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     private readonly ISprEzasnParser _asnParser;
     private readonly ISprEzinv4Parser _invoiceParser;
     private readonly ISprEzpo4Generator _orderGenerator;
+    private readonly IXsdValidationService _xsdValidationService;
+    private readonly IFileTransportClientFactory _transportClientFactory;
+    private readonly IOrderRepository _orderRepository;
+    private readonly IMerchant360Client _merchant360Client;
     private readonly ILogger<SprXmlDocumentProcessingService> _logger;
 
     public SprXmlDocumentProcessingService(
@@ -37,6 +44,10 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         ISprEzasnParser asnParser,
         ISprEzinv4Parser invoiceParser,
         ISprEzpo4Generator orderGenerator,
+        IXsdValidationService xsdValidationService,
+        IFileTransportClientFactory transportClientFactory,
+        IOrderRepository orderRepository,
+        IMerchant360Client merchant360Client,
         ILogger<SprXmlDocumentProcessingService> logger)
     {
         _documentRepository = documentRepository;
@@ -46,6 +57,10 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         _asnParser = asnParser;
         _invoiceParser = invoiceParser;
         _orderGenerator = orderGenerator;
+        _xsdValidationService = xsdValidationService;
+        _transportClientFactory = transportClientFactory;
+        _orderRepository = orderRepository;
+        _merchant360Client = merchant360Client;
         _logger = logger;
     }
 
@@ -198,6 +213,21 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return result;
             }
 
+            // Strict outbound conformance: the generated PO must validate against the real
+            // SPR EZPO4 schema before we ever persist or queue it for transport.
+            var xsdResult = await _xsdValidationService.ValidateAsync(
+                generateResult.XmlContent ?? string.Empty, "EZPO4", "SPR", cancellationToken);
+            if (!xsdResult.IsValid)
+            {
+                result.Errors.AddRange(xsdResult.Errors.Select(e => e.Message));
+                result.ErrorMessage = "Outbound EZPO4 failed XSD validation: "
+                    + string.Join("; ", xsdResult.Errors.Select(e => e.Message));
+                _logger.LogError(
+                    "Outbound EZPO4 for PO {PoNumber} failed XSD validation: {Error}",
+                    order.PoNumber, result.ErrorMessage);
+                return result;
+            }
+
             // Create PartnerDocument
             var partnerDocument = new PartnerDocument
             {
@@ -297,22 +327,65 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return result;
             }
 
-            // Document transport uses file-based mechanisms (SFTP), not SOAP.
-            // Mark the document as ready for transport by the outbound transport worker.
-            if (document.DocumentType == SprXmlDocumentType.EZPO4)
-            {
-                document.ProcessingStatus = SprXmlProcessingStatus.ReadyForTransport;
-                await _documentRepository.UpdateAsync(document, cancellationToken);
-
-                result.Success = true;
-                _logger.LogInformation(
-                    "Document {DocumentId} queued for file-based transport (SFTP)",
-                    documentId);
-            }
-            else
+            if (document.DocumentType != SprXmlDocumentType.EZPO4)
             {
                 result.ErrorMessage = "Send not supported for this document type";
+                return result;
             }
+
+            // Validate against the real SPR EZPO4 schema immediately before sending.
+            var sendValidation = await _xsdValidationService.ValidateAsync(
+                document.RawXmlContent ?? string.Empty, "EZPO4", "SPR", cancellationToken);
+            if (!sendValidation.IsValid)
+            {
+                document.ProcessingStatus = SprXmlProcessingStatus.Failed;
+                document.ProcessingErrors = "Outbound EZPO4 failed XSD validation before send: "
+                    + string.Join("; ", sendValidation.Errors.Select(e => e.Message));
+                await _documentRepository.UpdateAsync(document, cancellationToken);
+                result.ErrorMessage = document.ProcessingErrors;
+                return result;
+            }
+
+            var config = SprConfiguration.FromJson(connection.ConfigurationJson);
+            var credentials = SprCredentials.FromJson(connection.CredentialsJson);
+            var fileName = document.PartnerDocument!.FileName;
+            var remotePath = CombineRemotePath(config.SprXmlOutboundPath, fileName);
+
+            var connectionInfo = new TransportConnectionInfo(
+                Host: config.SftpHost,
+                // SPR XML order-exchange uses its own port (50022 by default), scoped here so
+                // it does not affect the price/inventory feed SFTP flows.
+                Port: config.SprXmlSftpPort,
+                Username: config.SftpUsername,
+                Password: credentials.SftpPassword,
+                PrivateKeyPath: credentials.PrivateKeyPath,
+                PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
+                ConnectionTimeout: TimeSpan.FromSeconds(config.ConnectionTimeoutSeconds));
+
+            // Direct upload to the final filename — SPR forbids temp-name + rename, and
+            // one outbound PurchaseOrder maps to exactly one EZPO4 file (one PO per file).
+            var client = _transportClientFactory.CreateSftpClient();
+            try
+            {
+                await client.ConnectAsync(connectionInfo, cancellationToken);
+                var bytes = Encoding.UTF8.GetBytes(document.RawXmlContent ?? string.Empty);
+                using var stream = new MemoryStream(bytes);
+                await client.UploadFileAsync(stream, remotePath, cancellationToken);
+                await client.DisconnectAsync(cancellationToken);
+            }
+            finally
+            {
+                await client.DisposeAsync();
+            }
+
+            document.ProcessingStatus = SprXmlProcessingStatus.Sent;
+            document.SentAt = DateTime.UtcNow;
+            await _documentRepository.UpdateAsync(document, cancellationToken);
+
+            result.Success = true;
+            _logger.LogInformation(
+                "Sent EZPO4 document {DocumentId} to SPR via SFTP {RemotePath} (port {Port})",
+                documentId, remotePath, config.SprXmlSftpPort);
         }
         catch (Exception ex)
         {
@@ -376,40 +449,173 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         CancellationToken cancellationToken)
     {
         var parseResult = _poackParser.Parse(xmlContent, dealerId, document.Id.ToString());
+        var poack = parseResult.Result;
 
-        if (parseResult.Success && parseResult.Result != null)
+        if (poack == null)
         {
-            var poack = parseResult.Result;
-            document.CanonicalType = nameof(SprPoAck);
-            document.CanonicalJson = JsonSerializer.Serialize(poack);
-            document.OrderNumber = poack.PoNumber;
-            document.BusinessReference = poack.PoNumber;
-            document.LineItemCount = poack.Lines.Count;
-            document.ProcessingStatus = SprXmlProcessingStatus.Completed;
+            // The parser produces an actionable (error) ack even for malformed input, so a null
+            // here is unexpected — record it without discarding the document.
+            document.ProcessingStatus = SprXmlProcessingStatus.Failed;
+            document.ProcessingErrors = parseResult.Errors.Count > 0
+                ? string.Join("; ", parseResult.Errors)
+                : "Failed to parse PO acknowledgment from XML";
+            result.Errors.AddRange(parseResult.Errors);
+            result.Warnings.AddRange(parseResult.Warnings);
+            return;
+        }
 
-            result.CanonicalType = nameof(SprPoAck);
-            result.BusinessReference = poack.PoNumber;
-            result.LineItemCount = poack.Lines.Count;
+        document.CanonicalType = nameof(SprPoAck);
+        document.CanonicalJson = JsonSerializer.Serialize(poack);
+        document.OrderNumber = poack.PoNumber;
+        document.BusinessReference = poack.PoNumber;
+        document.LineItemCount = poack.Lines.Count;
 
-            // Try to link to original PO
-            var originalDocs = await _documentRepository.GetByOrderNumberAsync(poack.PoNumber, cancellationToken);
-            var originalPo = originalDocs.FirstOrDefault(d =>
-                d.DocumentType == SprXmlDocumentType.EZPO4 &&
-                d.Direction == EdiDirection.Outbound);
+        result.CanonicalType = nameof(SprPoAck);
+        result.BusinessReference = poack.PoNumber;
+        result.LineItemCount = poack.Lines.Count;
 
-            if (originalPo != null)
+        // Correlate to the original outbound PO by PO number (CustomerPONo).
+        var originalDocs = await _documentRepository.GetByOrderNumberAsync(poack.PoNumber, cancellationToken);
+        var originalPo = originalDocs.FirstOrDefault(d =>
+            d.DocumentType == SprXmlDocumentType.EZPO4 &&
+            d.Direction == EdiDirection.Outbound);
+        if (originalPo != null)
+        {
+            document.OriginalDocumentId = originalPo.Id;
+        }
+
+        if (poack.IsError)
+        {
+            // ERROR ack — the order was NOT processed by SPR. Retain the raw returned document,
+            // mark not-processed, and surface a normalized failure downstream.
+            document.ProcessingStatus = SprXmlProcessingStatus.Failed;
+            document.ProcessingErrors = poack.ErrorMessage
+                ?? "SPR ERROR acknowledgement (order not processed)";
+            if (!string.IsNullOrWhiteSpace(poack.RawDocument))
             {
-                document.OriginalDocumentId = originalPo.Id;
+                document.RawXmlContent = poack.RawDocument;
             }
+
+            result.Warnings.Add($"SPR ERROR acknowledgement for PO {poack.PoNumber}: {document.ProcessingErrors}");
+            _logger.LogWarning(
+                "SPR ERROR ack received for PO {PoNumber}: {Error}",
+                poack.PoNumber, document.ProcessingErrors);
         }
         else
         {
-            document.ProcessingStatus = SprXmlProcessingStatus.Failed;
-            document.ProcessingErrors = string.Join("; ", parseResult.Errors);
-            result.Errors.AddRange(parseResult.Errors);
+            document.ProcessingStatus = SprXmlProcessingStatus.Completed;
         }
 
+        // Apply the ack to the originating order and surface the normalized status to Merchant360.
+        // Both the structured business-error and translation-error channels converge here so the
+        // downstream result is identical: not-processed / Failed for errors, Acknowledged otherwise.
+        await ApplyAckToOrderAsync(document, poack, dealerId, cancellationToken);
+
         result.Warnings.AddRange(parseResult.Warnings);
+    }
+
+    /// <summary>
+    /// Applies a parsed POACK to the originating order and pushes the normalized status to M360.
+    /// ERROR acks → Order.Failed + OrderStatusType.Failed ("SPR_ERROR_ACK"); successful acks →
+    /// Order.Acknowledged + OrderStatusType.Acknowledged. M360 push failures are logged, never
+    /// fatal to inbound processing.
+    /// </summary>
+    private async Task ApplyAckToOrderAsync(
+        SprXmlDocument document,
+        SprPoAck poack,
+        int dealerId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(poack.PoNumber))
+        {
+            // Nothing to correlate (raw already retained on the document for manual review).
+            return;
+        }
+
+        var orders = await _orderRepository.GetByPoNumberAsync(dealerId, poack.PoNumber, cancellationToken);
+        var order = orders.FirstOrDefault();
+        if (order == null)
+        {
+            _logger.LogWarning(
+                "POACK for PO {PoNumber} could not be correlated to an order (dealer {DealerId})",
+                poack.PoNumber, dealerId);
+            return;
+        }
+
+        var previousStatus = order.Status;
+        OrderStatusType m360StatusType;
+        string m360StatusCode;
+
+        if (poack.IsError)
+        {
+            order.Status = OrderStatus.Failed;
+            order.ErrorMessage = poack.ErrorMessage;
+            m360StatusType = OrderStatusType.Failed;
+            m360StatusCode = "SPR_ERROR_ACK";
+        }
+        else
+        {
+            order.Status = OrderStatus.Acknowledged;
+            order.AcknowledgedAt = DateTime.UtcNow;
+            m360StatusType = OrderStatusType.Acknowledged;
+            m360StatusCode = "SPR_POACK";
+        }
+
+        order.AcknowledgmentDocumentId = document.Id;
+        if (!string.IsNullOrWhiteSpace(poack.PartnerOrderNumber))
+        {
+            order.PartnerOrderNumber = poack.PartnerOrderNumber;
+        }
+        order.UpdatedAt = DateTime.UtcNow;
+
+        await _orderRepository.UpdateAsync(order, cancellationToken);
+        await _orderRepository.AddStatusHistoryAsync(new OrderStatusHistory
+        {
+            OrderId = order.Id,
+            FromStatus = previousStatus,
+            ToStatus = order.Status,
+            ChangedAt = DateTime.UtcNow,
+            Reason = poack.IsError
+                ? $"SPR ERROR ack (order not processed): {poack.ErrorMessage}"
+                : "SPR POACK received"
+        }, cancellationToken);
+
+        await SurfaceAckToM360Async(order, poack, document.Id, m360StatusType, m360StatusCode, cancellationToken);
+    }
+
+    private async Task SurfaceAckToM360Async(
+        Order order,
+        SprPoAck poack,
+        int sprDocumentId,
+        OrderStatusType statusType,
+        string statusCode,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var request = new OrderStatusUpdateRequest
+            {
+                TradingPartnerId = order.TradingPartnerId,
+                TradingPartnerCode = "SPR",
+                PoNumber = order.PoNumber,
+                SupplierOrderNumber = poack.PartnerOrderNumber,
+                StatusType = statusType,
+                StatusCode = statusCode,
+                StatusMessage = poack.IsError ? poack.ErrorMessage : poack.Notes,
+                StatusDate = DateTime.UtcNow,
+                SourceDocumentType = "EZPOACK",
+                SourceDocumentId = sprDocumentId
+            };
+
+            // merchantId == tenant id in the PC -> M360 push contract.
+            await _merchant360Client.PushOrderStatusUpdateAsync(order.TenantId, request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to surface SPR POACK status for PO {PoNumber} to Merchant360 (non-fatal)",
+                order.PoNumber);
+        }
     }
 
     private Task ProcessAsnAsync(
@@ -484,6 +690,14 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         return Task.CompletedTask;
     }
 
+    private static string CombineRemotePath(string directory, string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+            return fileName;
+
+        return directory.TrimEnd('/') + "/" + fileName.TrimStart('/');
+    }
+
     private static SprXmlDocumentType? DetectDocumentType(string xmlContent)
     {
         if (string.IsNullOrWhiteSpace(xmlContent))
@@ -500,8 +714,12 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             lowerContent.Contains("<fileheader") || lowerContent.Contains("<crmemo"))
             return SprXmlDocumentType.EZINV4;
 
+        // A POACK is the original order echoed back as <Order>, so it must be distinguished
+        // from an outbound EZPO4 by its acknowledgment-specific markers BEFORE the EZPO4 check.
         if (lowerContent.Contains("orderresponse") || lowerContent.Contains("<poack") ||
-            lowerContent.Contains("acknowledg"))
+            lowerContent.Contains("acknowledg") || lowerContent.Contains("poackstatus") ||
+            lowerContent.Contains("ackstatus") || lowerContent.Contains("sprsonum") ||
+            lowerContent.Contains("extnsprorderline") || lowerContent.Contains("<shipments"))
             return SprXmlDocumentType.EZPOACK;
 
         if (lowerContent.Contains("<order") && lowerContent.Contains("orderline"))

@@ -81,6 +81,7 @@ public class XsdValidationService : IXsdValidationService
 
             var settings = new XmlReaderSettings
             {
+                Async = true,
                 ValidationType = ValidationType.Schema,
                 Schemas = schemaSet,
                 ValidationFlags = XmlSchemaValidationFlags.ProcessIdentityConstraints |

@@ -1,14 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  SPR EZPOACK (Purchase Order Acknowledgment) Schema
+  SPR EZPOACK (Purchase Order Acknowledgment) Schema — NON-AUTHORITATIVE PLACEHOLDER
 
-  TODO: PRODUCTION REQUIREMENT
-  ============================
-  This is a PLACEHOLDER schema. The actual EZPOACK.xsd must be obtained from SPR
-  and placed here before production deployment. This placeholder only validates
-  basic XML structure matching SprPoackParser expectations.
+  IMPORTANT: This schema is NOT used to validate inbound POACKs.
+  ============================================================
+  Per SPR, there is no standalone EZPOACK XSD: a POACK is the original order echoed
+  back as an <Order> document (same shape as the EZPO4 PO) with acknowledgment data in
+  the Extn extensions (EXTNSprOrderLine/@AckStatus, EXTNSprOrderHeader/@PoAckStatus) and
+  a <Shipments> block — including response-only fields a PO schema does not define.
 
-  Contact SPR to obtain the official EZPOACK schema specification.
+  Because of that, and because ERROR acks may not conform to any success shape,
+  inbound POACKs are parsed LENIENTLY by SprPoackParser and are intentionally NOT run
+  through strict XSD validation. This file is retained only as a structural reference
+  for the legacy synthetic test fixtures; do not treat it as the SPR contract.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
 

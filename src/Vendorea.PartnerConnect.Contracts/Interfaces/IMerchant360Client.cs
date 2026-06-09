@@ -370,7 +370,14 @@ public enum OrderStatusType
     Invoiced = 50,
     Completed = 60,
     Cancelled = 70,
-    Backordered = 80
+    Backordered = 80,
+
+    /// <summary>
+    /// The order was not processed by the supplier (e.g. an SPR ERROR acknowledgement /
+    /// translation failure). Pair with a StatusCode such as "SPR_ERROR_ACK" and a normalized
+    /// StatusMessage. Downstream status value only — the frozen M360 intake contract is unchanged.
+    /// </summary>
+    Failed = 90
 }
 
 public class OrderLineStatusUpdate

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
@@ -9,9 +10,38 @@ namespace Vendorea.PartnerConnect.PartnerAdapters.SPR.Xml;
 
 /// <summary>
 /// Generates SPR EZPO4 Purchase Order XML documents from canonical PurchaseOrder models.
+///
+/// The output conforms to the authoritative SPR schema "06 SPR EZPO4 XML.XSD"
+/// (root element &lt;Order&gt;, no target namespace). Key rules enforced here:
+///   * the dealer PO number is sent as Order/@CustomerPONo (SPR assigns its own OrderNo,
+///     returned on the POACK) — this is the primary correlation key;
+///   * one PurchaseOrder produces exactly one &lt;Order&gt; document (one PO per file);
+///   * the child element sequence required by the XSD is:
+///     PersonInfoShipTo?, PersonInfoContact?, OrderLines, Instructions?, Notes?, Extn?;
+///   * within each OrderLine the sequence is:
+///     OrderLineTranQuantity, Item, Instructions?, LinePriceInfo, Notes?, Extn?.
+///
+/// This is intentionally scoped to a correct happy-path EZPO4; optional SPR routing/label
+/// attributes (and the DealerAttn correlation field) are deferred to a later pass.
 /// </summary>
 public class SprEzpo4Generator : ISprEzpo4Generator
 {
+    // Field length limits from the SPR EZPO4 XSD (used to keep output schema-valid).
+    private const int MaxCustomerPoNo = 100;
+    private const int MaxShipToName = 64;
+    private const int MaxAddressLine = 70;
+    private const int MaxCity = 35;
+    private const int MaxState = 35;
+    private const int MaxZip = 35;
+    private const int MaxCountry = 40;
+    private const int MaxEmail = 150;
+    private const int MaxPrimeLineNo = 5;
+    private const int MaxUom = 40;
+    private const int MaxOrderedQty = 14;
+    private const int MaxCustomerItem = 40;
+    private const int MaxBuyerItemNo = 25;
+    private const int MaxNoteText = 2000;
+
     private readonly ILogger<SprEzpo4Generator> _logger;
 
     public SprEzpo4Generator(ILogger<SprEzpo4Generator> logger)
@@ -29,20 +59,19 @@ public class SprEzpo4Generator : ISprEzpo4Generator
 
         try
         {
-            // Validate required fields
-            var validationErrors = ValidateOrder(order);
+            var validationErrors = ValidateOrder(order, buyerOrgCode);
             if (validationErrors.Count > 0)
             {
                 result.Errors.AddRange(validationErrors);
                 return result;
             }
 
-            var xml = GenerateOrderXml(order, enterpriseCode, buyerOrgCode, sellerOrgCode);
+            var xml = GenerateOrderXml(order, enterpriseCode, buyerOrgCode);
             result.XmlContent = xml;
             result.Success = true;
 
             _logger.LogInformation(
-                "Generated EZPO4 XML for PO {PoNumber} with {LineCount} lines",
+                "Generated EZPO4 XML for PO {PoNumber} (CustomerPONo) with {LineCount} lines",
                 order.PoNumber, order.Lines.Count);
         }
         catch (Exception ex)
@@ -54,23 +83,48 @@ public class SprEzpo4Generator : ISprEzpo4Generator
         return result;
     }
 
-    private static List<string> ValidateOrder(PurchaseOrder order)
+    /// <summary>
+    /// Enforces the fields the SPR EZPO4 XSD marks as required so generation fails fast
+    /// with actionable messages rather than producing a document SPR would reject.
+    /// </summary>
+    private static List<string> ValidateOrder(PurchaseOrder order, string buyerOrgCode)
     {
         var errors = new List<string>();
 
+        if (string.IsNullOrWhiteSpace(buyerOrgCode))
+            errors.Add("BuyerOrganizationCode is required (SPR account number)");
+
         if (string.IsNullOrWhiteSpace(order.PoNumber))
-            errors.Add("PO number is required");
+            errors.Add("PO number is required (sent as CustomerPONo)");
 
         if (order.Lines.Count == 0)
             errors.Add("At least one order line is required");
 
+        // PersonInfoShipTo is optional in the schema, but when present its FirstName,
+        // AddressLine1, City, State and ZipCode are required. SPR orders need a ship-to,
+        // so we require a complete one here.
         if (order.ShipTo == null)
+        {
             errors.Add("Ship-to address is required");
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(order.ShipTo.Name))
+                errors.Add("Ship-to name is required (PersonInfoShipTo/@FirstName)");
+            if (string.IsNullOrWhiteSpace(order.ShipTo.AddressLine1))
+                errors.Add("Ship-to AddressLine1 is required");
+            if (string.IsNullOrWhiteSpace(order.ShipTo.City))
+                errors.Add("Ship-to City is required");
+            if (string.IsNullOrWhiteSpace(order.ShipTo.State))
+                errors.Add("Ship-to State is required");
+            if (string.IsNullOrWhiteSpace(order.ShipTo.PostalCode))
+                errors.Add("Ship-to PostalCode is required (ZipCode)");
+        }
 
         foreach (var line in order.Lines)
         {
             if (string.IsNullOrWhiteSpace(line.PartnerSku))
-                errors.Add($"Line {line.LineNumber}: Partner SKU is required");
+                errors.Add($"Line {line.LineNumber}: Partner SKU is required (Item/@CustomerItem)");
 
             if (line.QuantityOrdered <= 0)
                 errors.Add($"Line {line.LineNumber}: Quantity must be greater than 0");
@@ -79,83 +133,103 @@ public class SprEzpo4Generator : ISprEzpo4Generator
         return errors;
     }
 
-    private string GenerateOrderXml(
-        PurchaseOrder order,
-        string enterpriseCode,
-        string buyerOrgCode,
-        string sellerOrgCode)
+    private string GenerateOrderXml(PurchaseOrder order, string enterpriseCode, string buyerOrgCode)
     {
-        // Create the Order element with SPR-specific attributes
+        // Order header attributes. Optional SPR routing flags are left to their schema
+        // defaults; only what we can populate from the canonical model is emitted.
         var orderElement = new XElement("Order",
+            new XAttribute("EnterpriseCode", string.IsNullOrWhiteSpace(enterpriseCode) ? "SPR" : enterpriseCode),
             new XAttribute("BuyerOrganizationCode", buyerOrgCode),
-            new XAttribute("DocumentType", "0001"),
-            new XAttribute("EnterpriseCode", enterpriseCode),
-            new XAttribute("OrderNo", order.PoNumber),
-            new XAttribute("OrderType", "SPR"),
-            new XAttribute("SellerOrganizationCode", sellerOrgCode));
+            new XAttribute("CustomerPONo", Truncate(order.PoNumber, MaxCustomerPoNo)));
 
-        // Add order date
-        if (order.OrderDate != default)
-        {
-            orderElement.Add(new XAttribute("OrderDate", order.OrderDate.ToString("yyyy-MM-dd")));
-        }
-
-        // Add currency
-        orderElement.Add(new XAttribute("Currency", order.Currency.ToString()));
-
-        // Add ship-to information
+        // 1. PersonInfoShipTo
         if (order.ShipTo != null)
         {
-            var shipToElement = CreatePersonInfoElement("PersonInfoShipTo", order.ShipTo);
-            orderElement.Add(shipToElement);
+            orderElement.Add(CreateShipToElement(order.ShipTo));
         }
 
-        // Add bill-to information
-        if (order.BillTo != null)
-        {
-            var billToElement = CreatePersonInfoElement("PersonInfoBillTo", order.BillTo);
-            orderElement.Add(billToElement);
-        }
+        // 2. (PersonInfoContact intentionally omitted — it is the ShipFrom node and optional.)
 
-        // Add order lines
+        // 3. OrderLines (required)
         var orderLinesElement = new XElement("OrderLines");
         foreach (var line in order.Lines)
         {
-            var lineElement = CreateOrderLineElement(line);
-            orderLinesElement.Add(lineElement);
+            orderLinesElement.Add(CreateOrderLineElement(line));
         }
         orderElement.Add(orderLinesElement);
 
-        // Add SPR extension fields
-        var extnElement = CreateExtensionElement(order);
-        orderElement.Add(extnElement);
+        // 4. (Instructions omitted.)
 
-        // Add shipping method if specified
-        if (!string.IsNullOrWhiteSpace(order.ShippingMethod) || !string.IsNullOrWhiteSpace(order.CarrierCode))
-        {
-            var shipmentElement = new XElement("OrderShipments",
-                new XElement("OrderShipment",
-                    !string.IsNullOrWhiteSpace(order.CarrierCode)
-                        ? new XAttribute("SCAC", order.CarrierCode)
-                        : null,
-                    !string.IsNullOrWhiteSpace(order.ShippingMethod)
-                        ? new XAttribute("ShipMethod", order.ShippingMethod)
-                        : null,
-                    order.RequestedShipDate.HasValue
-                        ? new XAttribute("RequestedShipDate", order.RequestedShipDate.Value.ToString("yyyy-MM-dd"))
-                        : null));
-            orderElement.Add(shipmentElement);
-        }
-
-        // Add notes if present
+        // 5. Notes (optional, order-level)
         if (!string.IsNullOrWhiteSpace(order.Notes))
         {
             orderElement.Add(new XElement("Notes",
                 new XElement("Note",
-                    new XAttribute("NoteText", order.Notes))));
+                    new XAttribute("ContactType", "C"),
+                    new XAttribute("NoteText", Truncate(order.Notes!, MaxNoteText)))));
         }
 
-        // Serialize to XML string with declaration
+        // 6. (Header Extn / EXTNSprOrderHeader omitted — DealerAttn correlation deferred.)
+
+        return SerializeDocument(orderElement);
+    }
+
+    private static XElement CreateShipToElement(Address address)
+    {
+        var element = new XElement("PersonInfoShipTo",
+            new XAttribute("FirstName", Truncate(address.Name!, MaxShipToName)),
+            new XAttribute("AddressLine1", Truncate(address.AddressLine1!, MaxAddressLine)),
+            new XAttribute("City", Truncate(address.City!, MaxCity)),
+            new XAttribute("State", Truncate(address.State!, MaxState)),
+            new XAttribute("ZipCode", Truncate(address.PostalCode!, MaxZip)));
+
+        if (!string.IsNullOrWhiteSpace(address.AddressLine2))
+            element.Add(new XAttribute("AddressLine2", Truncate(address.AddressLine2!, MaxAddressLine)));
+
+        if (!string.IsNullOrWhiteSpace(address.Country))
+            element.Add(new XAttribute("Country", Truncate(address.Country!, MaxCountry)));
+
+        if (!string.IsNullOrWhiteSpace(address.Email))
+            element.Add(new XAttribute("EMailID", Truncate(address.Email!, MaxEmail)));
+
+        return element;
+    }
+
+    private static XElement CreateOrderLineElement(PurchaseOrderLine line)
+    {
+        // Required child sequence: OrderLineTranQuantity, Item, Instructions?, LinePriceInfo, ...
+        var lineElement = new XElement("OrderLine",
+            new XAttribute("PrimeLineNo", Truncate(line.LineNumber.ToString(CultureInfo.InvariantCulture), MaxPrimeLineNo)));
+
+        lineElement.Add(new XElement("OrderLineTranQuantity",
+            new XAttribute("TransactionalUOM", Truncate(MapUnitOfMeasure(line.UnitOfMeasure), MaxUom)),
+            new XAttribute("OrderedQty", Truncate(line.QuantityOrdered.ToString(CultureInfo.InvariantCulture), MaxOrderedQty))));
+
+        lineElement.Add(new XElement("Item",
+            new XAttribute("CustomerItem", Truncate(line.PartnerSku, MaxCustomerItem))));
+
+        // LinePriceInfo/@UnitPrice is required by the schema (xs:decimal, up to 6 fraction digits).
+        lineElement.Add(new XElement("LinePriceInfo",
+            new XAttribute("UnitPrice", FormatDecimal(line.UnitPrice))));
+
+        // Optional line extension: carry the dealer SKU so it survives round-trips.
+        if (!string.IsNullOrWhiteSpace(line.DealerSku))
+        {
+            lineElement.Add(new XElement("Extn",
+                new XElement("EXTNSprOrderLineList",
+                    new XElement("EXTNSprOrderLine",
+                        new XAttribute("BuyerItemNo", Truncate(line.DealerSku!, MaxBuyerItemNo))))));
+        }
+
+        return lineElement;
+    }
+
+    private static string SerializeDocument(XElement root)
+    {
+        var document = new XDocument(
+            new XDeclaration("1.0", "utf-8", "yes"),
+            root);
+
         var settings = new XmlWriterSettings
         {
             Encoding = Encoding.UTF8,
@@ -163,125 +237,19 @@ public class SprEzpo4Generator : ISprEzpo4Generator
             OmitXmlDeclaration = false
         };
 
-        using var stringWriter = new StringWriter();
-        using var xmlWriter = XmlWriter.Create(stringWriter, settings);
-        orderElement.WriteTo(xmlWriter);
-        xmlWriter.Flush();
+        using var stringWriter = new Utf8StringWriter();
+        using (var xmlWriter = XmlWriter.Create(stringWriter, settings))
+        {
+            document.Save(xmlWriter);
+        }
 
         return stringWriter.ToString();
     }
 
-    private static XElement CreatePersonInfoElement(string elementName, Address address)
+    private static string FormatDecimal(decimal value)
     {
-        var element = new XElement(elementName);
-
-        if (!string.IsNullOrWhiteSpace(address.Name))
-            element.Add(new XAttribute("Company", address.Name));
-
-        if (!string.IsNullOrWhiteSpace(address.AddressLine1))
-            element.Add(new XAttribute("AddressLine1", address.AddressLine1));
-
-        if (!string.IsNullOrWhiteSpace(address.AddressLine2))
-            element.Add(new XAttribute("AddressLine2", address.AddressLine2));
-
-        if (!string.IsNullOrWhiteSpace(address.City))
-            element.Add(new XAttribute("City", address.City));
-
-        if (!string.IsNullOrWhiteSpace(address.State))
-            element.Add(new XAttribute("State", address.State));
-
-        if (!string.IsNullOrWhiteSpace(address.PostalCode))
-            element.Add(new XAttribute("ZipCode", address.PostalCode));
-
-        if (!string.IsNullOrWhiteSpace(address.Country))
-            element.Add(new XAttribute("Country", address.Country));
-
-        if (!string.IsNullOrWhiteSpace(address.Phone))
-            element.Add(new XAttribute("DayPhone", address.Phone));
-
-        if (!string.IsNullOrWhiteSpace(address.Email))
-            element.Add(new XAttribute("EMailID", address.Email));
-
-        return element;
-    }
-
-    private static XElement CreateOrderLineElement(PurchaseOrderLine line)
-    {
-        var lineElement = new XElement("OrderLine",
-            new XAttribute("PrimeLineNo", line.LineNumber.ToString()));
-
-        // Item details
-        var itemElement = new XElement("Item",
-            new XAttribute("ItemID", line.PartnerSku));
-
-        if (!string.IsNullOrWhiteSpace(line.Upc))
-            itemElement.Add(new XAttribute("UPCCode", line.Upc));
-
-        if (!string.IsNullOrWhiteSpace(line.Description))
-            itemElement.Add(new XAttribute("ItemShortDesc", TruncateString(line.Description, 200)));
-
-        lineElement.Add(itemElement);
-
-        // Quantity and pricing
-        var orderedQtyElement = new XElement("OrderLineTranQuantity",
-            new XAttribute("OrderedQty", line.QuantityOrdered.ToString()),
-            new XAttribute("TransactionalUOM", MapUnitOfMeasure(line.UnitOfMeasure)));
-        lineElement.Add(orderedQtyElement);
-
-        // Unit price
-        if (line.UnitPrice > 0)
-        {
-            lineElement.Add(new XAttribute("UnitPrice", line.UnitPrice.ToString("F4")));
-        }
-
-        // Buyer SKU reference
-        if (!string.IsNullOrWhiteSpace(line.DealerSku))
-        {
-            var extnElement = new XElement("Extn",
-                new XAttribute("ExtnBuyerSku", line.DealerSku));
-            lineElement.Add(extnElement);
-        }
-
-        // Requested delivery date for the line
-        if (line.RequestedDeliveryDate.HasValue)
-        {
-            lineElement.Add(new XAttribute("ReqDeliveryDate",
-                line.RequestedDeliveryDate.Value.ToString("yyyy-MM-dd")));
-        }
-
-        return lineElement;
-    }
-
-    private static XElement CreateExtensionElement(PurchaseOrder order)
-    {
-        var extnElement = new XElement("Extn");
-
-        // Add customer account number
-        if (!string.IsNullOrWhiteSpace(order.CustomerAccountNumber))
-        {
-            extnElement.Add(new XAttribute("ExtnCustomerAccountNo", order.CustomerAccountNumber));
-        }
-
-        // Add correlation ID for tracking
-        extnElement.Add(new XAttribute("ExtnCorrelationId", order.CorrelationId));
-
-        // Add dealer ID reference
-        extnElement.Add(new XAttribute("ExtnDealerId", order.DealerId.ToString()));
-
-        // Add requested dates if present
-        if (order.RequestedDeliveryDate.HasValue)
-        {
-            extnElement.Add(new XAttribute("ExtnReqDeliveryDate",
-                order.RequestedDeliveryDate.Value.ToString("yyyy-MM-dd")));
-        }
-
-        if (order.RequestedShipDate.HasValue)
-        {
-            extnElement.Add(new XAttribute("ExtnReqShipDate",
-                order.RequestedShipDate.Value.ToString("yyyy-MM-dd")));
-        }
-
-        return extnElement;
+        // xs:decimal with fractionDigits=6; invariant formatting, no thousands separators.
+        return Math.Round(value, 6).ToString("0.######", CultureInfo.InvariantCulture);
     }
 
     private static string MapUnitOfMeasure(Canonical.Enums.UnitOfMeasure uom)
@@ -298,11 +266,19 @@ public class SprEzpo4Generator : ISprEzpo4Generator
         };
     }
 
-    private static string TruncateString(string value, int maxLength)
+    private static string Truncate(string value, int maxLength)
     {
         if (string.IsNullOrEmpty(value))
             return value;
 
         return value.Length <= maxLength ? value : value.Substring(0, maxLength);
+    }
+
+    /// <summary>
+    /// StringWriter that reports UTF-8 so the XML declaration matches the bytes we send.
+    /// </summary>
+    private sealed class Utf8StringWriter : StringWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
     }
 }
