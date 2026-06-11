@@ -44,6 +44,15 @@ public interface IOutboxRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets messages in the given status, newest first (paged).
+    /// </summary>
+    Task<IReadOnlyList<OutboxMessage>> GetByStatusAsync(
+        OutboxMessageStatus status,
+        int skip = 0,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates a message.
     /// </summary>
     Task UpdateAsync(OutboxMessage message, CancellationToken cancellationToken = default);

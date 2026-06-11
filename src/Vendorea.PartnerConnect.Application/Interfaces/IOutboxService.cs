@@ -57,6 +57,25 @@ public interface IOutboxService
     Task<OutboxStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists failed (dead-lettered) messages for the ops/admin surface, newest first.
+    /// </summary>
+    Task<IReadOnlyList<OutboxMessage>> GetFailedMessagesAsync(
+        int skip = 0,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Manually requeues a single Failed/Cancelled message for delivery.
+    /// Returns false if the message is not found or is not in a replayable state.
+    /// </summary>
+    Task<bool> RequeueAsync(Guid messageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requeues all currently Failed messages (bounded) for delivery; returns the count requeued.
+    /// </summary>
+    Task<int> RequeueAllFailedAsync(int maxToRequeue = 500, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Cleans up old delivered messages.
     /// </summary>
     Task<int> CleanupAsync(

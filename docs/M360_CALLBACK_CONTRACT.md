@@ -86,8 +86,17 @@ per active subscribed merchant on the snapshot's trading partner; M360 pulls/ref
 - EZINV4 invoice/credit parsed → invoice callback (per document).
 - Inventory full-refresh snapshot applied → snapshot-applied notification (per merchant).
 
+## Ops: manual retry / replay
+Dead-lettered (Failed) callbacks can be inspected and replayed via the admin outbox surface:
+- `GET  /api/admin/outbox/stats` — pending/processing/retry/failed/delivered-24h counts.
+- `GET  /api/admin/outbox/failed?skip=&take=` — failed messages (type, correlationId, lastError, timestamps).
+- `POST /api/admin/outbox/{id}/retry` — replay one Failed/Cancelled message.
+- `POST /api/admin/outbox/retry-failed?max=` — replay all currently-failed messages.
+
+Requeue resets the retry budget and schedules immediate pickup by the worker; the prior `LastError`
+is retained for audit until the next attempt.
+
 ## Open items
 - Field-level conformance with M360's implemented request schemas (confirm in integration testing).
-- No admin/ops manual retry-replay surface for failed Outbox messages yet (recommended follow-up).
 - An explicit event-id header could be added if M360 prefers header-based idempotency over the
   natural keys above.

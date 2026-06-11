@@ -76,6 +76,21 @@ public class OutboxRepository : IOutboxRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<OutboxMessage>> GetByStatusAsync(
+        OutboxMessageStatus status,
+        int skip = 0,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.OutboxMessages
+            .Where(m => m.Status == status)
+            .OrderByDescending(m => m.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task UpdateAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
         _context.OutboxMessages.Update(message);

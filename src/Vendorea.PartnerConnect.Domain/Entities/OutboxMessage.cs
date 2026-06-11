@@ -120,6 +120,18 @@ public class OutboxMessage
         Status = OutboxMessageStatus.Processing;
         ProcessedAt = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Manually requeues the message for delivery (operator replay of a Failed/Cancelled message).
+    /// Resets the retry budget and schedules immediate pickup; the prior LastError is retained for
+    /// audit until the next attempt overwrites it.
+    /// </summary>
+    public void Requeue()
+    {
+        Status = OutboxMessageStatus.Pending;
+        RetryCount = 0;
+        NextRetryAt = null;
+    }
 }
 
 /// <summary>

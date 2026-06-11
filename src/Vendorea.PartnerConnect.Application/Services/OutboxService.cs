@@ -226,6 +226,58 @@ public class OutboxService : IOutboxService
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<OutboxMessage>> GetFailedMessagesAsync(
+        int skip = 0,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        return await _repository.GetByStatusAsync(OutboxMessageStatus.Failed, skip, take, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RequeueAsync(Guid messageId, CancellationToken cancellationToken = default)
+    {
+        var message = await _repository.GetByIdAsync(messageId, cancellationToken);
+        if (message == null)
+        {
+            return false;
+        }
+
+        // Only dead-lettered (Failed) or Cancelled messages can be manually replayed.
+        if (message.Status is not (OutboxMessageStatus.Failed or OutboxMessageStatus.Cancelled))
+        {
+            return false;
+        }
+
+        message.Requeue();
+        await _repository.UpdateAsync(message, cancellationToken);
+
+        _logger.LogInformation(
+            "Requeued outbox message {MessageId} ({MessageType}) for delivery",
+            message.Id, message.MessageType);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> RequeueAllFailedAsync(int maxToRequeue = 500, CancellationToken cancellationToken = default)
+    {
+        var failed = await _repository.GetByStatusAsync(OutboxMessageStatus.Failed, 0, maxToRequeue, cancellationToken);
+        if (failed.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var message in failed)
+        {
+            message.Requeue();
+        }
+        await _repository.UpdateRangeAsync(failed, cancellationToken);
+
+        _logger.LogInformation("Requeued {Count} failed outbox messages for delivery", failed.Count);
+        return failed.Count;
+    }
+
+    /// <inheritdoc />
     public async Task<int> CleanupAsync(
         TimeSpan olderThan,
         CancellationToken cancellationToken = default)
