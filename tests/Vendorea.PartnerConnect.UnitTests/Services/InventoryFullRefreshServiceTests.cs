@@ -27,6 +27,7 @@ public class InventoryFullRefreshServiceTests
             _snapshotRepoMock.Object,
             _itemRepoMock.Object,
             accountRepoMock.Object,
+            new Mock<ITenantRepository>().Object,
             new Mock<IOutboxService>().Object,
             _loggerMock.Object);
     }

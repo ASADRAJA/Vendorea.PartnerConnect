@@ -1,102 +1,76 @@
-# PC → Merchant360 Callback Contract — v1.0 (FROZEN)
+# PC → Merchant360 Callback Contract — v1.1 (reconciled to M360's inbound DTOs)
 
-Direct, fixed, authenticated PartnerConnect → Merchant360 lifecycle callbacks. Delivered
-reliably via the PC Outbox (retry/backoff). Payloads are **canonical and merchant-scoped**;
-**raw SPR/EDI XML is never sent to M360**. This is the frozen contract for the four lifecycle
-callbacks; field-level conformance should be confirmed against M360's implementation in
-integration testing.
+Direct, fixed, authenticated PartnerConnect → Merchant360 lifecycle callbacks, delivered reliably
+via the PC Outbox. **v1.1 aligns PC's outbound wire shape to Merchant360's actually-implemented
+inbound DTOs** (`PCOrderStatusCallbackRequest`, `PCShipmentCallbackRequest`, `PCInvoiceCallbackRequest`,
+`PCInventorySnapshotCallbackRequest`). Payloads are canonical; **no raw SPR/EDI XML to M360**.
 
-> Scope note: this freezes the PC→M360 **callback** contract. The M360→PC **order intake**
-> contract is separate and unchanged.
+## Endpoints (all `POST`)
 
-## Endpoints (all `POST`, merchant-scoped)
+| Callback | Route | Outbox message type |
+|---|---|---|
+| Order status | `/api/v1/partner-connect/merchants/{merchantId}/orders/status` | `Merchant360OrderStatus` |
+| Shipment | `…/merchants/{merchantId}/shipments` | `Merchant360Shipment` |
+| Invoice / credit | `…/merchants/{merchantId}/invoices` | `Merchant360Invoice` |
+| Inventory snapshot applied | `…/merchants/{merchantId}/inventory/snapshot` | `Merchant360InventorySnapshot` |
 
-| Callback | Route | PC client method | Outbox message type |
-|---|---|---|---|
-| Order status | `…/merchants/{merchantId}/orders/status` | `PushOrderStatusUpdateAsync` | `Merchant360OrderStatus` |
-| Shipment | `…/merchants/{merchantId}/shipments` | `PushShipmentUpdateAsync` | `Merchant360Shipment` |
-| Invoice / credit | `…/merchants/{merchantId}/invoices` | `PushInvoiceUpdateAsync` | `Merchant360Invoice` |
-| Inventory snapshot applied | `…/merchants/{merchantId}/inventory/snapshot` | `PushInventorySnapshotNotificationAsync` | `Merchant360InventorySnapshot` |
+### `{merchantId}` — the M360 merchant id (not PC's tenant id)
+M360 correlates each callback with `PCOrderIntegration.TenantId == {merchantId}`, where that is
+**M360's own merchant/tenant id**. PC stores it as `Tenant.ExternalId` (synced from M360), so PC
+sends `int.Parse(order.Tenant.ExternalId)` — **not** its internal `order.TenantId`. If a tenant has
+no numeric `ExternalId`, the callback is skipped + logged (it can't be M360-correlated).
 
-Base path prefix: `/api/v1/partner-connect`. `merchantId` == the PartnerConnect tenant id.
+## Auth
+M360's callback endpoints are `[AllowAnonymous]` and validate a single **`X-Api-Key`** header equal
+to M360's `PartnerConnect:InboundApiKey`. PC sends `X-Api-Key` (from `Merchant360:ApiKey`) on every
+call (its OAuth2 Bearer is ignored by these endpoints). **The shared key must match per environment.**
 
-## Auth expectations
-- **OAuth2 client-credentials** (bearer), scopes `merchant360.prices.write merchant360.content.write`
-  (and order/shipment/invoice/inventory write as M360 defines), with **`X-Api-Key` header fallback**.
-- Configured in the PC `Merchant360` settings section (`BaseUrl`, `TokenEndpoint`, `ClientId`,
-  `ClientSecret`, `ApiKey`). Tokens cached with a refresh buffer. **HTTPS in production.**
-- Both the API and BackgroundWorkers hosts use the same client/auth; callbacks enqueued by the API
-  are delivered by the worker.
+## Idempotency / event identity
+Every callback carries a unique **`eventId`** (a per-delivery GUID, persisted in the outbox row, so
+retries re-send the same id). M360 dedups order/shipment/invoice on `eventId`; inventory on
+`snapshotId`. M360 returns `200` with `isDuplicate=true` for a repeat — PC treats that as delivered.
 
-## Delivery, retry, idempotency
-- **At-least-once** via Outbox: exponential backoff `30s → 1m → 2m → 4m → 8m`, `MaxRetries=5`,
-  persisted status (`Pending/Processing/Delivered/Retry/Failed`) + `LastError`.
-- A non-2xx / unsuccessful response **fails the message → retried** (not lost). Enqueue failures at
-  the source are caught/logged and never corrupt core document/snapshot processing.
-- **Idempotency / event identity:** every payload carries `CorrelationId` (distributed-tracing id
-  for the order/document chain). M360 must **dedupe** on the natural key per callback:
-  - order status → `PoNumber` + `StatusType` + `SourceDocumentId`
-  - shipment → `ShipmentId` (+ `PoNumber`)
-  - invoice → `InvoiceNumber` (+ `PoNumber`)
-  - inventory → `SnapshotId`
-- Ordering is **not** guaranteed; consumers should apply by `StatusDate` / `AppliedAt` and the
-  natural key rather than arrival order.
+## Payloads (PC sends → M360 fields)
 
-## Payloads (canonical)
+**Order status — `orders/status`**
+`eventId`, `partnerConnectOrderId`, `correlationId`, `externalOrderId`, **`status`** (canonical
+string: `Acknowledged`/`Processing`/`Shipped`/`PartiallyShipped`/`Completed`/`Failed`),
+`partnerOrderNumber`, `occurredAt`, `errorCode` (e.g. `SPR_ERROR_ACK` on failure), `failureReason`.
+*(status is a string, not a numeric enum.)*
 
-### Order status — `OrderStatusUpdateRequest`
-`TradingPartnerId`, `TradingPartnerCode`, `PoNumber`, `SupplierOrderNumber`, `StatusType` (enum),
-`StatusCode`, `StatusMessage`, `StatusDate`, `SourceDocumentType`, `SourceDocumentId`,
-`LineUpdates[]`, **`PartnerConnectOrderId`**, **`CorrelationId`**, **`ExternalOrderId`**,
-**`PreviousStatus`**.
+**Shipment — `shipments`** (per-order envelope)
+`eventId`, `partnerConnectOrderId`, `correlationId`, `partnerOrderNumber`, `isComplete`,
+`shipments[]` where each is `{ shipmentId, carrier, trackingNumber, shippedAt, estimatedDelivery,
+lines[{ lineNumber, vendorSku, quantityShipped }] }`. One callback per manifest (single-element
+`shipments`); multiple shipments per order arrive over time.
 
-### Shipment — `ShipmentUpdateRequest`
-`TradingPartnerId`, `TradingPartnerCode`, `PoNumber`, `SupplierOrderNumber`, `ShipmentId`,
-`BillOfLadingNumber`, `CarrierCode`, `CarrierName`, `TrackingNumber`, `TrackingUrl`, `ShipMethod`,
-`ShipDate`, `EstimatedDeliveryDate`, `ActualDeliveryDate`, `ShipFrom`, `ShipTo`, `TotalWeight`,
-`WeightUnit`, `PackageCount`, `Lines[]` (`LineNumber`, `StockNumber`, `QuantityShipped`, `LotNumber`,
-`ExpirationDate`, `SerialNumber`), `Cartons[]`, **`PartnerConnectOrderId`**, **`CorrelationId`**,
-**`ExternalOrderId`**. One callback per shipment manifest (multiple shipments per order over time).
+**Invoice / credit — `invoices`**
+`eventId`, `partnerConnectOrderId`, `correlationId`, `invoiceNumber`, **`documentType`**
+(`Invoice`|`CreditMemo`), `invoiceDate`, `currency`, `subtotal`, `tax`, `shipping`, `total`,
+`lines[{ lineNumber, vendorSku, description, quantity, unitPrice, lineTotal }]`.
 
-### Invoice / credit — `InvoiceUpdateRequest`
-`TradingPartnerId`, `TradingPartnerCode`, `PoNumber`, `SupplierOrderNumber`, `InvoiceNumber`,
-`InvoiceDate`, `DueDate`, `PaymentTerms`, `SubTotal`, `TaxAmount`, `ShippingAmount`, `DiscountAmount`,
-`TotalAmount`, `Currency`, **`IsCreditMemo`**, `Lines[]` (`LineNumber`, `StockNumber`, `Description`,
-`Quantity`, `UnitPrice`, `ExtendedPrice`, `TaxAmount`, `DiscountAmount`), **`PartnerConnectOrderId`**,
-**`CorrelationId`**, **`ExternalOrderId`**. One callback per invoice/credit in a batched file;
-credit memos set `IsCreditMemo=true` (negative totals).
+**Inventory snapshot — `inventory/snapshot`** (lightweight)
+`eventId`, `tradingPartnerId`, **`snapshotId`** (integer PC snapshot id), `itemCount`, `generatedAt`.
+Summary only — no per-SKU data. One notification per active subscribed merchant.
 
-### Inventory snapshot applied — `SupplierInventorySnapshotNotificationRequest` (lightweight)
-`TradingPartnerId`, `TradingPartnerCode`, `SnapshotId`, `SourceSnapshotId`, `CorrelationId`,
-`InventoryDate`, `IsFullRefresh`, `AppliedAt`, `TotalItemCount`, `NewItemCount`, `UpdatedItemCount`,
-`RemovedItemCount`, `UnchangedItemCount`. **Counts only — not the full item list.** One notification
-per active subscribed merchant on the snapshot's trading partner; M360 pulls/refreshes detail.
-
-## Canonical status values
-
-`OrderStatusType`: `Acknowledged`, `Processing`, `PartiallyShipped`, `Shipped`, `Delivered`,
-`Invoiced`, `Completed`, `Cancelled`, `Backordered`, `Failed`.
-
-`StatusCode` (string, alongside the enum): e.g. `SPR_POACK` (success ack), `SPR_ERROR_ACK`
-(order not processed / translation failure). `PreviousStatus` carries the prior order status.
-
-## Triggers (PC side)
-- POACK processed → order status (`Acknowledged` / `Failed`).
-- EZASNS manifest parsed → shipment callback (per manifest).
-- EZINV4 invoice/credit parsed → invoice callback (per document).
-- Inventory full-refresh snapshot applied → snapshot-applied notification (per merchant).
+## Delivery, retry, terminal failures
+- Outbox-backed, at-least-once, exponential backoff (`30s → 8m`, `MaxRetries=5`), persisted status +
+  `LastError`.
+- **Transient failures** (network, 5xx, 408, 429) → retried with backoff.
+- **Permanent failures** (HTTP **4xx** other than 408/429 — e.g. M360 `400` for an unknown status or
+  failed correlation) → marked **Failed terminally, no retry churn**, available for manual replay.
+- Source-side enqueue failures are caught/logged and never corrupt core document/snapshot processing.
 
 ## Ops: manual retry / replay
-Dead-lettered (Failed) callbacks can be inspected and replayed via the admin outbox surface:
-- `GET  /api/admin/outbox/stats` — pending/processing/retry/failed/delivered-24h counts.
-- `GET  /api/admin/outbox/failed?skip=&take=` — failed messages (type, correlationId, lastError, timestamps).
-- `POST /api/admin/outbox/{id}/retry` — replay one Failed/Cancelled message.
-- `POST /api/admin/outbox/retry-failed?max=` — replay all currently-failed messages.
+- `GET  /api/admin/outbox/stats`, `GET /api/admin/outbox/failed?skip=&take=`
+- `POST /api/admin/outbox/{id}/retry`, `POST /api/admin/outbox/retry-failed?max=`
 
-Requeue resets the retry budget and schedules immediate pickup by the worker; the prior `LastError`
-is retained for audit until the next attempt.
+## Status responses (M360 → PC)
+`200` `PCCallbackResponse{ success, message, isDuplicate, integrationId, supplierStatus }` on
+success/duplicate; `400` on validation failure (unknown status, no correlation); `401` on bad key.
 
-## Open items
-- Field-level conformance with M360's implemented request schemas (confirm in integration testing).
-- An explicit event-id header could be added if M360 prefers header-based idempotency over the
-  natural keys above.
+## Remaining items
+- Confirm the shared `X-Api-Key` value matches in both environments before go-live.
+- `isComplete` is sent as `null` (M360 treats null as Shipped); a true partial/complete signal would
+  require richer shipment-completion tracking on the PC side (future).
+- M360's `PCShipmentLineDto` is summary-level (no lot/serial/expiry); PC omits those fields.

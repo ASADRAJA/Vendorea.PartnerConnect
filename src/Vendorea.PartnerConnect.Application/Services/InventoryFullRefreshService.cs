@@ -15,6 +15,7 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
     private readonly ISupplierInventorySnapshotRepository _snapshotRepository;
     private readonly ISupplierInventoryItemRepository _itemRepository;
     private readonly ITenantPartnerAccountRepository _tenantPartnerAccountRepository;
+    private readonly ITenantRepository _tenantRepository;
     private readonly IOutboxService _outboxService;
     private readonly ILogger<InventoryFullRefreshService> _logger;
     private const int MaxValidationErrorsToStore = 100;
@@ -23,12 +24,14 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
         ISupplierInventorySnapshotRepository snapshotRepository,
         ISupplierInventoryItemRepository itemRepository,
         ITenantPartnerAccountRepository tenantPartnerAccountRepository,
+        ITenantRepository tenantRepository,
         IOutboxService outboxService,
         ILogger<InventoryFullRefreshService> logger)
     {
         _snapshotRepository = snapshotRepository;
         _itemRepository = itemRepository;
         _tenantPartnerAccountRepository = tenantPartnerAccountRepository;
+        _tenantRepository = tenantRepository;
         _outboxService = outboxService;
         _logger = logger;
     }
@@ -304,13 +307,13 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
     {
         var accounts = await _tenantPartnerAccountRepository.GetByTradingPartnerIdAsync(
             snapshot.TradingPartnerId, cancellationToken);
-        var merchantIds = accounts
+        var pcTenantIds = accounts
             .Where(a => a.IsActive)
             .Select(a => a.TenantId)
             .Distinct()
             .ToList();
 
-        if (merchantIds.Count == 0)
+        if (pcTenantIds.Count == 0)
         {
             _logger.LogInformation(
                 "Snapshot {SnapshotId} applied but no active merchants subscribe to partner {PartnerId}",
@@ -319,34 +322,53 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
         }
 
         var totalItems = result.NewItems + result.UpdatedItems + result.UnchangedItems;
-        foreach (var merchantId in merchantIds)
+        var enqueued = 0;
+        foreach (var pcTenantId in pcTenantIds)
         {
+            // The M360 callback route is scoped by the M360 merchant id, which PC stores as
+            // Tenant.ExternalId (synced from M360) — not PC's internal tenant id.
+            var merchantId = await ResolveMerchantIdAsync(pcTenantId, cancellationToken);
+            if (merchantId == null)
+            {
+                _logger.LogWarning(
+                    "Tenant {TenantId} has no numeric ExternalId; skipping inventory snapshot callback", pcTenantId);
+                continue;
+            }
+
             var request = new SupplierInventorySnapshotNotificationRequest
             {
+                EventId = Guid.NewGuid().ToString(),
                 TradingPartnerId = snapshot.TradingPartnerId,
-                SnapshotId = snapshot.SnapshotId,
-                SourceSnapshotId = snapshot.Id,
-                CorrelationId = snapshot.CorrelationId,
-                InventoryDate = snapshot.InventoryDate,
-                IsFullRefresh = snapshot.IsFullRefresh,
-                AppliedAt = DateTime.UtcNow,
-                TotalItemCount = totalItems,
-                NewItemCount = result.NewItems,
-                UpdatedItemCount = result.UpdatedItems,
-                RemovedItemCount = result.RemovedItems,
-                UnchangedItemCount = result.UnchangedItems
+                SnapshotId = snapshot.Id,
+                ItemCount = totalItems,
+                GeneratedAt = snapshot.InventoryDate
             };
 
             await _outboxService.EnqueueAsync(
                 Merchant360OutboxMessageTypes.InventorySnapshot,
-                new Merchant360InventorySnapshotOutboxPayload { MerchantId = merchantId, Request = request },
+                new Merchant360InventorySnapshotOutboxPayload { MerchantId = merchantId.Value, Request = request },
                 correlationId: snapshot.CorrelationId,
                 cancellationToken: cancellationToken);
+            enqueued++;
         }
 
         _logger.LogInformation(
-            "Enqueued inventory snapshot notification for snapshot {SnapshotId} (new={New}, updated={Updated}, removed={Removed}) to {Merchants} merchant(s)",
-            snapshot.Id, result.NewItems, result.UpdatedItems, result.RemovedItems, merchantIds.Count);
+            "Enqueued {Enqueued} inventory snapshot notification(s) for snapshot {SnapshotId} (new={New}, updated={Updated}, removed={Removed})",
+            enqueued, snapshot.Id, result.NewItems, result.UpdatedItems, result.RemovedItems);
+    }
+
+    /// <summary>
+    /// Resolves the M360 merchant id (the callback route scope) for a PC tenant id via
+    /// Tenant.ExternalId. Returns null when the tenant has no numeric external id.
+    /// </summary>
+    private async Task<int?> ResolveMerchantIdAsync(int pcTenantId, CancellationToken cancellationToken)
+    {
+        var tenant = await _tenantRepository.GetByIdAsync(pcTenantId, cancellationToken);
+        if (tenant?.ExternalId != null && int.TryParse(tenant.ExternalId, out var merchantId))
+        {
+            return merchantId;
+        }
+        return null;
     }
 
     public async Task<SupplierInventorySnapshot?> GetCurrentSnapshotAsync(

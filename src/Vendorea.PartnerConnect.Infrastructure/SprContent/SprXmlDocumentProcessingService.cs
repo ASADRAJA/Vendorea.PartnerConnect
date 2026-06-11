@@ -34,6 +34,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     private readonly IXsdValidationService _xsdValidationService;
     private readonly IFileTransportClientFactory _transportClientFactory;
     private readonly IOrderRepository _orderRepository;
+    private readonly ITenantRepository _tenantRepository;
     private readonly IOutboxService _outboxService;
     private readonly ILogger<SprXmlDocumentProcessingService> _logger;
 
@@ -48,6 +49,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         IXsdValidationService xsdValidationService,
         IFileTransportClientFactory transportClientFactory,
         IOrderRepository orderRepository,
+        ITenantRepository tenantRepository,
         IOutboxService outboxService,
         ILogger<SprXmlDocumentProcessingService> logger)
     {
@@ -61,6 +63,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         _xsdValidationService = xsdValidationService;
         _transportClientFactory = transportClientFactory;
         _orderRepository = orderRepository;
+        _tenantRepository = tenantRepository;
         _outboxService = outboxService;
         _logger = logger;
     }
@@ -581,43 +584,45 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 : "SPR POACK received"
         }, cancellationToken);
 
-        await SurfaceAckToM360Async(order, poack, document.Id, m360StatusType, m360StatusCode, previousStatus, cancellationToken);
+        await SurfaceAckToM360Async(order, poack, m360StatusType, m360StatusCode, cancellationToken);
     }
 
     private async Task SurfaceAckToM360Async(
         Order order,
         SprPoAck poack,
-        int sprDocumentId,
         OrderStatusType statusType,
         string statusCode,
-        OrderStatus previousStatus,
         CancellationToken cancellationToken)
     {
         try
         {
+            var merchantId = await ResolveMerchantIdAsync(order.TenantId, cancellationToken);
+            if (merchantId == null)
+            {
+                _logger.LogWarning(
+                    "Order {OrderId} tenant {TenantId} has no numeric ExternalId; skipping M360 order-status callback",
+                    order.Id, order.TenantId);
+                return;
+            }
+
             var request = new OrderStatusUpdateRequest
             {
-                TradingPartnerId = order.TradingPartnerId,
-                TradingPartnerCode = "SPR",
-                PoNumber = order.PoNumber,
-                SupplierOrderNumber = poack.PartnerOrderNumber,
-                StatusType = statusType,
-                StatusCode = statusCode,
-                StatusMessage = poack.IsError ? poack.ErrorMessage : poack.Notes,
-                StatusDate = DateTime.UtcNow,
-                SourceDocumentType = "EZPOACK",
-                SourceDocumentId = sprDocumentId,
+                EventId = Guid.NewGuid().ToString(),
                 PartnerConnectOrderId = order.Id,
                 CorrelationId = order.CorrelationId.ToString(),
                 ExternalOrderId = order.ExternalOrderId,
-                PreviousStatus = previousStatus.ToString()
+                Status = ToCanonicalStatus(statusType),
+                PartnerOrderNumber = poack.PartnerOrderNumber,
+                OccurredAt = DateTime.UtcNow,
+                ErrorCode = poack.IsError ? statusCode : null,
+                FailureReason = poack.IsError ? poack.ErrorMessage : null
             };
 
-            // Deliver reliably via the outbox (retry/backoff/last-error + background worker)
-            // rather than a direct call. merchantId == tenant id in the PC -> M360 push contract.
+            // Deliver reliably via the outbox (retry/backoff/last-error + background worker).
+            // The callback route is scoped by the M360 merchant id (resolved from Tenant.ExternalId).
             await _outboxService.EnqueueAsync(
                 Merchant360OutboxMessageTypes.OrderStatus,
-                new Merchant360OrderStatusOutboxPayload { MerchantId = order.TenantId, Request = request },
+                new Merchant360OrderStatusOutboxPayload { MerchantId = merchantId.Value, Request = request },
                 correlationId: order.CorrelationId.ToString(),
                 cancellationToken: cancellationToken);
         }
@@ -628,6 +633,32 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 "Failed to enqueue SPR POACK status callback for PO {PoNumber} to Merchant360 (non-fatal)",
                 order.PoNumber);
         }
+    }
+
+    /// <summary>Maps the internal order status to M360's canonical status string.</summary>
+    private static string ToCanonicalStatus(OrderStatusType statusType) => statusType switch
+    {
+        OrderStatusType.Acknowledged => "Acknowledged",
+        OrderStatusType.Processing => "Processing",
+        OrderStatusType.PartiallyShipped => "PartiallyShipped",
+        OrderStatusType.Shipped => "Shipped",
+        OrderStatusType.Completed => "Completed",
+        OrderStatusType.Failed => "Failed",
+        _ => statusType.ToString()
+    };
+
+    /// <summary>
+    /// Resolves the M360 merchant id (the callback route scope) for a PC tenant id via
+    /// Tenant.ExternalId. Returns null when the tenant has no numeric external id.
+    /// </summary>
+    private async Task<int?> ResolveMerchantIdAsync(int pcTenantId, CancellationToken cancellationToken)
+    {
+        var tenant = await _tenantRepository.GetByIdAsync(pcTenantId, cancellationToken);
+        if (tenant?.ExternalId != null && int.TryParse(tenant.ExternalId, out var merchantId))
+        {
+            return merchantId;
+        }
+        return null;
     }
 
     /// <summary>
@@ -652,42 +683,43 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return;
             }
 
+            var merchantId = await ResolveMerchantIdAsync(order.TenantId, cancellationToken);
+            if (merchantId == null)
+            {
+                _logger.LogWarning("Order {OrderId} tenant has no numeric ExternalId; skipping M360 shipment callback", order.Id);
+                return;
+            }
+
+            // M360 expects a per-order envelope carrying one or more shipments.
             var request = new ShipmentUpdateRequest
             {
-                TradingPartnerId = order.TradingPartnerId,
-                TradingPartnerCode = "SPR",
-                PoNumber = order.PoNumber,
-                SupplierOrderNumber = shipment.PartnerOrderReference,
-                ShipmentId = shipment.ShipmentId,
-                CarrierCode = shipment.CarrierScac,
-                CarrierName = shipment.CarrierName,
-                TrackingNumber = shipment.TrackingNumber,
-                ShipMethod = shipment.ServiceLevel,
-                ShipDate = shipment.ShipDate,
-                EstimatedDeliveryDate = shipment.ExpectedDeliveryDate,
-                ActualDeliveryDate = shipment.ActualDeliveryDate,
-                ShipFrom = MapShipmentAddress(shipment.ShipFrom),
-                ShipTo = MapShipmentAddress(shipment.ShipTo),
-                TotalWeight = shipment.TotalWeight,
-                WeightUnit = shipment.WeightUnit,
-                PackageCount = shipment.PackageCount,
-                Lines = shipment.Lines.Select(l => new ShipmentLineItem
-                {
-                    LineNumber = l.LineNumber,
-                    StockNumber = l.PartnerSku,
-                    QuantityShipped = l.QuantityShipped,
-                    LotNumber = l.LotNumber,
-                    ExpirationDate = l.ExpirationDate,
-                    SerialNumber = l.SerialNumbers?.FirstOrDefault()
-                }).ToList(),
+                EventId = Guid.NewGuid().ToString(),
                 PartnerConnectOrderId = order.Id,
                 CorrelationId = order.CorrelationId.ToString(),
-                ExternalOrderId = order.ExternalOrderId
+                PartnerOrderNumber = shipment.PartnerOrderReference,
+                IsComplete = null,
+                Shipments = new List<ShipmentDto>
+                {
+                    new()
+                    {
+                        ShipmentId = shipment.ShipmentId,
+                        Carrier = shipment.CarrierName,
+                        TrackingNumber = shipment.TrackingNumber,
+                        ShippedAt = shipment.ShipDate,
+                        EstimatedDelivery = shipment.ExpectedDeliveryDate?.ToString("yyyy-MM-dd"),
+                        Lines = shipment.Lines.Select(l => new ShipmentLineDto
+                        {
+                            LineNumber = l.LineNumber,
+                            VendorSku = l.PartnerSku,
+                            QuantityShipped = l.QuantityShipped
+                        }).ToList()
+                    }
+                }
             };
 
             await _outboxService.EnqueueAsync(
                 Merchant360OutboxMessageTypes.Shipment,
-                new Merchant360ShipmentOutboxPayload { MerchantId = order.TenantId, Request = request },
+                new Merchant360ShipmentOutboxPayload { MerchantId = merchantId.Value, Request = request },
                 correlationId: order.CorrelationId.ToString(),
                 cancellationToken: cancellationToken);
         }
@@ -719,45 +751,43 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return;
             }
 
+            var merchantId = await ResolveMerchantIdAsync(order.TenantId, cancellationToken);
+            if (merchantId == null)
+            {
+                _logger.LogWarning("Order {OrderId} tenant has no numeric ExternalId; skipping M360 invoice callback", order.Id);
+                return;
+            }
+
             var isCreditMemo = invoice.TotalAmount < 0
                 || invoice.InvoiceNumber.StartsWith("CM-", StringComparison.OrdinalIgnoreCase);
 
             var request = new InvoiceUpdateRequest
             {
-                TradingPartnerId = order.TradingPartnerId,
-                TradingPartnerCode = "SPR",
-                PoNumber = order.PoNumber,
-                SupplierOrderNumber = invoice.PartnerOrderReference,
+                EventId = Guid.NewGuid().ToString(),
+                PartnerConnectOrderId = order.Id,
+                CorrelationId = order.CorrelationId.ToString(),
                 InvoiceNumber = invoice.InvoiceNumber,
+                DocumentType = isCreditMemo ? "CreditMemo" : "Invoice",
                 InvoiceDate = invoice.InvoiceDate,
-                DueDate = invoice.DueDate,
-                PaymentTerms = invoice.PaymentTerms,
-                SubTotal = invoice.Subtotal,
-                TaxAmount = invoice.TaxAmount,
-                ShippingAmount = invoice.ShippingAmount,
-                DiscountAmount = invoice.DiscountAmount,
-                TotalAmount = invoice.TotalAmount,
                 Currency = invoice.Currency.ToString(),
-                IsCreditMemo = isCreditMemo,
-                Lines = invoice.Lines.Select(l => new InvoiceLineItem
+                Subtotal = invoice.Subtotal,
+                Tax = invoice.TaxAmount,
+                Shipping = invoice.ShippingAmount,
+                Total = invoice.TotalAmount,
+                Lines = invoice.Lines.Select(l => new InvoiceLineDto
                 {
                     LineNumber = l.LineNumber,
-                    StockNumber = l.PartnerSku,
+                    VendorSku = l.PartnerSku,
                     Description = l.Description,
                     Quantity = l.QuantityInvoiced,
                     UnitPrice = l.UnitPrice,
-                    ExtendedPrice = l.QuantityInvoiced * l.UnitPrice,
-                    TaxAmount = l.TaxAmount,
-                    DiscountAmount = l.DiscountAmount
-                }).ToList(),
-                PartnerConnectOrderId = order.Id,
-                CorrelationId = order.CorrelationId.ToString(),
-                ExternalOrderId = order.ExternalOrderId
+                    LineTotal = l.QuantityInvoiced * l.UnitPrice
+                }).ToList()
             };
 
             await _outboxService.EnqueueAsync(
                 Merchant360OutboxMessageTypes.Invoice,
-                new Merchant360InvoiceOutboxPayload { MerchantId = order.TenantId, Request = request },
+                new Merchant360InvoiceOutboxPayload { MerchantId = merchantId.Value, Request = request },
                 correlationId: order.CorrelationId.ToString(),
                 cancellationToken: cancellationToken);
         }
@@ -766,20 +796,6 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             _logger.LogError(ex, "Failed to enqueue invoice callback for invoice {InvoiceNumber} (non-fatal)", invoice.InvoiceNumber);
         }
     }
-
-    private static ShipmentAddress? MapShipmentAddress(Address? a) =>
-        a == null
-            ? null
-            : new ShipmentAddress
-            {
-                Name = a.Name,
-                AddressLine1 = a.AddressLine1,
-                AddressLine2 = a.AddressLine2,
-                City = a.City,
-                State = a.State,
-                PostalCode = a.PostalCode,
-                Country = a.Country
-            };
 
     private async Task ProcessAsnAsync(
         SprXmlDocument document,

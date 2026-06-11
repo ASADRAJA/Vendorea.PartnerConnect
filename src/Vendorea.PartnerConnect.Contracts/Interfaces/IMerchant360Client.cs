@@ -354,33 +354,41 @@ public class CategoryBatchResponse
 /// <summary>
 /// Request to push order status updates to M360.
 /// </summary>
+/// <summary>
+/// Order-status callback body. Wire shape aligned to Merchant360's PCOrderStatusCallbackRequest
+/// (serialized camelCase by the HTTP client).
+/// </summary>
 public class OrderStatusUpdateRequest
 {
-    public int TradingPartnerId { get; set; }
-    public string TradingPartnerCode { get; set; } = string.Empty;
-    public string PoNumber { get; set; } = string.Empty;
-    public string? SupplierOrderNumber { get; set; }
-    public OrderStatusType StatusType { get; set; }
-    public string StatusCode { get; set; } = string.Empty;
-    public string? StatusMessage { get; set; }
-    public DateTime StatusDate { get; set; }
-    public string? SourceDocumentType { get; set; }
-    public int? SourceDocumentId { get; set; }
-    public List<OrderLineStatusUpdate> LineUpdates { get; set; } = new();
+    /// <summary>Unique event id for this delivery; M360 dedups on it (idempotency).</summary>
+    public string EventId { get; set; } = string.Empty;
 
-    // ----- Correlation fields (additive; let M360 locate and update local state) -----
-
-    /// <summary>PartnerConnect's internal order id.</summary>
+    /// <summary>PartnerConnect's internal order id (primary correlation key).</summary>
     public int? PartnerConnectOrderId { get; set; }
 
-    /// <summary>Distributed-tracing correlation id for the order/document chain.</summary>
+    /// <summary>Correlation id echoed from submission (secondary correlation key).</summary>
     public string? CorrelationId { get; set; }
 
-    /// <summary>The source-platform order id (e.g. the M360 order id) when available.</summary>
+    /// <summary>The external order id M360 sent at submission.</summary>
     public string? ExternalOrderId { get; set; }
 
-    /// <summary>The order status prior to this update.</summary>
-    public string? PreviousStatus { get; set; }
+    /// <summary>
+    /// Canonical supplier lifecycle status string:
+    /// Acknowledged / Processing / Shipped / PartiallyShipped / Completed / Failed.
+    /// </summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>Supplier's order/confirmation number, if assigned.</summary>
+    public string? PartnerOrderNumber { get; set; }
+
+    /// <summary>When the status change occurred.</summary>
+    public DateTime? OccurredAt { get; set; }
+
+    /// <summary>Canonical failure code when Status = Failed (e.g. "SPR_ERROR_ACK").</summary>
+    public string? ErrorCode { get; set; }
+
+    /// <summary>Human-readable failure reason when Status = Failed.</summary>
+    public string? FailureReason { get; set; }
 }
 
 public enum OrderStatusType
@@ -426,6 +434,7 @@ public class OrderStatusUpdateResult
     public string? NewStatus { get; set; }
     public int LinesUpdated { get; set; }
     public string? ErrorMessage { get; set; }
+    public int? HttpStatusCode { get; set; }
 }
 
 #endregion
@@ -435,69 +444,41 @@ public class OrderStatusUpdateResult
 /// <summary>
 /// Request to push shipment tracking information to M360.
 /// </summary>
+/// <summary>
+/// Shipment callback body. Wire shape aligned to Merchant360's PCShipmentCallbackRequest:
+/// a per-order envelope carrying one or more shipments.
+/// </summary>
 public class ShipmentUpdateRequest
 {
-    public int TradingPartnerId { get; set; }
-    public string TradingPartnerCode { get; set; } = string.Empty;
-    public string PoNumber { get; set; } = string.Empty;
-    public string? SupplierOrderNumber { get; set; }
-    public string ShipmentId { get; set; } = string.Empty;
-    public string? BillOfLadingNumber { get; set; }
-    public string? CarrierCode { get; set; }
-    public string? CarrierName { get; set; }
-    public string? TrackingNumber { get; set; }
-    public string? TrackingUrl { get; set; }
-    public string? ShipMethod { get; set; }
-    public DateTime? ShipDate { get; set; }
-    public DateTime? EstimatedDeliveryDate { get; set; }
-    public DateTime? ActualDeliveryDate { get; set; }
-    public ShipmentAddress? ShipFrom { get; set; }
-    public ShipmentAddress? ShipTo { get; set; }
-    public decimal? TotalWeight { get; set; }
-    public string? WeightUnit { get; set; }
-    public int? PackageCount { get; set; }
-    public List<ShipmentLineItem> Lines { get; set; } = new();
-    public List<ShipmentCarton> Cartons { get; set; } = new();
-
-    // ----- Correlation (additive; lets M360 locate and update local state) -----
+    public string EventId { get; set; } = string.Empty;
     public int? PartnerConnectOrderId { get; set; }
     public string? CorrelationId { get; set; }
-    public string? ExternalOrderId { get; set; }
+    public string? PartnerOrderNumber { get; set; }
+
+    /// <summary>When false, M360 treats the order as PartiallyShipped; otherwise Shipped.</summary>
+    public bool? IsComplete { get; set; }
+
+    public List<ShipmentDto> Shipments { get; set; } = new();
 }
 
-public class ShipmentAddress
+public class ShipmentDto
 {
-    public string? Name { get; set; }
-    public string? AddressLine1 { get; set; }
-    public string? AddressLine2 { get; set; }
-    public string? City { get; set; }
-    public string? State { get; set; }
-    public string? PostalCode { get; set; }
-    public string? Country { get; set; }
+    public string? ShipmentId { get; set; }
+    public string? Carrier { get; set; }
+    public string? TrackingNumber { get; set; }
+    public DateTime? ShippedAt { get; set; }
+
+    /// <summary>Estimated delivery (free-form string per M360's shape).</summary>
+    public string? EstimatedDelivery { get; set; }
+
+    public List<ShipmentLineDto> Lines { get; set; } = new();
 }
 
-public class ShipmentLineItem
+public class ShipmentLineDto
 {
     public int LineNumber { get; set; }
-    public string StockNumber { get; set; } = string.Empty;
-    public int QuantityShipped { get; set; }
-    public string? LotNumber { get; set; }
-    public DateTime? ExpirationDate { get; set; }
-    public string? SerialNumber { get; set; }
-}
-
-public class ShipmentCarton
-{
-    public string CartonId { get; set; } = string.Empty;
-    public string? TrackingNumber { get; set; }
-    public decimal? Weight { get; set; }
-    public List<ShipmentCartonItem> Items { get; set; } = new();
-}
-
-public class ShipmentCartonItem
-{
-    public string StockNumber { get; set; } = string.Empty;
-    public int Quantity { get; set; }
+    public string? VendorSku { get; set; }
+    public decimal QuantityShipped { get; set; }
 }
 
 public class ShipmentUpdateResult
@@ -508,6 +489,7 @@ public class ShipmentUpdateResult
     public string? ShipmentId { get; set; }
     public int LinesUpdated { get; set; }
     public string? ErrorMessage { get; set; }
+    public int? HttpStatusCode { get; set; }
 }
 
 #endregion
@@ -517,44 +499,36 @@ public class ShipmentUpdateResult
 /// <summary>
 /// Request to push invoice information to M360.
 /// </summary>
+/// <summary>
+/// Invoice/credit callback body. Wire shape aligned to Merchant360's PCInvoiceCallbackRequest.
+/// </summary>
 public class InvoiceUpdateRequest
 {
-    public int TradingPartnerId { get; set; }
-    public string TradingPartnerCode { get; set; } = string.Empty;
-    public string PoNumber { get; set; } = string.Empty;
-    public string? SupplierOrderNumber { get; set; }
-    public string InvoiceNumber { get; set; } = string.Empty;
-    public DateTime InvoiceDate { get; set; }
-    public DateTime? DueDate { get; set; }
-    public string? PaymentTerms { get; set; }
-    public decimal SubTotal { get; set; }
-    public decimal? TaxAmount { get; set; }
-    public decimal? ShippingAmount { get; set; }
-    public decimal? DiscountAmount { get; set; }
-    public decimal TotalAmount { get; set; }
-    public string? Currency { get; set; }
-
-    /// <summary>True when this document is a credit memo rather than a standard invoice.</summary>
-    public bool IsCreditMemo { get; set; }
-
-    public List<InvoiceLineItem> Lines { get; set; } = new();
-
-    // ----- Correlation (additive; lets M360 locate and update local state) -----
+    public string EventId { get; set; } = string.Empty;
     public int? PartnerConnectOrderId { get; set; }
     public string? CorrelationId { get; set; }
-    public string? ExternalOrderId { get; set; }
+    public string InvoiceNumber { get; set; } = string.Empty;
+
+    /// <summary>"Invoice" or "CreditMemo".</summary>
+    public string? DocumentType { get; set; }
+
+    public DateTime? InvoiceDate { get; set; }
+    public string? Currency { get; set; }
+    public decimal? Subtotal { get; set; }
+    public decimal? Tax { get; set; }
+    public decimal? Shipping { get; set; }
+    public decimal? Total { get; set; }
+    public List<InvoiceLineDto>? Lines { get; set; }
 }
 
-public class InvoiceLineItem
+public class InvoiceLineDto
 {
-    public int LineNumber { get; set; }
-    public string StockNumber { get; set; } = string.Empty;
+    public int? LineNumber { get; set; }
+    public string? VendorSku { get; set; }
     public string? Description { get; set; }
-    public int Quantity { get; set; }
-    public decimal UnitPrice { get; set; }
-    public decimal ExtendedPrice { get; set; }
-    public decimal? TaxAmount { get; set; }
-    public decimal? DiscountAmount { get; set; }
+    public decimal? Quantity { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public decimal? LineTotal { get; set; }
 }
 
 public class InvoiceUpdateResult
@@ -565,6 +539,7 @@ public class InvoiceUpdateResult
     public string? InvoiceNumber { get; set; }
     public int LinesProcessed { get; set; }
     public string? ErrorMessage { get; set; }
+    public int? HttpStatusCode { get; set; }
 }
 
 #endregion
@@ -638,21 +613,20 @@ public class InventorySnapshotResult
 /// item list). Posted to M360's inventory/snapshot endpoint when a full-refresh snapshot is
 /// applied, so M360 can pull or refresh detail on its side.
 /// </summary>
+/// <summary>
+/// Lightweight inventory snapshot-applied notification. Wire shape aligned to Merchant360's
+/// PCInventorySnapshotCallbackRequest (summary only — no per-SKU data).
+/// </summary>
 public class SupplierInventorySnapshotNotificationRequest
 {
+    public string EventId { get; set; } = string.Empty;
     public int TradingPartnerId { get; set; }
-    public string TradingPartnerCode { get; set; } = string.Empty;
-    public string SnapshotId { get; set; } = string.Empty;
-    public int SourceSnapshotId { get; set; }
-    public string? CorrelationId { get; set; }
-    public DateTime InventoryDate { get; set; }
-    public bool IsFullRefresh { get; set; } = true;
-    public DateTime AppliedAt { get; set; }
-    public int TotalItemCount { get; set; }
-    public int NewItemCount { get; set; }
-    public int UpdatedItemCount { get; set; }
-    public int RemovedItemCount { get; set; }
-    public int UnchangedItemCount { get; set; }
+
+    /// <summary>Integer PC snapshot id. M360 dedups inventory snapshots on this.</summary>
+    public int? SnapshotId { get; set; }
+
+    public int? ItemCount { get; set; }
+    public DateTime? GeneratedAt { get; set; }
 }
 
 public class InventorySnapshotNotificationResult
@@ -660,8 +634,9 @@ public class InventorySnapshotNotificationResult
     public bool Success { get; set; }
     public int MerchantId { get; set; }
     public int TradingPartnerId { get; set; }
-    public string? SnapshotId { get; set; }
+    public int? SnapshotId { get; set; }
     public string? ErrorMessage { get; set; }
+    public int? HttpStatusCode { get; set; }
 }
 
 #endregion

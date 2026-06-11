@@ -98,6 +98,11 @@ public class SprFlowSmokeTests
                 (_, payload, _, _, _, _) => harness.M360Invoice = payload.Request)
             .ReturnsAsync(Guid.NewGuid());
 
+        // PC tenant id -> M360 merchant id (Tenant.ExternalId) for the callback route scope.
+        var tenantRepo = new Mock<ITenantRepository>();
+        tenantRepo.Setup(r => r.GetByIdAsync(DealerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Tenant { Id = DealerId, ExternalId = "7000" });
+
         var schemaProvider = new XsdSchemaProvider(
             Options.Create(new XsdSchemaProviderOptions()), NullLogger<XsdSchemaProvider>.Instance);
         var validator = new XsdValidationService(schemaProvider, NullLogger<XsdValidationService>.Instance);
@@ -113,6 +118,7 @@ public class SprFlowSmokeTests
             validator,
             new Mock<IFileTransportClientFactory>().Object,
             orderRepo.Object,
+            tenantRepo.Object,
             outbox.Object,
             NullLogger<SprXmlDocumentProcessingService>.Instance);
 
@@ -203,11 +209,12 @@ public class SprFlowSmokeTests
         // Order marked Failed.
         order.Status.Should().Be(OrderStatus.Failed);
         order.ErrorMessage.Should().Contain("BAD STOCK #");
-        // Canonical failure surfaced to M360.
+        // Canonical failure surfaced to M360 (M360 wire shape).
         harness.M360Request.Should().NotBeNull();
-        harness.M360Request!.StatusType.Should().Be(OrderStatusType.Failed);
-        harness.M360Request.StatusCode.Should().Be("SPR_ERROR_ACK");
-        harness.M360Request.PoNumber.Should().Be("PO-ERR-1");
+        harness.M360Request!.Status.Should().Be("Failed");
+        harness.M360Request.ErrorCode.Should().Be("SPR_ERROR_ACK");
+        harness.M360Request.PartnerConnectOrderId.Should().Be(order.Id);
+        harness.M360Request.EventId.Should().NotBeNullOrEmpty();
     }
 
     // ---- Flow 3: translation-style ERROR ack (non-well-formed + appended message) ------------
@@ -234,9 +241,8 @@ ERROR: Translation failed - invalid UOM on line 1. Order not processed.";
         harness.AddedSprDoc.RawXmlContent.Should().Contain("Translation failed");
         // Order Failed + M360 failure payload.
         order.Status.Should().Be(OrderStatus.Failed);
-        harness.M360Request!.StatusType.Should().Be(OrderStatusType.Failed);
-        harness.M360Request.StatusCode.Should().Be("SPR_ERROR_ACK");
-        harness.M360Request.PoNumber.Should().Be("PO-TX-9");
+        harness.M360Request!.Status.Should().Be("Failed");
+        harness.M360Request.ErrorCode.Should().Be("SPR_ERROR_ACK");
     }
 
     // ---- Flow 4: normal successful POACK -----------------------------------------------------
@@ -270,8 +276,9 @@ ERROR: Translation failed - invalid UOM on line 1. Order not processed.";
         result.Success.Should().BeTrue();
         order.Status.Should().Be(OrderStatus.Acknowledged);
         order.PartnerOrderNumber.Should().Be("38000002");
-        harness.M360Request!.StatusType.Should().Be(OrderStatusType.Acknowledged);
-        harness.M360Request.StatusCode.Should().Be("SPR_POACK");
+        harness.M360Request!.Status.Should().Be("Acknowledged");
+        harness.M360Request.PartnerOrderNumber.Should().Be("38000002");
+        harness.M360Request.ErrorCode.Should().BeNull();
     }
 
     // ---- Flow 5: EZASNS shipment triggers a shipment callback --------------------------------
@@ -305,9 +312,10 @@ ERROR: Translation failed - invalid UOM on line 1. Order not processed.";
 
         result.Success.Should().BeTrue();
         harness.M360Shipment.Should().NotBeNull();
-        harness.M360Shipment!.ShipmentId.Should().Be("MAN-123456");
-        harness.M360Shipment.PoNumber.Should().Be("PO-12345");
-        harness.M360Shipment.TrackingNumber.Should().Be("1Z999AA10123456784");
+        harness.M360Shipment!.Shipments.Should().ContainSingle();
+        harness.M360Shipment.Shipments[0].ShipmentId.Should().Be("MAN-123456");
+        harness.M360Shipment.Shipments[0].TrackingNumber.Should().Be("1Z999AA10123456784");
+        harness.M360Shipment.EventId.Should().NotBeNullOrEmpty();
     }
 
     // ---- Flow 6: invoice batch triggers an invoice callback ----------------------------------
@@ -335,6 +343,7 @@ ERROR: Translation failed - invalid UOM on line 1. Order not processed.";
         result.Success.Should().BeTrue();
         harness.M360Invoice.Should().NotBeNull();
         harness.M360Invoice!.InvoiceNumber.Should().Be("INV-123456");
-        harness.M360Invoice.PoNumber.Should().Be("PO-12345");
+        harness.M360Invoice.DocumentType.Should().Be("Invoice");
+        harness.M360Invoice.Total.Should().Be(250.00m);
     }
 }

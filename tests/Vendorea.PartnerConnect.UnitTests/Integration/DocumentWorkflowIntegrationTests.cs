@@ -316,6 +316,7 @@ public class DocumentWorkflowIntegrationTests
             snapshotRepoMock.Object,
             itemRepoMock.Object,
             accountRepoMock.Object,
+            new Mock<ITenantRepository>().Object,
             new Mock<IOutboxService>().Object,
             loggerMock.Object);
 
@@ -396,6 +397,7 @@ public class DocumentWorkflowIntegrationTests
             snapshotRepoMock.Object,
             itemRepoMock.Object,
             accountRepoMock.Object,
+            new Mock<ITenantRepository>().Object,
             new Mock<IOutboxService>().Object,
             loggerMock.Object);
 

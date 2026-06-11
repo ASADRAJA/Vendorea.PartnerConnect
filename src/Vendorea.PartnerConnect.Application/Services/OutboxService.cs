@@ -198,6 +198,19 @@ public class OutboxService : IOutboxService
                 "Successfully delivered outbox message {MessageId}",
                 message.Id);
         }
+        catch (PermanentDeliveryException pex)
+        {
+            // Permanent (4xx validation-style) failure: do not churn through retries.
+            // Mark terminally Failed; it remains available for manual replay via the admin surface.
+            message.LastError = pex.Message;
+            message.Status = OutboxMessageStatus.Failed;
+            message.ProcessedAt = DateTime.UtcNow;
+            await _repository.UpdateAsync(message, cancellationToken);
+
+            _logger.LogWarning(
+                "Outbox message {MessageId} permanently failed (no retry): {Error}",
+                message.Id, pex.Message);
+        }
         catch (Exception ex)
         {
             message.LastError = ex.Message;
@@ -305,6 +318,15 @@ public record DocumentStateChangePayload
 }
 
 /// <summary>
+/// Thrown by a message processor when delivery failed permanently (a non-retryable client error,
+/// e.g. an HTTP 4xx other than 408/429). The outbox marks the message Failed without retrying.
+/// </summary>
+public class PermanentDeliveryException : Exception
+{
+    public PermanentDeliveryException(string message) : base(message) { }
+}
+
+/// <summary>
 /// Interface for processing outbox messages.
 /// </summary>
 public interface IOutboxMessageProcessor
@@ -386,11 +408,10 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
         var result = await _merchant360Client.PushOrderStatusUpdateAsync(
             payload.MerchantId, payload.Request, cancellationToken);
 
-        // Throw on a non-success result so the outbox schedules a retry with backoff.
+        // Non-success: permanent (4xx) -> terminal Failed (no retry); transient -> retry with backoff.
         if (result is { Success: false })
         {
-            throw new InvalidOperationException(
-                $"Merchant360 order status push failed: {result.ErrorMessage ?? "unsuccessful response"}");
+            ThrowDeliveryFailure("Merchant360 order status push", result.HttpStatusCode, result.ErrorMessage);
         }
     }
 
@@ -404,8 +425,7 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 
         if (result is { Success: false })
         {
-            throw new InvalidOperationException(
-                $"Merchant360 shipment push failed: {result.ErrorMessage ?? "unsuccessful response"}");
+            ThrowDeliveryFailure("Merchant360 shipment push", result.HttpStatusCode, result.ErrorMessage);
         }
     }
 
@@ -419,8 +439,7 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 
         if (result is { Success: false })
         {
-            throw new InvalidOperationException(
-                $"Merchant360 invoice push failed: {result.ErrorMessage ?? "unsuccessful response"}");
+            ThrowDeliveryFailure("Merchant360 invoice push", result.HttpStatusCode, result.ErrorMessage);
         }
     }
 
@@ -434,10 +453,26 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 
         if (result is { Success: false })
         {
-            throw new InvalidOperationException(
-                $"Merchant360 inventory snapshot notification failed: {result.ErrorMessage ?? "unsuccessful response"}");
+            ThrowDeliveryFailure("Merchant360 inventory snapshot notification", result.HttpStatusCode, result.ErrorMessage);
         }
     }
+
+    /// <summary>
+    /// Throws a permanent (no-retry) or transient (retry) delivery failure based on the HTTP status.
+    /// 4xx (except 408 Request Timeout / 429 Too Many Requests) is treated as permanent.
+    /// </summary>
+    private static void ThrowDeliveryFailure(string context, int? statusCode, string? error)
+    {
+        var message = $"{context} failed (HTTP {statusCode?.ToString() ?? "n/a"}): {error ?? "unsuccessful response"}";
+        if (IsPermanentFailure(statusCode))
+        {
+            throw new PermanentDeliveryException(message);
+        }
+        throw new InvalidOperationException(message);
+    }
+
+    private static bool IsPermanentFailure(int? statusCode) =>
+        statusCode is >= 400 and < 500 and not 408 and not 429;
 
     private async Task DeliverWebhookAsync(OutboxMessage message, CancellationToken cancellationToken)
     {

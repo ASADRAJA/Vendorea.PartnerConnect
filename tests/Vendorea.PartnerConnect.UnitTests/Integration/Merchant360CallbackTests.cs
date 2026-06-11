@@ -12,8 +12,8 @@ using Vendorea.PartnerConnect.Domain.Entities.Supplier;
 namespace Vendorea.PartnerConnect.UnitTests.Integration;
 
 /// <summary>
-/// Tests for the direct PC → Merchant360 lifecycle callbacks delivered via the outbox:
-/// order status, shipment, invoice, and inventory snapshot notification.
+/// Tests for the direct PC → Merchant360 lifecycle callbacks delivered via the outbox,
+/// using the wire shapes Merchant360 actually implements.
 /// </summary>
 public class Merchant360CallbackTests
 {
@@ -41,26 +41,49 @@ public class Merchant360CallbackTests
             new Merchant360OrderStatusOutboxPayload
             {
                 MerchantId = 42,
-                Request = new OrderStatusUpdateRequest { PoNumber = "PO-1", StatusType = OrderStatusType.Failed, StatusCode = "SPR_ERROR_ACK" }
+                Request = new OrderStatusUpdateRequest
+                {
+                    EventId = "evt-1",
+                    PartnerConnectOrderId = 7,
+                    Status = "Failed",
+                    ErrorCode = "SPR_ERROR_ACK"
+                }
             }));
 
         captured.Should().NotBeNull();
-        captured!.StatusCode.Should().Be("SPR_ERROR_ACK");
-        captured.PoNumber.Should().Be("PO-1");
+        captured!.Status.Should().Be("Failed");
+        captured.ErrorCode.Should().Be("SPR_ERROR_ACK");
+        captured.EventId.Should().Be("evt-1");
     }
 
     [Fact]
-    public async Task OutboxProcessor_OrderStatusUnsuccessful_ThrowsSoOutboxRetries()
+    public async Task OutboxProcessor_TransientFailure_ThrowsForRetry()
     {
         var client = new Mock<IMerchant360Client>();
         client.Setup(c => c.PushOrderStatusUpdateAsync(It.IsAny<int>(), It.IsAny<OrderStatusUpdateRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new OrderStatusUpdateResult { Success = false, ErrorMessage = "M360 down" });
+            .ReturnsAsync(new OrderStatusUpdateResult { Success = false, ErrorMessage = "M360 down", HttpStatusCode = 503 });
 
         var act = () => Processor(client.Object).ProcessAsync(Message(
             Merchant360OutboxMessageTypes.OrderStatus,
             new Merchant360OrderStatusOutboxPayload { MerchantId = 1 }));
 
+        // A 5xx is transient → InvalidOperationException → outbox schedules a retry.
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task OutboxProcessor_Permanent4xx_ThrowsPermanentDelivery_NoRetry()
+    {
+        var client = new Mock<IMerchant360Client>();
+        client.Setup(c => c.PushOrderStatusUpdateAsync(It.IsAny<int>(), It.IsAny<OrderStatusUpdateRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrderStatusUpdateResult { Success = false, ErrorMessage = "Unknown status", HttpStatusCode = 400 });
+
+        var act = () => Processor(client.Object).ProcessAsync(Message(
+            Merchant360OutboxMessageTypes.OrderStatus,
+            new Merchant360OrderStatusOutboxPayload { MerchantId = 1 }));
+
+        // A permanent 4xx → PermanentDeliveryException → outbox marks Failed without retrying.
+        await act.Should().ThrowAsync<PermanentDeliveryException>();
     }
 
     [Fact]
@@ -77,12 +100,20 @@ public class Merchant360CallbackTests
             new Merchant360ShipmentOutboxPayload
             {
                 MerchantId = 7,
-                Request = new ShipmentUpdateRequest { PoNumber = "PO-9", ShipmentId = "MAN-1", TrackingNumber = "1Z..." }
+                Request = new ShipmentUpdateRequest
+                {
+                    EventId = "evt-2",
+                    PartnerConnectOrderId = 9,
+                    Shipments = new List<ShipmentDto>
+                    {
+                        new() { ShipmentId = "MAN-1", TrackingNumber = "1Z..." }
+                    }
+                }
             }));
 
         captured.Should().NotBeNull();
-        captured!.ShipmentId.Should().Be("MAN-1");
-        captured.PoNumber.Should().Be("PO-9");
+        captured!.Shipments.Should().ContainSingle(s => s.ShipmentId == "MAN-1");
+        captured.EventId.Should().Be("evt-2");
     }
 
     [Fact]
@@ -99,11 +130,12 @@ public class Merchant360CallbackTests
             new Merchant360InvoiceOutboxPayload
             {
                 MerchantId = 7,
-                Request = new InvoiceUpdateRequest { PoNumber = "PO-9", InvoiceNumber = "INV-1", TotalAmount = 100m }
+                Request = new InvoiceUpdateRequest { EventId = "evt-3", InvoiceNumber = "INV-1", DocumentType = "Invoice", Total = 100m }
             }));
 
         captured.Should().NotBeNull();
         captured!.InvoiceNumber.Should().Be("INV-1");
+        captured.DocumentType.Should().Be("Invoice");
     }
 
     [Fact]
@@ -120,15 +152,15 @@ public class Merchant360CallbackTests
             new Merchant360InventorySnapshotOutboxPayload
             {
                 MerchantId = 10,
-                Request = new SupplierInventorySnapshotNotificationRequest { SnapshotId = "snap.csv", NewItemCount = 3 }
+                Request = new SupplierInventorySnapshotNotificationRequest { EventId = "evt-4", SnapshotId = 55, ItemCount = 3 }
             }));
 
         captured.Should().NotBeNull();
-        captured!.SnapshotId.Should().Be("snap.csv");
-        captured.NewItemCount.Should().Be(3);
+        captured!.SnapshotId.Should().Be(55);
+        captured.ItemCount.Should().Be(3);
     }
 
-    // ---- Inventory snapshot apply enqueues a notification per merchant -----------------------
+    // ---- Inventory snapshot apply enqueues a notification per merchant (M360 id) -------------
 
     [Fact]
     public async Task ApplySnapshot_EnqueuesSnapshotNotificationPerSubscribedMerchant()
@@ -163,6 +195,11 @@ public class Merchant360CallbackTests
                 new() { TenantId = 30, TradingPartnerId = 3, IsActive = false } // inactive: excluded
             });
 
+        // PC tenant id -> M360 merchant id via Tenant.ExternalId.
+        var tenantRepo = new Mock<ITenantRepository>();
+        tenantRepo.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(new Tenant { Id = 10, ExternalId = "100" });
+        tenantRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>())).ReturnsAsync(new Tenant { Id = 20, ExternalId = "200" });
+
         var enqueued = new List<Merchant360InventorySnapshotOutboxPayload>();
         var outbox = new Mock<IOutboxService>();
         outbox.Setup(o => o.EnqueueAsync(
@@ -180,6 +217,7 @@ public class Merchant360CallbackTests
             snapshotRepo.Object,
             new Mock<ISupplierInventoryItemRepository>().Object,
             accountRepo.Object,
+            tenantRepo.Object,
             outbox.Object,
             NullLogger<InventoryFullRefreshService>.Instance);
 
@@ -188,9 +226,9 @@ public class Merchant360CallbackTests
         result.Success.Should().BeTrue();
         result.NewItems.Should().Be(3);
 
-        // One lightweight notification per active merchant (2), carrying summary counts.
+        // One notification per active merchant, scoped by the resolved M360 merchant id.
         enqueued.Should().HaveCount(2);
-        enqueued.Select(p => p.MerchantId).Should().BeEquivalentTo(new[] { 10, 20 });
-        enqueued.Should().OnlyContain(p => p.Request.NewItemCount == 3 && p.Request.TotalItemCount == 3);
+        enqueued.Select(p => p.MerchantId).Should().BeEquivalentTo(new[] { 100, 200 });
+        enqueued.Should().OnlyContain(p => p.Request.ItemCount == 3 && p.Request.SnapshotId == 1);
     }
 }

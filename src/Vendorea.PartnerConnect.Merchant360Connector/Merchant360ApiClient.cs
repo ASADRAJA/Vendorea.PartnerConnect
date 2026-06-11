@@ -357,8 +357,8 @@ public class Merchant360ApiClient : IMerchant360Client
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Pushing order status update for merchant {MerchantId}, PO {PoNumber}, Status {StatusType}",
-            merchantId, request.PoNumber, request.StatusType);
+            "Pushing order status update for merchant {MerchantId}, PC order {OrderId}, Status {Status}, event {EventId}",
+            merchantId, request.PartnerConnectOrderId, request.Status, request.EventId);
 
         try
         {
@@ -372,34 +372,31 @@ public class Merchant360ApiClient : IMerchant360Client
                 var result = await response.Content.ReadFromJsonAsync<OrderStatusUpdateResult>(cancellationToken);
                 if (result != null)
                 {
-                    _logger.LogInformation(
-                        "Order status update success for merchant {MerchantId}, PO {PoNumber}",
-                        merchantId, request.PoNumber);
+                    result.HttpStatusCode = (int)response.StatusCode;
                     return result;
                 }
             }
 
             var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("Order status update failed for merchant {MerchantId}, PO {PoNumber}: {StatusCode} - {Error}",
-                merchantId, request.PoNumber, response.StatusCode, errorContent);
+            _logger.LogWarning("Order status update failed for merchant {MerchantId}, PC order {OrderId}: {StatusCode} - {Error}",
+                merchantId, request.PartnerConnectOrderId, response.StatusCode, errorContent);
 
             return new OrderStatusUpdateResult
             {
                 Success = false,
                 MerchantId = merchantId,
-                PoNumber = request.PoNumber,
-                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}",
+                HttpStatusCode = (int)response.StatusCode
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception while pushing order status for merchant {MerchantId}, PO {PoNumber}",
-                merchantId, request.PoNumber);
+            _logger.LogError(ex, "Exception while pushing order status for merchant {MerchantId}, PC order {OrderId}",
+                merchantId, request.PartnerConnectOrderId);
             return new OrderStatusUpdateResult
             {
                 Success = false,
                 MerchantId = merchantId,
-                PoNumber = request.PoNumber,
                 ErrorMessage = ex.Message
             };
         }
@@ -411,8 +408,8 @@ public class Merchant360ApiClient : IMerchant360Client
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Pushing shipment update for merchant {MerchantId}, PO {PoNumber}, Shipment {ShipmentId}",
-            merchantId, request.PoNumber, request.ShipmentId);
+            "Pushing shipment update for merchant {MerchantId}, PC order {OrderId}, {Count} shipment(s), event {EventId}",
+            merchantId, request.PartnerConnectOrderId, request.Shipments.Count, request.EventId);
 
         try
         {
@@ -426,36 +423,31 @@ public class Merchant360ApiClient : IMerchant360Client
                 var result = await response.Content.ReadFromJsonAsync<ShipmentUpdateResult>(cancellationToken);
                 if (result != null)
                 {
-                    _logger.LogInformation(
-                        "Shipment update success for merchant {MerchantId}, PO {PoNumber}, Shipment {ShipmentId}",
-                        merchantId, request.PoNumber, request.ShipmentId);
+                    result.HttpStatusCode = (int)response.StatusCode;
                     return result;
                 }
             }
 
             var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("Shipment update failed for merchant {MerchantId}, PO {PoNumber}: {StatusCode} - {Error}",
-                merchantId, request.PoNumber, response.StatusCode, errorContent);
+            _logger.LogWarning("Shipment update failed for merchant {MerchantId}, PC order {OrderId}: {StatusCode} - {Error}",
+                merchantId, request.PartnerConnectOrderId, response.StatusCode, errorContent);
 
             return new ShipmentUpdateResult
             {
                 Success = false,
                 MerchantId = merchantId,
-                PoNumber = request.PoNumber,
-                ShipmentId = request.ShipmentId,
-                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}",
+                HttpStatusCode = (int)response.StatusCode
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception while pushing shipment for merchant {MerchantId}, PO {PoNumber}",
-                merchantId, request.PoNumber);
+            _logger.LogError(ex, "Exception while pushing shipment for merchant {MerchantId}, PC order {OrderId}",
+                merchantId, request.PartnerConnectOrderId);
             return new ShipmentUpdateResult
             {
                 Success = false,
                 MerchantId = merchantId,
-                PoNumber = request.PoNumber,
-                ShipmentId = request.ShipmentId,
                 ErrorMessage = ex.Message
             };
         }
@@ -467,8 +459,8 @@ public class Merchant360ApiClient : IMerchant360Client
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Pushing invoice update for merchant {MerchantId}, PO {PoNumber}, Invoice {InvoiceNumber}",
-            merchantId, request.PoNumber, request.InvoiceNumber);
+            "Pushing invoice update for merchant {MerchantId}, PC order {OrderId}, Invoice {InvoiceNumber}, event {EventId}",
+            merchantId, request.PartnerConnectOrderId, request.InvoiceNumber, request.EventId);
 
         try
         {
@@ -482,35 +474,32 @@ public class Merchant360ApiClient : IMerchant360Client
                 var result = await response.Content.ReadFromJsonAsync<InvoiceUpdateResult>(cancellationToken);
                 if (result != null)
                 {
-                    _logger.LogInformation(
-                        "Invoice update success for merchant {MerchantId}, PO {PoNumber}, Invoice {InvoiceNumber}",
-                        merchantId, request.PoNumber, request.InvoiceNumber);
+                    result.HttpStatusCode = (int)response.StatusCode;
                     return result;
                 }
             }
 
             var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("Invoice update failed for merchant {MerchantId}, PO {PoNumber}: {StatusCode} - {Error}",
-                merchantId, request.PoNumber, response.StatusCode, errorContent);
+            _logger.LogWarning("Invoice update failed for merchant {MerchantId}, PC order {OrderId}: {StatusCode} - {Error}",
+                merchantId, request.PartnerConnectOrderId, response.StatusCode, errorContent);
 
             return new InvoiceUpdateResult
             {
                 Success = false,
                 MerchantId = merchantId,
-                PoNumber = request.PoNumber,
                 InvoiceNumber = request.InvoiceNumber,
-                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}",
+                HttpStatusCode = (int)response.StatusCode
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception while pushing invoice for merchant {MerchantId}, PO {PoNumber}",
-                merchantId, request.PoNumber);
+            _logger.LogError(ex, "Exception while pushing invoice for merchant {MerchantId}, PC order {OrderId}",
+                merchantId, request.PartnerConnectOrderId);
             return new InvoiceUpdateResult
             {
                 Success = false,
                 MerchantId = merchantId,
-                PoNumber = request.PoNumber,
                 InvoiceNumber = request.InvoiceNumber,
                 ErrorMessage = ex.Message
             };
@@ -648,9 +637,8 @@ public class Merchant360ApiClient : IMerchant360Client
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Pushing inventory snapshot notification for merchant {MerchantId}, TradingPartnerId {TradingPartnerId}, Snapshot {SnapshotId} (new={New}, updated={Updated}, removed={Removed})",
-            merchantId, request.TradingPartnerId, request.SnapshotId,
-            request.NewItemCount, request.UpdatedItemCount, request.RemovedItemCount);
+            "Pushing inventory snapshot notification for merchant {MerchantId}, TradingPartnerId {TradingPartnerId}, Snapshot {SnapshotId} (items={ItemCount}, event {EventId})",
+            merchantId, request.TradingPartnerId, request.SnapshotId, request.ItemCount, request.EventId);
 
         try
         {
@@ -664,6 +652,7 @@ public class Merchant360ApiClient : IMerchant360Client
                 var result = await response.Content.ReadFromJsonAsync<InventorySnapshotNotificationResult>(cancellationToken);
                 if (result != null)
                 {
+                    result.HttpStatusCode = (int)response.StatusCode;
                     return result;
                 }
             }
@@ -678,7 +667,8 @@ public class Merchant360ApiClient : IMerchant360Client
                 MerchantId = merchantId,
                 TradingPartnerId = request.TradingPartnerId,
                 SnapshotId = request.SnapshotId,
-                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}",
+                HttpStatusCode = (int)response.StatusCode
             };
         }
         catch (Exception ex)
