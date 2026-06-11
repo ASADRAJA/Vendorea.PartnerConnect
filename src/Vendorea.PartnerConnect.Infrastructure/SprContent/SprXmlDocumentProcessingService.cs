@@ -630,7 +630,158 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         }
     }
 
-    private Task ProcessAsnAsync(
+    /// <summary>
+    /// Correlates a parsed shipment notice to its order (by PO number) and enqueues a canonical
+    /// shipment callback to Merchant360 via the outbox. Non-fatal.
+    /// </summary>
+    private async Task SurfaceShipmentToM360Async(
+        ShipmentNotice shipment, int dealerId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(shipment.PoNumber))
+            {
+                _logger.LogWarning("ASN {ShipmentId} has no PO number; cannot correlate to a merchant", shipment.ShipmentId);
+                return;
+            }
+
+            var order = (await _orderRepository.GetByPoNumberAsync(dealerId, shipment.PoNumber!, cancellationToken)).FirstOrDefault();
+            if (order == null)
+            {
+                _logger.LogWarning("ASN for PO {PoNumber} could not be correlated to an order (dealer {DealerId})", shipment.PoNumber, dealerId);
+                return;
+            }
+
+            var request = new ShipmentUpdateRequest
+            {
+                TradingPartnerId = order.TradingPartnerId,
+                TradingPartnerCode = "SPR",
+                PoNumber = order.PoNumber,
+                SupplierOrderNumber = shipment.PartnerOrderReference,
+                ShipmentId = shipment.ShipmentId,
+                CarrierCode = shipment.CarrierScac,
+                CarrierName = shipment.CarrierName,
+                TrackingNumber = shipment.TrackingNumber,
+                ShipMethod = shipment.ServiceLevel,
+                ShipDate = shipment.ShipDate,
+                EstimatedDeliveryDate = shipment.ExpectedDeliveryDate,
+                ActualDeliveryDate = shipment.ActualDeliveryDate,
+                ShipFrom = MapShipmentAddress(shipment.ShipFrom),
+                ShipTo = MapShipmentAddress(shipment.ShipTo),
+                TotalWeight = shipment.TotalWeight,
+                WeightUnit = shipment.WeightUnit,
+                PackageCount = shipment.PackageCount,
+                Lines = shipment.Lines.Select(l => new ShipmentLineItem
+                {
+                    LineNumber = l.LineNumber,
+                    StockNumber = l.PartnerSku,
+                    QuantityShipped = l.QuantityShipped,
+                    LotNumber = l.LotNumber,
+                    ExpirationDate = l.ExpirationDate,
+                    SerialNumber = l.SerialNumbers?.FirstOrDefault()
+                }).ToList(),
+                PartnerConnectOrderId = order.Id,
+                CorrelationId = order.CorrelationId.ToString(),
+                ExternalOrderId = order.ExternalOrderId
+            };
+
+            await _outboxService.EnqueueAsync(
+                Merchant360OutboxMessageTypes.Shipment,
+                new Merchant360ShipmentOutboxPayload { MerchantId = order.TenantId, Request = request },
+                correlationId: order.CorrelationId.ToString(),
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enqueue shipment callback for ASN {ShipmentId} (non-fatal)", shipment.ShipmentId);
+        }
+    }
+
+    /// <summary>
+    /// Correlates a parsed invoice/credit to its order (by PO number) and enqueues a canonical
+    /// invoice callback to Merchant360 via the outbox. Non-fatal.
+    /// </summary>
+    private async Task SurfaceInvoiceToM360Async(
+        SupplierInvoice invoice, int dealerId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(invoice.PoNumber))
+            {
+                _logger.LogWarning("Invoice {InvoiceNumber} has no PO number; cannot correlate to a merchant", invoice.InvoiceNumber);
+                return;
+            }
+
+            var order = (await _orderRepository.GetByPoNumberAsync(dealerId, invoice.PoNumber!, cancellationToken)).FirstOrDefault();
+            if (order == null)
+            {
+                _logger.LogWarning("Invoice for PO {PoNumber} could not be correlated to an order (dealer {DealerId})", invoice.PoNumber, dealerId);
+                return;
+            }
+
+            var isCreditMemo = invoice.TotalAmount < 0
+                || invoice.InvoiceNumber.StartsWith("CM-", StringComparison.OrdinalIgnoreCase);
+
+            var request = new InvoiceUpdateRequest
+            {
+                TradingPartnerId = order.TradingPartnerId,
+                TradingPartnerCode = "SPR",
+                PoNumber = order.PoNumber,
+                SupplierOrderNumber = invoice.PartnerOrderReference,
+                InvoiceNumber = invoice.InvoiceNumber,
+                InvoiceDate = invoice.InvoiceDate,
+                DueDate = invoice.DueDate,
+                PaymentTerms = invoice.PaymentTerms,
+                SubTotal = invoice.Subtotal,
+                TaxAmount = invoice.TaxAmount,
+                ShippingAmount = invoice.ShippingAmount,
+                DiscountAmount = invoice.DiscountAmount,
+                TotalAmount = invoice.TotalAmount,
+                Currency = invoice.Currency.ToString(),
+                IsCreditMemo = isCreditMemo,
+                Lines = invoice.Lines.Select(l => new InvoiceLineItem
+                {
+                    LineNumber = l.LineNumber,
+                    StockNumber = l.PartnerSku,
+                    Description = l.Description,
+                    Quantity = l.QuantityInvoiced,
+                    UnitPrice = l.UnitPrice,
+                    ExtendedPrice = l.QuantityInvoiced * l.UnitPrice,
+                    TaxAmount = l.TaxAmount,
+                    DiscountAmount = l.DiscountAmount
+                }).ToList(),
+                PartnerConnectOrderId = order.Id,
+                CorrelationId = order.CorrelationId.ToString(),
+                ExternalOrderId = order.ExternalOrderId
+            };
+
+            await _outboxService.EnqueueAsync(
+                Merchant360OutboxMessageTypes.Invoice,
+                new Merchant360InvoiceOutboxPayload { MerchantId = order.TenantId, Request = request },
+                correlationId: order.CorrelationId.ToString(),
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enqueue invoice callback for invoice {InvoiceNumber} (non-fatal)", invoice.InvoiceNumber);
+        }
+    }
+
+    private static ShipmentAddress? MapShipmentAddress(Address? a) =>
+        a == null
+            ? null
+            : new ShipmentAddress
+            {
+                Name = a.Name,
+                AddressLine1 = a.AddressLine1,
+                AddressLine2 = a.AddressLine2,
+                City = a.City,
+                State = a.State,
+                PostalCode = a.PostalCode,
+                Country = a.Country
+            };
+
+    private async Task ProcessAsnAsync(
         SprXmlDocument document,
         string xmlContent,
         int dealerId,
@@ -641,7 +792,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
 
         if (parseResult.Success && parseResult.Result != null && parseResult.Result.Count > 0)
         {
-            var asn = parseResult.Result[0]; // Take first manifest as primary
+            var asn = parseResult.Result[0]; // primary manifest for document metadata
             document.CanonicalType = nameof(ShipmentNotice);
             document.CanonicalJson = JsonSerializer.Serialize(parseResult.Result);
             document.ManifestNumber = asn.ShipmentId;
@@ -653,6 +804,12 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             result.CanonicalType = nameof(ShipmentNotice);
             result.BusinessReference = asn.ShipmentId;
             result.LineItemCount = parseResult.LineItemCount;
+
+            // One shipment callback per manifest — supports multiple shipments per order over time.
+            foreach (var shipment in parseResult.Result)
+            {
+                await SurfaceShipmentToM360Async(shipment, dealerId, cancellationToken);
+            }
         }
         else
         {
@@ -662,10 +819,9 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         }
 
         result.Warnings.AddRange(parseResult.Warnings);
-        return Task.CompletedTask;
     }
 
-    private Task ProcessInvoiceAsync(
+    private async Task ProcessInvoiceAsync(
         SprXmlDocument document,
         string xmlContent,
         int dealerId,
@@ -676,7 +832,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
 
         if (parseResult.Success && parseResult.Result != null && parseResult.Result.Count > 0)
         {
-            var invoice = parseResult.Result[0]; // Take first invoice as primary
+            var invoice = parseResult.Result[0]; // primary invoice for document metadata
             document.CanonicalType = nameof(SupplierInvoice);
             document.CanonicalJson = JsonSerializer.Serialize(parseResult.Result);
             document.InvoiceNumber = invoice.InvoiceNumber;
@@ -690,6 +846,12 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             result.BusinessReference = invoice.InvoiceNumber;
             result.LineItemCount = parseResult.LineItemCount;
             result.TotalAmount = parseResult.TotalAmount;
+
+            // One invoice callback per invoice/credit in the batch.
+            foreach (var inv in parseResult.Result)
+            {
+                await SurfaceInvoiceToM360Async(inv, dealerId, cancellationToken);
+            }
         }
         else
         {
@@ -699,7 +861,6 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         }
 
         result.Warnings.AddRange(parseResult.Warnings);
-        return Task.CompletedTask;
     }
 
     private static string CombineRemotePath(string directory, string fileName)

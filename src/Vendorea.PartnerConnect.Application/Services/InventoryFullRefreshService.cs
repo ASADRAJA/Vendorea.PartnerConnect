@@ -19,9 +19,6 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
     private readonly ILogger<InventoryFullRefreshService> _logger;
     private const int MaxValidationErrorsToStore = 100;
 
-    // Max items per Merchant360 inventory batch callback; large change sets are chunked.
-    private const int InventoryCallbackChunkSize = 500;
-
     public InventoryFullRefreshService(
         ISupplierInventorySnapshotRepository snapshotRepository,
         ISupplierInventoryItemRepository itemRepository,
@@ -218,9 +215,8 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
                 }
             }
 
-            // Calculate changes, and collect the changed items for the incremental M360 callback.
+            // Calculate change counts (used by the lightweight snapshot-applied notification).
             var currentSkus = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var changedItems = new List<InventoryUpdateItem>();
             foreach (var item in snapshot.Items)
             {
                 currentSkus.Add(item.SupplierSku);
@@ -230,7 +226,6 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
                     if (HasChanged(item, prevItem))
                     {
                         result.UpdatedItems++;
-                        changedItems.Add(MapToUpdateItem(item));
                     }
                     else
                     {
@@ -240,17 +235,15 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
                 else
                 {
                     result.NewItems++;
-                    changedItems.Add(MapToUpdateItem(item));
                 }
             }
 
-            // Items in previous but not in current are "removed" — push them as zero/discontinued.
+            // Items in previous but not in current are "removed".
             foreach (var prevSku in previousItemsMap.Keys)
             {
                 if (!currentSkus.Contains(prevSku))
                 {
                     result.RemovedItems++;
-                    changedItems.Add(MapRemovedItem(previousItemsMap[prevSku]));
                 }
             }
 
@@ -278,16 +271,16 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
                 "Applied snapshot {SnapshotId}: New={New}, Updated={Updated}, Removed={Removed}, Unchanged={Unchanged}, Time={TimeMs}ms",
                 snapshotId, result.NewItems, result.UpdatedItems, result.RemovedItems, result.UnchangedItems, result.ApplyTimeMs);
 
-            // Push the incremental changes to every subscribed merchant via the outbox.
+            // Notify every subscribed merchant that a snapshot was applied (lightweight counts).
             // Non-fatal: a callback-enqueue failure must not undo a successfully applied snapshot.
             try
             {
-                await EnqueueInventoryCallbacksAsync(snapshot, changedItems, cancellationToken);
+                await EnqueueInventorySnapshotNotificationsAsync(snapshot, result, cancellationToken);
             }
             catch (Exception cbEx)
             {
                 _logger.LogError(cbEx,
-                    "Failed to enqueue inventory callbacks for snapshot {SnapshotId} (non-fatal)", snapshotId);
+                    "Failed to enqueue inventory snapshot notifications for snapshot {SnapshotId} (non-fatal)", snapshotId);
             }
         }
         catch (Exception ex)
@@ -301,20 +294,14 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
     }
 
     /// <summary>
-    /// Enqueues incremental inventory-batch callbacks (one per subscribed merchant per chunk)
-    /// to Merchant360 via the outbox. Inventory is partner-level, so it fans out to every active
-    /// tenant account on the snapshot's trading partner.
+    /// Enqueues a lightweight "snapshot applied" notification (summary counts only) to Merchant360
+    /// via the outbox, fanned out to every active tenant account on the snapshot's trading partner.
     /// </summary>
-    private async Task EnqueueInventoryCallbacksAsync(
+    private async Task EnqueueInventorySnapshotNotificationsAsync(
         SupplierInventorySnapshot snapshot,
-        List<InventoryUpdateItem> changedItems,
+        InventoryApplyResult result,
         CancellationToken cancellationToken)
     {
-        if (changedItems.Count == 0)
-        {
-            return;
-        }
-
         var accounts = await _tenantPartnerAccountRepository.GetByTradingPartnerIdAsync(
             snapshot.TradingPartnerId, cancellationToken);
         var merchantIds = accounts
@@ -326,62 +313,40 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
         if (merchantIds.Count == 0)
         {
             _logger.LogInformation(
-                "Snapshot {SnapshotId} applied with {Count} changes but no active merchants subscribe to partner {PartnerId}",
-                snapshot.Id, changedItems.Count, snapshot.TradingPartnerId);
+                "Snapshot {SnapshotId} applied but no active merchants subscribe to partner {PartnerId}",
+                snapshot.Id, snapshot.TradingPartnerId);
             return;
         }
 
-        var chunks = ChunkItems(changedItems, InventoryCallbackChunkSize);
-        var enqueued = 0;
+        var totalItems = result.NewItems + result.UpdatedItems + result.UnchangedItems;
         foreach (var merchantId in merchantIds)
         {
-            foreach (var chunk in chunks)
+            var request = new SupplierInventorySnapshotNotificationRequest
             {
-                await _outboxService.EnqueueAsync(
-                    Merchant360OutboxMessageTypes.InventoryBatch,
-                    new Merchant360InventoryBatchOutboxPayload
-                    {
-                        MerchantId = merchantId,
-                        TradingPartnerId = snapshot.TradingPartnerId,
-                        Items = chunk
-                    },
-                    correlationId: snapshot.CorrelationId,
-                    cancellationToken: cancellationToken);
-                enqueued++;
-            }
+                TradingPartnerId = snapshot.TradingPartnerId,
+                SnapshotId = snapshot.SnapshotId,
+                SourceSnapshotId = snapshot.Id,
+                CorrelationId = snapshot.CorrelationId,
+                InventoryDate = snapshot.InventoryDate,
+                IsFullRefresh = snapshot.IsFullRefresh,
+                AppliedAt = DateTime.UtcNow,
+                TotalItemCount = totalItems,
+                NewItemCount = result.NewItems,
+                UpdatedItemCount = result.UpdatedItems,
+                RemovedItemCount = result.RemovedItems,
+                UnchangedItemCount = result.UnchangedItems
+            };
+
+            await _outboxService.EnqueueAsync(
+                Merchant360OutboxMessageTypes.InventorySnapshot,
+                new Merchant360InventorySnapshotOutboxPayload { MerchantId = merchantId, Request = request },
+                correlationId: snapshot.CorrelationId,
+                cancellationToken: cancellationToken);
         }
 
         _logger.LogInformation(
-            "Enqueued {Enqueued} inventory batch callback(s) for snapshot {SnapshotId}: {Items} changed items x {Merchants} merchant(s)",
-            enqueued, snapshot.Id, changedItems.Count, merchantIds.Count);
-    }
-
-    private static InventoryUpdateItem MapToUpdateItem(SupplierInventoryItem item) =>
-        new(
-            StockNumber: item.SupplierSku,
-            QuantityAvailable: item.QuantityAvailable,
-            QuantityOnOrder: item.QuantityOnOrder,
-            WarehouseCode: null,
-            Status: item.Status.ToString(),
-            LastUpdated: DateTime.UtcNow);
-
-    private static InventoryUpdateItem MapRemovedItem(SupplierInventoryItem previous) =>
-        new(
-            StockNumber: previous.SupplierSku,
-            QuantityAvailable: 0,
-            QuantityOnOrder: 0,
-            WarehouseCode: null,
-            Status: InventoryItemStatus.Discontinued.ToString(),
-            LastUpdated: DateTime.UtcNow);
-
-    private static List<List<InventoryUpdateItem>> ChunkItems(List<InventoryUpdateItem> items, int size)
-    {
-        var chunks = new List<List<InventoryUpdateItem>>();
-        for (var i = 0; i < items.Count; i += size)
-        {
-            chunks.Add(items.GetRange(i, Math.Min(size, items.Count - i)));
-        }
-        return chunks;
+            "Enqueued inventory snapshot notification for snapshot {SnapshotId} (new={New}, updated={Updated}, removed={Removed}) to {Merchants} merchant(s)",
+            snapshot.Id, result.NewItems, result.UpdatedItems, result.RemovedItems, merchantIds.Count);
     }
 
     public async Task<SupplierInventorySnapshot?> GetCurrentSnapshotAsync(

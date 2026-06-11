@@ -642,6 +642,59 @@ public class Merchant360ApiClient : IMerchant360Client
         }
     }
 
+    public async Task<InventorySnapshotNotificationResult> PushInventorySnapshotNotificationAsync(
+        int merchantId,
+        SupplierInventorySnapshotNotificationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Pushing inventory snapshot notification for merchant {MerchantId}, TradingPartnerId {TradingPartnerId}, Snapshot {SnapshotId} (new={New}, updated={Updated}, removed={Removed})",
+            merchantId, request.TradingPartnerId, request.SnapshotId,
+            request.NewItemCount, request.UpdatedItemCount, request.RemovedItemCount);
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/v1/partner-connect/merchants/{merchantId}/inventory/snapshot",
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<InventorySnapshotNotificationResult>(cancellationToken);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Inventory snapshot notification failed for merchant {MerchantId}: {StatusCode} - {Error}",
+                merchantId, response.StatusCode, errorContent);
+
+            return new InventorySnapshotNotificationResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                TradingPartnerId = request.TradingPartnerId,
+                SnapshotId = request.SnapshotId,
+                ErrorMessage = $"API returned {response.StatusCode}: {errorContent}"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while pushing inventory snapshot notification for merchant {MerchantId}", merchantId);
+            return new InventorySnapshotNotificationResult
+            {
+                Success = false,
+                MerchantId = merchantId,
+                TradingPartnerId = request.TradingPartnerId,
+                SnapshotId = request.SnapshotId,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
     #endregion
 
     #region Subscription Management (Stub for Phase 1)

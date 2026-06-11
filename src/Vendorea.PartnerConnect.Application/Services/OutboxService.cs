@@ -306,8 +306,16 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
                 await DeliverMerchant360OrderStatusAsync(message, cancellationToken);
                 break;
 
-            case Merchant360OutboxMessageTypes.InventoryBatch:
-                await DeliverMerchant360InventoryBatchAsync(message, cancellationToken);
+            case Merchant360OutboxMessageTypes.Shipment:
+                await DeliverMerchant360ShipmentAsync(message, cancellationToken);
+                break;
+
+            case Merchant360OutboxMessageTypes.Invoice:
+                await DeliverMerchant360InvoiceAsync(message, cancellationToken);
+                break;
+
+            case Merchant360OutboxMessageTypes.InventorySnapshot:
+                await DeliverMerchant360InventorySnapshotAsync(message, cancellationToken);
                 break;
 
             default:
@@ -334,18 +342,48 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
         }
     }
 
-    private async Task DeliverMerchant360InventoryBatchAsync(OutboxMessage message, CancellationToken cancellationToken)
+    private async Task DeliverMerchant360ShipmentAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
-        var payload = JsonSerializer.Deserialize<Merchant360InventoryBatchOutboxPayload>(message.Payload, _deserializeOptions)
-            ?? throw new InvalidOperationException("Invalid Merchant360 inventory batch payload");
+        var payload = JsonSerializer.Deserialize<Merchant360ShipmentOutboxPayload>(message.Payload, _deserializeOptions)
+            ?? throw new InvalidOperationException("Invalid Merchant360 shipment payload");
 
-        var result = await _merchant360Client.UpdateInventoryAsync(
-            payload.MerchantId, payload.TradingPartnerId, payload.Items, cancellationToken);
+        var result = await _merchant360Client.PushShipmentUpdateAsync(
+            payload.MerchantId, payload.Request, cancellationToken);
 
         if (result is { Success: false })
         {
-            var error = result.Errors is { Count: > 0 } ? string.Join("; ", result.Errors) : "unsuccessful response";
-            throw new InvalidOperationException($"Merchant360 inventory batch push failed: {error}");
+            throw new InvalidOperationException(
+                $"Merchant360 shipment push failed: {result.ErrorMessage ?? "unsuccessful response"}");
+        }
+    }
+
+    private async Task DeliverMerchant360InvoiceAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Deserialize<Merchant360InvoiceOutboxPayload>(message.Payload, _deserializeOptions)
+            ?? throw new InvalidOperationException("Invalid Merchant360 invoice payload");
+
+        var result = await _merchant360Client.PushInvoiceUpdateAsync(
+            payload.MerchantId, payload.Request, cancellationToken);
+
+        if (result is { Success: false })
+        {
+            throw new InvalidOperationException(
+                $"Merchant360 invoice push failed: {result.ErrorMessage ?? "unsuccessful response"}");
+        }
+    }
+
+    private async Task DeliverMerchant360InventorySnapshotAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Deserialize<Merchant360InventorySnapshotOutboxPayload>(message.Payload, _deserializeOptions)
+            ?? throw new InvalidOperationException("Invalid Merchant360 inventory snapshot payload");
+
+        var result = await _merchant360Client.PushInventorySnapshotNotificationAsync(
+            payload.MerchantId, payload.Request, cancellationToken);
+
+        if (result is { Success: false })
+        {
+            throw new InvalidOperationException(
+                $"Merchant360 inventory snapshot notification failed: {result.ErrorMessage ?? "unsuccessful response"}");
         }
     }
 

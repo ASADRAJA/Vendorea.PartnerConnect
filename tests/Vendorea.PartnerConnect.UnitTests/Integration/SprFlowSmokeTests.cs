@@ -34,6 +34,8 @@ public class SprFlowSmokeTests
         public Order Order = null!;
         public SprXmlDocument? AddedSprDoc;
         public OrderStatusUpdateRequest? M360Request;
+        public ShipmentUpdateRequest? M360Shipment;
+        public InvoiceUpdateRequest? M360Invoice;
         public readonly List<OrderStatusHistory> History = new();
     }
 
@@ -82,6 +84,18 @@ public class SprFlowSmokeTests
                 It.IsAny<CancellationToken>()))
             .Callback<string, Merchant360OrderStatusOutboxPayload, string?, string?, int, CancellationToken>(
                 (_, payload, _, _, _, _) => harness.M360Request = payload.Request)
+            .ReturnsAsync(Guid.NewGuid());
+        outbox.Setup(o => o.EnqueueAsync(
+                It.IsAny<string>(), It.IsAny<Merchant360ShipmentOutboxPayload>(),
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<string, Merchant360ShipmentOutboxPayload, string?, string?, int, CancellationToken>(
+                (_, payload, _, _, _, _) => harness.M360Shipment = payload.Request)
+            .ReturnsAsync(Guid.NewGuid());
+        outbox.Setup(o => o.EnqueueAsync(
+                It.IsAny<string>(), It.IsAny<Merchant360InvoiceOutboxPayload>(),
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<string, Merchant360InvoiceOutboxPayload, string?, string?, int, CancellationToken>(
+                (_, payload, _, _, _, _) => harness.M360Invoice = payload.Request)
             .ReturnsAsync(Guid.NewGuid());
 
         var schemaProvider = new XsdSchemaProvider(
@@ -258,5 +272,69 @@ ERROR: Translation failed - invalid UOM on line 1. Order not processed.";
         order.PartnerOrderNumber.Should().Be("38000002");
         harness.M360Request!.StatusType.Should().Be(OrderStatusType.Acknowledged);
         harness.M360Request.StatusCode.Should().Be("SPR_POACK");
+    }
+
+    // ---- Flow 5: EZASNS shipment triggers a shipment callback --------------------------------
+
+    [Fact]
+    public async Task Flow5_Asn_EnqueuesShipmentCallback()
+    {
+        var harness = CreateHarness(NewOrder("PO-12345", OrderStatus.Processing));
+
+        var xml = @"<?xml version=""1.0""?>
+<manifest>
+    <manifest_header>
+        <manifest_id>MAN-123456</manifest_id>
+        <ship_date>2026-06-06</ship_date>
+        <carrier_name>UPS</carrier_name>
+        <scac_code>UPSS</scac_code>
+        <tracking_no>1Z999AA10123456784</tracking_no>
+        <service_level>Ground</service_level>
+    </manifest_header>
+    <sales_order customer_po_no=""PO-12345"" so_no=""SO-98765"">
+        <soline_group>
+            <item_id>SKU001</item_id>
+            <qty_shipped>10</qty_shipped>
+            <qty_ordered>10</qty_ordered>
+        </soline_group>
+    </sales_order>
+</manifest>";
+
+        var result = await harness.Service.ProcessInboundDocumentAsync(
+            ConnectionId, xml, "asn.xml", SprXmlDocumentType.EZASNS);
+
+        result.Success.Should().BeTrue();
+        harness.M360Shipment.Should().NotBeNull();
+        harness.M360Shipment!.ShipmentId.Should().Be("MAN-123456");
+        harness.M360Shipment.PoNumber.Should().Be("PO-12345");
+        harness.M360Shipment.TrackingNumber.Should().Be("1Z999AA10123456784");
+    }
+
+    // ---- Flow 6: invoice batch triggers an invoice callback ----------------------------------
+
+    [Fact]
+    public async Task Flow6_Invoice_EnqueuesInvoiceCallback()
+    {
+        var harness = CreateHarness(NewOrder("PO-12345", OrderStatus.Processing));
+
+        var xml = @"<?xml version=""1.0""?>
+<Invoices>
+    <FileHeader><FileId>FILE-001</FileId><FileDate>2026-06-06</FileDate><VendorId>SPR</VendorId></FileHeader>
+    <Invoice>
+        <InvNo>INV-123456</InvNo>
+        <InvDate>2026-06-05</InvDate>
+        <SOHeader><CustomerPONo>PO-12345</CustomerPONo><SONo>SO-98765</SONo></SOHeader>
+        <ItemDetail><ItemId>SKU001</ItemId><Description>Widget A</Description><Qty>10</Qty><UnitPrice>25.00</UnitPrice></ItemDetail>
+        <TotalAmount>250.00</TotalAmount>
+    </Invoice>
+</Invoices>";
+
+        var result = await harness.Service.ProcessInboundDocumentAsync(
+            ConnectionId, xml, "inv.xml", SprXmlDocumentType.EZINV4);
+
+        result.Success.Should().BeTrue();
+        harness.M360Invoice.Should().NotBeNull();
+        harness.M360Invoice!.InvoiceNumber.Should().Be("INV-123456");
+        harness.M360Invoice.PoNumber.Should().Be("PO-12345");
     }
 }

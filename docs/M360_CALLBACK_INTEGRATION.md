@@ -1,5 +1,11 @@
 # PC → Merchant360 Lifecycle Callbacks
 
+> **Superseded for the frozen state by [`M360_CALLBACK_CONTRACT.md`](./M360_CALLBACK_CONTRACT.md).**
+> After M360 stood up real shipment/invoice/inventory-snapshot endpoints, the reconciliation pass
+> wired all four callbacks (shipment + invoice now live; inventory switched from `/inventory/batch`
+> incremental to the `/inventory/snapshot` lightweight notification). This file is retained as the
+> history of the first (order-status + inventory) pass.
+
 Direct, fixed, authenticated PC → M360 lifecycle callbacks delivered reliably through the
 existing **Outbox** (no generic webhook subscription system). Polling fallback remains available.
 Payloads are canonical and merchant-scoped; **raw SPR XML is never exposed to M360**.

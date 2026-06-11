@@ -4,32 +4,44 @@ namespace Vendorea.PartnerConnect.Application.Services;
 
 /// <summary>
 /// Outbox message-type discriminators for direct PC → Merchant360 lifecycle callbacks.
-/// These are delivered reliably through the existing OutboxMessage pipeline (retry/backoff/
-/// last-error + background worker) rather than a generic webhook subscription system.
+/// Delivered reliably through the existing OutboxMessage pipeline (retry/backoff/last-error +
+/// background worker) rather than a generic webhook subscription system.
 /// </summary>
 public static class Merchant360OutboxMessageTypes
 {
     public const string OrderStatus = "Merchant360OrderStatus";
-    public const string InventoryBatch = "Merchant360InventoryBatch";
+    public const string Shipment = "Merchant360Shipment";
+    public const string Invoice = "Merchant360Invoice";
+    public const string InventorySnapshot = "Merchant360InventorySnapshot";
 }
 
-/// <summary>
-/// Outbox envelope for a Merchant360 order status callback. Carries the merchant id (route
-/// scope) and the canonical request, so the drain step can replay the exact call.
-/// </summary>
+/// <summary>Outbox envelope for a Merchant360 order status callback (POST …/orders/status).</summary>
 public record Merchant360OrderStatusOutboxPayload
 {
     public int MerchantId { get; init; }
     public OrderStatusUpdateRequest Request { get; init; } = new();
 }
 
-/// <summary>
-/// Outbox envelope for an incremental Merchant360 inventory batch callback
-/// (POST /merchants/{merchantId}/inventory/batch). One message per merchant per chunk.
-/// </summary>
-public record Merchant360InventoryBatchOutboxPayload
+/// <summary>Outbox envelope for a Merchant360 shipment callback (POST …/shipments).</summary>
+public record Merchant360ShipmentOutboxPayload
 {
     public int MerchantId { get; init; }
-    public int TradingPartnerId { get; init; }
-    public List<InventoryUpdateItem> Items { get; init; } = new();
+    public ShipmentUpdateRequest Request { get; init; } = new();
+}
+
+/// <summary>Outbox envelope for a Merchant360 invoice/credit callback (POST …/invoices).</summary>
+public record Merchant360InvoiceOutboxPayload
+{
+    public int MerchantId { get; init; }
+    public InvoiceUpdateRequest Request { get; init; } = new();
+}
+
+/// <summary>
+/// Outbox envelope for a Merchant360 inventory snapshot-applied notification
+/// (POST …/inventory/snapshot — lightweight summary counts).
+/// </summary>
+public record Merchant360InventorySnapshotOutboxPayload
+{
+    public int MerchantId { get; init; }
+    public SupplierInventorySnapshotNotificationRequest Request { get; init; } = new();
 }

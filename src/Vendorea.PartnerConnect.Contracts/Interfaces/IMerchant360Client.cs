@@ -99,6 +99,15 @@ public interface IMerchant360Client
         InventorySnapshotRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Pushes a lightweight "inventory snapshot applied" notification (summary counts) to M360.
+    /// Posted to the inventory/snapshot endpoint on full-refresh apply.
+    /// </summary>
+    Task<InventorySnapshotNotificationResult> PushInventorySnapshotNotificationAsync(
+        int merchantId,
+        SupplierInventorySnapshotNotificationRequest request,
+        CancellationToken cancellationToken = default);
+
     #endregion
 
     #region Subscription Management (Stub for Phase 1)
@@ -449,6 +458,11 @@ public class ShipmentUpdateRequest
     public int? PackageCount { get; set; }
     public List<ShipmentLineItem> Lines { get; set; } = new();
     public List<ShipmentCarton> Cartons { get; set; } = new();
+
+    // ----- Correlation (additive; lets M360 locate and update local state) -----
+    public int? PartnerConnectOrderId { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? ExternalOrderId { get; set; }
 }
 
 public class ShipmentAddress
@@ -519,7 +533,16 @@ public class InvoiceUpdateRequest
     public decimal? DiscountAmount { get; set; }
     public decimal TotalAmount { get; set; }
     public string? Currency { get; set; }
+
+    /// <summary>True when this document is a credit memo rather than a standard invoice.</summary>
+    public bool IsCreditMemo { get; set; }
+
     public List<InvoiceLineItem> Lines { get; set; } = new();
+
+    // ----- Correlation (additive; lets M360 locate and update local state) -----
+    public int? PartnerConnectOrderId { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? ExternalOrderId { get; set; }
 }
 
 public class InvoiceLineItem
@@ -608,6 +631,37 @@ public class InventorySnapshotResult
     public int ItemsRemoved { get; set; }
     public int? SyncLogId { get; set; }
     public List<string>? Errors { get; set; }
+}
+
+/// <summary>
+/// Lightweight "inventory snapshot applied" notification (summary counts only — not the full
+/// item list). Posted to M360's inventory/snapshot endpoint when a full-refresh snapshot is
+/// applied, so M360 can pull or refresh detail on its side.
+/// </summary>
+public class SupplierInventorySnapshotNotificationRequest
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string SnapshotId { get; set; } = string.Empty;
+    public int SourceSnapshotId { get; set; }
+    public string? CorrelationId { get; set; }
+    public DateTime InventoryDate { get; set; }
+    public bool IsFullRefresh { get; set; } = true;
+    public DateTime AppliedAt { get; set; }
+    public int TotalItemCount { get; set; }
+    public int NewItemCount { get; set; }
+    public int UpdatedItemCount { get; set; }
+    public int RemovedItemCount { get; set; }
+    public int UnchangedItemCount { get; set; }
+}
+
+public class InventorySnapshotNotificationResult
+{
+    public bool Success { get; set; }
+    public int MerchantId { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? SnapshotId { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 #endregion
