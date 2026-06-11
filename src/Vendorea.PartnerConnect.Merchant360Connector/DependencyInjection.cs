@@ -38,6 +38,9 @@ public static class DependencyInjection
         })
         .AddHttpMessageHandler<OAuth2TokenHandler>();
 
+        // Non-fatal startup heads-up if the shared inbound API key is missing/placeholder.
+        services.AddHostedService<Merchant360ConfigWarningService>();
+
         return services;
     }
 
