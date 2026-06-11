@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Application.Services;
 using Vendorea.PartnerConnect.Canonical.Models;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
@@ -33,7 +34,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     private readonly IXsdValidationService _xsdValidationService;
     private readonly IFileTransportClientFactory _transportClientFactory;
     private readonly IOrderRepository _orderRepository;
-    private readonly IMerchant360Client _merchant360Client;
+    private readonly IOutboxService _outboxService;
     private readonly ILogger<SprXmlDocumentProcessingService> _logger;
 
     public SprXmlDocumentProcessingService(
@@ -47,7 +48,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         IXsdValidationService xsdValidationService,
         IFileTransportClientFactory transportClientFactory,
         IOrderRepository orderRepository,
-        IMerchant360Client merchant360Client,
+        IOutboxService outboxService,
         ILogger<SprXmlDocumentProcessingService> logger)
     {
         _documentRepository = documentRepository;
@@ -60,7 +61,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         _xsdValidationService = xsdValidationService;
         _transportClientFactory = transportClientFactory;
         _orderRepository = orderRepository;
-        _merchant360Client = merchant360Client;
+        _outboxService = outboxService;
         _logger = logger;
     }
 
@@ -580,7 +581,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 : "SPR POACK received"
         }, cancellationToken);
 
-        await SurfaceAckToM360Async(order, poack, document.Id, m360StatusType, m360StatusCode, cancellationToken);
+        await SurfaceAckToM360Async(order, poack, document.Id, m360StatusType, m360StatusCode, previousStatus, cancellationToken);
     }
 
     private async Task SurfaceAckToM360Async(
@@ -589,6 +590,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         int sprDocumentId,
         OrderStatusType statusType,
         string statusCode,
+        OrderStatus previousStatus,
         CancellationToken cancellationToken)
     {
         try
@@ -604,16 +606,26 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 StatusMessage = poack.IsError ? poack.ErrorMessage : poack.Notes,
                 StatusDate = DateTime.UtcNow,
                 SourceDocumentType = "EZPOACK",
-                SourceDocumentId = sprDocumentId
+                SourceDocumentId = sprDocumentId,
+                PartnerConnectOrderId = order.Id,
+                CorrelationId = order.CorrelationId.ToString(),
+                ExternalOrderId = order.ExternalOrderId,
+                PreviousStatus = previousStatus.ToString()
             };
 
-            // merchantId == tenant id in the PC -> M360 push contract.
-            await _merchant360Client.PushOrderStatusUpdateAsync(order.TenantId, request, cancellationToken);
+            // Deliver reliably via the outbox (retry/backoff/last-error + background worker)
+            // rather than a direct call. merchantId == tenant id in the PC -> M360 push contract.
+            await _outboxService.EnqueueAsync(
+                Merchant360OutboxMessageTypes.OrderStatus,
+                new Merchant360OrderStatusOutboxPayload { MerchantId = order.TenantId, Request = request },
+                correlationId: order.CorrelationId.ToString(),
+                cancellationToken: cancellationToken);
         }
         catch (Exception ex)
         {
+            // Non-fatal: a callback-enqueue failure must never corrupt core document processing.
             _logger.LogError(ex,
-                "Failed to surface SPR POACK status for PO {PoNumber} to Merchant360 (non-fatal)",
+                "Failed to enqueue SPR POACK status callback for PO {PoNumber} to Merchant360 (non-fatal)",
                 order.PoNumber);
         }
     }

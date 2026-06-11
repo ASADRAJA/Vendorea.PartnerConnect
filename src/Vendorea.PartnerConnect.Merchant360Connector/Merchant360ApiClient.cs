@@ -541,7 +541,8 @@ public class Merchant360ApiClient : IMerchant360Client
             };
 
             var response = await _httpClient.PostAsJsonAsync(
-                $"/api/v1/partner-connect/merchants/{merchantId}/inventory",
+                // Documented M360 incremental inventory endpoint.
+                $"/api/v1/partner-connect/merchants/{merchantId}/inventory/batch",
                 request,
                 cancellationToken);
 

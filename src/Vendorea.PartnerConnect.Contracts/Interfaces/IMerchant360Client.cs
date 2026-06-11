@@ -358,6 +358,20 @@ public class OrderStatusUpdateRequest
     public string? SourceDocumentType { get; set; }
     public int? SourceDocumentId { get; set; }
     public List<OrderLineStatusUpdate> LineUpdates { get; set; } = new();
+
+    // ----- Correlation fields (additive; let M360 locate and update local state) -----
+
+    /// <summary>PartnerConnect's internal order id.</summary>
+    public int? PartnerConnectOrderId { get; set; }
+
+    /// <summary>Distributed-tracing correlation id for the order/document chain.</summary>
+    public string? CorrelationId { get; set; }
+
+    /// <summary>The source-platform order id (e.g. the M360 order id) when available.</summary>
+    public string? ExternalOrderId { get; set; }
+
+    /// <summary>The order status prior to this update.</summary>
+    public string? PreviousStatus { get; set; }
 }
 
 public enum OrderStatusType

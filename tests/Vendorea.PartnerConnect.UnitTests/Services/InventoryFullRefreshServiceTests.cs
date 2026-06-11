@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Application.Services;
+using Vendorea.PartnerConnect.Domain.Entities;
 using Vendorea.PartnerConnect.Domain.Entities.Supplier;
 
 namespace Vendorea.PartnerConnect.UnitTests.Services;
@@ -19,9 +20,14 @@ public class InventoryFullRefreshServiceTests
         _snapshotRepoMock = new Mock<ISupplierInventorySnapshotRepository>();
         _itemRepoMock = new Mock<ISupplierInventoryItemRepository>();
         _loggerMock = new Mock<ILogger<InventoryFullRefreshService>>();
+        var accountRepoMock = new Mock<ITenantPartnerAccountRepository>();
+        accountRepoMock.Setup(r => r.GetByTradingPartnerIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantPartnerAccount>());
         _sut = new InventoryFullRefreshService(
             _snapshotRepoMock.Object,
             _itemRepoMock.Object,
+            accountRepoMock.Object,
+            new Mock<IOutboxService>().Object,
             _loggerMock.Object);
     }
 

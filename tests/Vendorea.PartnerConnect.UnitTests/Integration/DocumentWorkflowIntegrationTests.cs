@@ -309,9 +309,14 @@ public class DocumentWorkflowIntegrationTests
         var itemRepoMock = new Mock<ISupplierInventoryItemRepository>();
         var loggerMock = new Mock<ILogger<InventoryFullRefreshService>>();
 
+        var accountRepoMock = new Mock<ITenantPartnerAccountRepository>();
+        accountRepoMock.Setup(r => r.GetByTradingPartnerIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantPartnerAccount>());
         var service = new InventoryFullRefreshService(
             snapshotRepoMock.Object,
             itemRepoMock.Object,
+            accountRepoMock.Object,
+            new Mock<IOutboxService>().Object,
             loggerMock.Object);
 
         var tradingPartnerId = 1;
@@ -384,9 +389,14 @@ public class DocumentWorkflowIntegrationTests
         var itemRepoMock = new Mock<ISupplierInventoryItemRepository>();
         var loggerMock = new Mock<ILogger<InventoryFullRefreshService>>();
 
+        var accountRepoMock = new Mock<ITenantPartnerAccountRepository>();
+        accountRepoMock.Setup(r => r.GetByTradingPartnerIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantPartnerAccount>());
         var service = new InventoryFullRefreshService(
             snapshotRepoMock.Object,
             itemRepoMock.Object,
+            accountRepoMock.Object,
+            new Mock<IOutboxService>().Object,
             loggerMock.Object);
 
         var snapshotId = 100;

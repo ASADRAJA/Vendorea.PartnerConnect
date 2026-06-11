@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Application.Services;
@@ -268,13 +269,23 @@ public interface IOutboxMessageProcessor
 public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IMerchant360Client _merchant360Client;
     private readonly ILogger<DefaultOutboxMessageProcessor> _logger;
+
+    // Deserialization mirror of OutboxService's camelCase serialization.
+    private static readonly JsonSerializerOptions _deserializeOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
 
     public DefaultOutboxMessageProcessor(
         IHttpClientFactory httpClientFactory,
+        IMerchant360Client merchant360Client,
         ILogger<DefaultOutboxMessageProcessor> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _merchant360Client = merchant360Client;
         _logger = logger;
     }
 
@@ -291,11 +302,50 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
                 await HandleDocumentStateChangeAsync(message, cancellationToken);
                 break;
 
+            case Merchant360OutboxMessageTypes.OrderStatus:
+                await DeliverMerchant360OrderStatusAsync(message, cancellationToken);
+                break;
+
+            case Merchant360OutboxMessageTypes.InventoryBatch:
+                await DeliverMerchant360InventoryBatchAsync(message, cancellationToken);
+                break;
+
             default:
                 _logger.LogWarning(
                     "Unknown message type {MessageType} for outbox message {MessageId}",
                     message.MessageType, message.Id);
                 break;
+        }
+    }
+
+    private async Task DeliverMerchant360OrderStatusAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Deserialize<Merchant360OrderStatusOutboxPayload>(message.Payload, _deserializeOptions)
+            ?? throw new InvalidOperationException("Invalid Merchant360 order status payload");
+
+        var result = await _merchant360Client.PushOrderStatusUpdateAsync(
+            payload.MerchantId, payload.Request, cancellationToken);
+
+        // Throw on a non-success result so the outbox schedules a retry with backoff.
+        if (result is { Success: false })
+        {
+            throw new InvalidOperationException(
+                $"Merchant360 order status push failed: {result.ErrorMessage ?? "unsuccessful response"}");
+        }
+    }
+
+    private async Task DeliverMerchant360InventoryBatchAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Deserialize<Merchant360InventoryBatchOutboxPayload>(message.Payload, _deserializeOptions)
+            ?? throw new InvalidOperationException("Invalid Merchant360 inventory batch payload");
+
+        var result = await _merchant360Client.UpdateInventoryAsync(
+            payload.MerchantId, payload.TradingPartnerId, payload.Items, cancellationToken);
+
+        if (result is { Success: false })
+        {
+            var error = result.Errors is { Count: > 0 } ? string.Join("; ", result.Errors) : "unsuccessful response";
+            throw new InvalidOperationException($"Merchant360 inventory batch push failed: {error}");
         }
     }
 

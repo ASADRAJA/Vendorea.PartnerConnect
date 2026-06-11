@@ -71,10 +71,18 @@ public class SprFlowSmokeTests
             .Callback<OrderStatusHistory, CancellationToken>((h, _) => harness.History.Add(h))
             .Returns(Task.CompletedTask);
 
-        var m360 = new Mock<IMerchant360Client>();
-        m360.Setup(c => c.PushOrderStatusUpdateAsync(It.IsAny<int>(), It.IsAny<OrderStatusUpdateRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<int, OrderStatusUpdateRequest, CancellationToken>((_, req, __) => harness.M360Request = req)
-            .ReturnsAsync(new OrderStatusUpdateResult { Success = true });
+        // Order-status callbacks are now delivered via the outbox; capture the enqueued payload.
+        var outbox = new Mock<IOutboxService>();
+        outbox.Setup(o => o.EnqueueAsync(
+                It.IsAny<string>(),
+                It.IsAny<Merchant360OrderStatusOutboxPayload>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, Merchant360OrderStatusOutboxPayload, string?, string?, int, CancellationToken>(
+                (_, payload, _, _, _, _) => harness.M360Request = payload.Request)
+            .ReturnsAsync(Guid.NewGuid());
 
         var schemaProvider = new XsdSchemaProvider(
             Options.Create(new XsdSchemaProviderOptions()), NullLogger<XsdSchemaProvider>.Instance);
@@ -91,7 +99,7 @@ public class SprFlowSmokeTests
             validator,
             new Mock<IFileTransportClientFactory>().Object,
             orderRepo.Object,
-            m360.Object,
+            outbox.Object,
             NullLogger<SprXmlDocumentProcessingService>.Instance);
 
         return harness;
