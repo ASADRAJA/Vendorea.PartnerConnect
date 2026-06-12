@@ -114,12 +114,15 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             ]);
         }
 
-        // Step 5: Validate tenant/merchant belongs to organization
-        var tenant = await _tenantRepository.GetByIdAsync(request.MerchantId, cancellationToken);
+        // Step 5: Resolve the merchant. MerchantId is M360's own merchant id, stored on the PC
+        // tenant as ExternalId (NOT PC's internal Tenant.Id) — resolve by ExternalId so inbound
+        // matches the outbound callback routing, which also keys on Tenant.ExternalId.
+        var tenant = await _tenantRepository.GetByExternalIdAsync(
+            request.MerchantId.ToString(), cancellationToken);
         if (tenant == null)
         {
             return SubmitSupplierOrderResponse.ValidationFailed(correlationId, [
-                new ValidationError("MERCHANT_NOT_FOUND", "MerchantId", "Merchant/tenant not found")
+                new ValidationError("MERCHANT_NOT_FOUND", "MerchantId", "Merchant/tenant not found for the supplied merchant id")
             ]);
         }
         if (tenant.OrganizationId != request.OrganizationId)
@@ -153,9 +156,10 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             return SubmitSupplierOrderResponse.ValidationFailed(correlationId, requirementsResult.Errors);
         }
 
-        // Step 8: Create the order
+        // Step 8: Create the order (using the resolved internal tenant id, not the M360 merchant id)
         var order = CreateOrderFromRequest(
             request,
+            tenant.Id,
             Guid.Parse(correlationId.Length == 36 ? correlationId : Guid.NewGuid().ToString()),
             resolutionResult.Account!,
             requirementsResult.Configuration!);
@@ -283,6 +287,7 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
 
     private static Order CreateOrderFromRequest(
         SubmitSupplierOrderRequest request,
+        int tenantId,
         Guid correlationId,
         TenantPartnerAccount account,
         PartnerOrderConfiguration config)
@@ -290,7 +295,7 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
         var order = new Order
         {
             OrganizationId = request.OrganizationId,
-            TenantId = request.MerchantId,
+            TenantId = tenantId,
             TradingPartnerId = account.TradingPartnerId,
             TenantPartnerAccountId = account.Id,
 

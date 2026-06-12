@@ -21,8 +21,9 @@ public record SubmitSupplierOrderRequest
     public int OrganizationId { get; init; }
 
     /// <summary>
-    /// Merchant/Dealer ID in PartnerConnect (maps to Tenant).
-    /// Required - the end user placing the order.
+    /// The source platform's own merchant id (e.g. M360's merchant id). PartnerConnect resolves
+    /// the tenant by matching this against Tenant.ExternalId — it is NOT PC's internal Tenant.Id.
+    /// Required - identifies the merchant placing the order.
     /// </summary>
     public int MerchantId { get; init; }
 
