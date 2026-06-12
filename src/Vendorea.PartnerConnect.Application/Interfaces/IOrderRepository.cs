@@ -43,6 +43,31 @@ public interface IOrderRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets orders for a PO number with their lines eagerly loaded (most recent first).
+    /// </summary>
+    Task<IReadOnlyList<Order>> GetByPoNumberWithLinesAsync(
+        int tenantId,
+        string poNumber,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns true if the given shipment manifest has already been applied to the order
+    /// (idempotency guard for re-ingested EZASNS).
+    /// </summary>
+    Task<bool> HasAppliedShipmentAsync(
+        int orderId,
+        string manifestId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records that a shipment manifest has been applied to an order.
+    /// </summary>
+    Task RecordAppliedShipmentAsync(
+        int orderId,
+        string manifestId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets an order by idempotency key within an organization.
     /// </summary>
     Task<Order?> GetByIdempotencyKeyAsync(

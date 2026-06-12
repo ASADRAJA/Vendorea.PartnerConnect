@@ -48,21 +48,13 @@ public class SprEzasnParser : ISprEzasnParser
                 var manifestElements = root.Elements("manifest");
                 foreach (var manifestElement in manifestElements)
                 {
-                    var shipment = ParseManifest(manifestElement, dealerId, sourceDocumentId);
-                    if (shipment != null)
-                    {
-                        result.Result.Add(shipment);
-                    }
+                    result.Result.AddRange(ParseManifest(manifestElement, dealerId, sourceDocumentId));
                 }
             }
             else if (root.Name.LocalName == "manifest")
             {
                 // Single manifest format
-                var shipment = ParseManifest(root, dealerId, sourceDocumentId);
-                if (shipment != null)
-                {
-                    result.Result.Add(shipment);
-                }
+                result.Result.AddRange(ParseManifest(root, dealerId, sourceDocumentId));
             }
             else
             {
@@ -79,7 +71,7 @@ public class SprEzasnParser : ISprEzasnParser
             }
 
             _logger.LogInformation(
-                "Parsed EZASNS XML: {ManifestCount} manifests, {LineCount} total lines",
+                "Parsed EZASNS XML: {NoticeCount} shipment notices (one per sales order), {LineCount} total lines",
                 result.Result.Count, result.LineItemCount);
         }
         catch (Exception ex)
@@ -91,132 +83,156 @@ public class SprEzasnParser : ISprEzasnParser
         return result;
     }
 
-    private ShipmentNotice? ParseManifest(XElement manifestElement, int dealerId, string? sourceDocumentId)
+    /// <summary>
+    /// Parses one manifest into one <see cref="ShipmentNotice"/> per &lt;sales_order&gt;. Each notice
+    /// carries only its own PO, partner order reference, lines, and cartons (cartons are per-sales-order
+    /// in the spec) while sharing the manifest-header carrier/tracking/ship_date. A manifest with no
+    /// sales_order falls back to a single manifest-level notice (e.g. carton-only manifests).
+    /// </summary>
+    private List<ShipmentNotice> ParseManifest(XElement manifestElement, int dealerId, string? sourceDocumentId)
     {
+        var notices = new List<ShipmentNotice>();
+
         try
         {
             var header = manifestElement.Element("manifest_header");
             if (header == null)
             {
                 _logger.LogWarning("Manifest element missing manifest_header");
-                return null;
+                return notices;
             }
 
-            // Extract header fields
-            var manifestId = GetElementValue(header, "manifest_id");
-            var shipDate = ParseDate(GetElementValue(header, "ship_date"));
-            var carrierName = GetElementValue(header, "carrier_name");
-            var carrierScac = GetElementValue(header, "scac_code");
-            var trackingNumber = GetElementValue(header, "tracking_no");
-            var serviceLevel = GetElementValue(header, "service_level");
+            // Shared manifest-header fields — every notice from this manifest carries these.
+            var shared = new ManifestHeader
+            {
+                ManifestId = GetElementValue(header, "manifest_id"),
+                ShipDate = ParseDate(GetElementValue(header, "ship_date")),
+                CarrierName = GetElementValue(header, "carrier_name"),
+                CarrierScac = GetElementValue(header, "scac_code"),
+                TrackingNumber = GetElementValue(header, "tracking_no"),
+                ServiceLevel = GetElementValue(header, "service_level"),
+                ShipFrom = ParseAddress(header.Element("ship_from") ?? header.Element("shipfrom")),
+                AdditionalTrackingNumbers = ExtractAdditionalTrackingNumbers(manifestElement),
+                TotalWeight = decimal.TryParse(
+                    GetElementValue(header, "total_weight") ?? GetElementValue(header, "weight"),
+                    out var weight) ? weight : null,
+                WeightUnit = GetElementValue(header, "weight_uom") ?? "LB"
+            };
 
-            // Parse ship-from address
-            var shipFromElement = header.Element("ship_from") ?? header.Element("shipfrom");
-            var shipFrom = ParseAddress(shipFromElement);
+            var salesOrders = manifestElement.Descendants("sales_order").ToList();
 
-            // Parse sales orders to get PO references and line items
-            var lines = new List<ShipmentLine>();
-            var poNumbers = new List<string>();
-            var partnerOrderRef = string.Empty;
-            Address? shipTo = null;
+            if (salesOrders.Count == 0)
+            {
+                // No sales orders: preserve carton-only behavior as a single manifest-level notice.
+                var fallback = BuildNotice(shared, manifestElement, dealerId, sourceDocumentId,
+                    poNumber: null, partnerOrderRef: string.Empty, shipTo: null);
+                if (fallback != null)
+                {
+                    notices.Add(fallback);
+                }
+                return notices;
+            }
 
-            var salesOrders = manifestElement.Descendants("sales_order");
             foreach (var salesOrder in salesOrders)
             {
                 var poNumber = GetElementValue(salesOrder, "customer_po_no")
                     ?? GetAttributeValue(salesOrder, "customer_po_no");
+                var partnerOrderRef = GetElementValue(salesOrder, "so_no")
+                    ?? GetAttributeValue(salesOrder, "so_no")
+                    ?? string.Empty;
+                var shipTo = ParseAddress(salesOrder.Element("ship_to") ?? salesOrder.Element("shipto"));
 
-                if (!string.IsNullOrWhiteSpace(poNumber) && !poNumbers.Contains(poNumber))
+                var notice = BuildNotice(shared, salesOrder, dealerId, sourceDocumentId,
+                    poNumber, partnerOrderRef, shipTo);
+                if (notice != null)
                 {
-                    poNumbers.Add(poNumber);
-                }
-
-                var soNumber = GetElementValue(salesOrder, "so_no")
-                    ?? GetAttributeValue(salesOrder, "so_no");
-
-                if (string.IsNullOrWhiteSpace(partnerOrderRef) && !string.IsNullOrWhiteSpace(soNumber))
-                {
-                    partnerOrderRef = soNumber;
-                }
-
-                // Parse ship-to from sales order if not already found
-                if (shipTo == null)
-                {
-                    var shipToElement = salesOrder.Element("ship_to") ?? salesOrder.Element("shipto");
-                    shipTo = ParseAddress(shipToElement);
-                }
-
-                // Parse line items from soline_group
-                var solineGroups = salesOrder.Descendants("soline_group");
-                foreach (var solineGroup in solineGroups)
-                {
-                    var line = ParseShipmentLine(solineGroup, lines.Count + 1);
-                    if (line != null)
-                    {
-                        lines.Add(line);
-                    }
+                    notices.Add(notice);
                 }
             }
-
-            // Also check for carton_group at manifest level for items
-            var cartonGroups = manifestElement.Descendants("carton_group");
-            foreach (var cartonGroup in cartonGroups)
-            {
-                var cartonLines = ParseCartonLines(cartonGroup, lines.Count + 1);
-                lines.AddRange(cartonLines);
-            }
-
-            // Calculate package count from cartons
-            var packageCount = manifestElement.Descendants("carton").Count();
-            if (packageCount == 0)
-            {
-                packageCount = manifestElement.Descendants("carton_group").Count();
-            }
-
-            // Parse weight
-            decimal? totalWeight = null;
-            var weightStr = GetElementValue(header, "total_weight")
-                ?? GetElementValue(header, "weight");
-            if (decimal.TryParse(weightStr, out var weight))
-            {
-                totalWeight = weight;
-            }
-
-            var weightUnit = GetElementValue(header, "weight_uom") ?? "LB";
-
-            // Create the ShipmentNotice
-            var shipment = new ShipmentNotice
-            {
-                CorrelationId = Guid.NewGuid().ToString(),
-                DealerId = dealerId,
-                TradingPartnerCode = "SPR",
-                ShipmentId = manifestId ?? Guid.NewGuid().ToString(),
-                PoNumber = poNumbers.FirstOrDefault(),
-                PartnerOrderReference = partnerOrderRef,
-                ShipDate = shipDate ?? DateTime.UtcNow,
-                CarrierName = carrierName,
-                CarrierScac = carrierScac,
-                TrackingNumber = trackingNumber,
-                AdditionalTrackingNumbers = ExtractAdditionalTrackingNumbers(manifestElement),
-                ServiceLevel = serviceLevel,
-                ShipFrom = shipFrom,
-                ShipTo = shipTo,
-                Lines = lines.AsReadOnly(),
-                PackageCount = packageCount > 0 ? packageCount : null,
-                TotalWeight = totalWeight,
-                WeightUnit = weightUnit,
-                Status = ShipmentStatus.InTransit,
-                SourceDocumentId = sourceDocumentId,
-                ReceivedAt = DateTime.UtcNow
-            };
-
-            return shipment;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error parsing manifest element");
-            return null;
         }
+
+        return notices;
+    }
+
+    /// <summary>
+    /// Builds a single shipment notice from the lines and cartons scoped to <paramref name="scope"/>
+    /// (a sales_order element, or the manifest element for the no-sales-order fallback).
+    /// </summary>
+    private ShipmentNotice? BuildNotice(
+        ManifestHeader shared,
+        XElement scope,
+        int dealerId,
+        string? sourceDocumentId,
+        string? poNumber,
+        string partnerOrderRef,
+        Address? shipTo)
+    {
+        var lines = new List<ShipmentLine>();
+
+        foreach (var solineGroup in scope.Descendants("soline_group"))
+        {
+            var line = ParseShipmentLine(solineGroup, lines.Count + 1);
+            if (line != null)
+            {
+                lines.Add(line);
+            }
+        }
+
+        foreach (var cartonGroup in scope.Descendants("carton_group"))
+        {
+            lines.AddRange(ParseCartonLines(cartonGroup, lines.Count + 1));
+        }
+
+        // Package count from this order's cartons only.
+        var packageCount = scope.Descendants("carton").Count();
+        if (packageCount == 0)
+        {
+            packageCount = scope.Descendants("carton_group").Count();
+        }
+
+        return new ShipmentNotice
+        {
+            CorrelationId = Guid.NewGuid().ToString(),
+            DealerId = dealerId,
+            TradingPartnerCode = "SPR",
+            ShipmentId = shared.ManifestId ?? Guid.NewGuid().ToString(),
+            PoNumber = poNumber,
+            PartnerOrderReference = partnerOrderRef,
+            ShipDate = shared.ShipDate ?? DateTime.UtcNow,
+            CarrierName = shared.CarrierName,
+            CarrierScac = shared.CarrierScac,
+            TrackingNumber = shared.TrackingNumber,
+            AdditionalTrackingNumbers = shared.AdditionalTrackingNumbers,
+            ServiceLevel = shared.ServiceLevel,
+            ShipFrom = shared.ShipFrom,
+            ShipTo = shipTo,
+            Lines = lines.AsReadOnly(),
+            PackageCount = packageCount > 0 ? packageCount : null,
+            TotalWeight = shared.TotalWeight,
+            WeightUnit = shared.WeightUnit,
+            Status = ShipmentStatus.InTransit,
+            SourceDocumentId = sourceDocumentId,
+            ReceivedAt = DateTime.UtcNow
+        };
+    }
+
+    /// <summary>Manifest-header fields shared by every notice parsed from the same manifest.</summary>
+    private sealed class ManifestHeader
+    {
+        public string? ManifestId { get; init; }
+        public DateTime? ShipDate { get; init; }
+        public string? CarrierName { get; init; }
+        public string? CarrierScac { get; init; }
+        public string? TrackingNumber { get; init; }
+        public string? ServiceLevel { get; init; }
+        public Address? ShipFrom { get; init; }
+        public IReadOnlyList<string>? AdditionalTrackingNumbers { get; init; }
+        public decimal? TotalWeight { get; init; }
+        public string? WeightUnit { get; init; }
     }
 
     private ShipmentLine? ParseShipmentLine(XElement solineGroup, int lineNumber)

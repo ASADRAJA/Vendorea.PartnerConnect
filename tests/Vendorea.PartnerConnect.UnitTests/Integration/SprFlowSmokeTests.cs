@@ -37,6 +37,8 @@ public class SprFlowSmokeTests
         public ShipmentUpdateRequest? M360Shipment;
         public InvoiceUpdateRequest? M360Invoice;
         public readonly List<OrderStatusHistory> History = new();
+        // Applied (orderId, manifestId) pairs — simulates the persisted idempotency guard.
+        public readonly HashSet<string> AppliedShipments = new();
     }
 
     private static Harness CreateHarness(Order order)
@@ -67,10 +69,20 @@ public class SprFlowSmokeTests
         var orderRepo = new Mock<IOrderRepository>();
         orderRepo.Setup(r => r.GetByPoNumberAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Order> { order });
+        orderRepo.Setup(r => r.GetByPoNumberWithLinesAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Order> { order });
         orderRepo.Setup(r => r.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         orderRepo.Setup(r => r.AddStatusHistoryAsync(It.IsAny<OrderStatusHistory>(), It.IsAny<CancellationToken>()))
             .Callback<OrderStatusHistory, CancellationToken>((h, _) => harness.History.Add(h))
+            .Returns(Task.CompletedTask);
+        // Stateful idempotency guard: HasApplied reflects what RecordApplied has stored.
+        orderRepo.Setup(r => r.HasAppliedShipmentAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int orderId, string manifestId, CancellationToken _) =>
+                harness.AppliedShipments.Contains($"{orderId}:{manifestId}"));
+        orderRepo.Setup(r => r.RecordAppliedShipmentAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<int, string, CancellationToken>((orderId, manifestId, _) =>
+                harness.AppliedShipments.Add($"{orderId}:{manifestId}"))
             .Returns(Task.CompletedTask);
 
         // Order-status callbacks are now delivered via the outbox; capture the enqueued payload.
@@ -132,6 +144,19 @@ public class SprFlowSmokeTests
         TradingPartnerId = TradingPartnerId,
         PoNumber = poNumber,
         Status = status
+    };
+
+    private static Order NewOrderWithLines(
+        string poNumber, OrderStatus status, params (int lineNumber, string sku, decimal qty)[] lines) => new()
+    {
+        Id = 55,
+        TenantId = DealerId,
+        TradingPartnerId = TradingPartnerId,
+        PoNumber = poNumber,
+        Status = status,
+        Lines = lines
+            .Select(l => new OrderLine { LineNumber = l.lineNumber, Sku = l.sku, VendorSku = l.sku, Quantity = l.qty })
+            .ToList<OrderLine>()
     };
 
     private static PurchaseOrder ValidPurchaseOrder(string poNumber) => new()
@@ -316,6 +341,64 @@ ERROR: Translation failed - invalid UOM on line 1. Order not processed.";
         harness.M360Shipment.Shipments[0].ShipmentId.Should().Be("MAN-123456");
         harness.M360Shipment.Shipments[0].TrackingNumber.Should().Be("1Z999AA10123456784");
         harness.M360Shipment.EventId.Should().NotBeNullOrEmpty();
+    }
+
+    private static string AsnXml(string manifestId, string po, string sku, int qtyShipped, int qtyOrdered, int poLineNo) => $@"<?xml version=""1.0""?>
+<manifest>
+    <manifest_header>
+        <manifest_id>{manifestId}</manifest_id>
+        <ship_date>2026-06-06</ship_date>
+        <carrier_name>UPS</carrier_name>
+        <tracking_no>1Z999AA10123456784</tracking_no>
+    </manifest_header>
+    <sales_order customer_po_no=""{po}"" so_no=""SO-1"">
+        <soline_group>
+            <item_id>{sku}</item_id>
+            <po_line_no>{poLineNo}</po_line_no>
+            <qty_shipped>{qtyShipped}</qty_shipped>
+            <qty_ordered>{qtyOrdered}</qty_ordered>
+        </soline_group>
+    </sales_order>
+</manifest>";
+
+    [Fact]
+    public async Task Flow5b_Asn_PartialThenFinal_AccumulatesAndCompletes()
+    {
+        var order = NewOrderWithLines("PO-ACC", OrderStatus.Processing, (1, "SKU001", 10));
+        var harness = CreateHarness(order);
+
+        // First shipment: 4 of 10 → partial.
+        await harness.Service.ProcessInboundDocumentAsync(
+            ConnectionId, AsnXml("MAN-A", "PO-ACC", "SKU001", 4, 10, 1), "asn1.xml", SprXmlDocumentType.EZASNS);
+
+        harness.M360Shipment!.IsComplete.Should().BeFalse();
+        harness.M360Shipment.Shipments[0].Lines[0].PoLineNumber.Should().Be(1);
+        order.Lines.Single().ShippedQuantity.Should().Be(4);
+        order.Status.Should().Be(OrderStatus.PartiallyShipped);
+
+        // Second shipment: remaining 6 → completes the order.
+        await harness.Service.ProcessInboundDocumentAsync(
+            ConnectionId, AsnXml("MAN-B", "PO-ACC", "SKU001", 6, 10, 1), "asn2.xml", SprXmlDocumentType.EZASNS);
+
+        harness.M360Shipment!.IsComplete.Should().BeTrue();
+        order.Lines.Single().ShippedQuantity.Should().Be(10);
+        order.Status.Should().Be(OrderStatus.Shipped);
+    }
+
+    [Fact]
+    public async Task Flow5c_Asn_ReingestSameManifest_IsIdempotent()
+    {
+        var order = NewOrderWithLines("PO-IDEM", OrderStatus.Processing, (1, "SKU001", 10));
+        var harness = CreateHarness(order);
+
+        await harness.Service.ProcessInboundDocumentAsync(
+            ConnectionId, AsnXml("MAN-X", "PO-IDEM", "SKU001", 4, 10, 1), "asn.xml", SprXmlDocumentType.EZASNS);
+        order.Lines.Single().ShippedQuantity.Should().Be(4);
+
+        // Re-ingesting the same manifest must not double-count.
+        await harness.Service.ProcessInboundDocumentAsync(
+            ConnectionId, AsnXml("MAN-X", "PO-IDEM", "SKU001", 4, 10, 1), "asn-again.xml", SprXmlDocumentType.EZASNS);
+        order.Lines.Single().ShippedQuantity.Should().Be(4);
     }
 
     // ---- Flow 6: invoice batch triggers an invoice callback ----------------------------------

@@ -86,6 +86,7 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderLine> OrderLines => Set<OrderLine>();
     public DbSet<OrderStatusHistory> OrderStatusHistory => Set<OrderStatusHistory>();
+    public DbSet<OrderAppliedShipment> OrderAppliedShipments => Set<OrderAppliedShipment>();
 
     // RBAC
     public DbSet<User> Users => Set<User>();
