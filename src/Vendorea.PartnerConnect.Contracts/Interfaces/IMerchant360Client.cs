@@ -477,6 +477,14 @@ public class ShipmentDto
 public class ShipmentLineDto
 {
     public int LineNumber { get; set; }
+
+    /// <summary>
+    /// Original purchase-order line number, when known. M360 matches shipment lines to order
+    /// lines on this (falling back to <see cref="VendorSku"/>) rather than the ASN-resequenced
+    /// <see cref="LineNumber"/>, which is per-notice and does not map to the order line.
+    /// </summary>
+    public int? PoLineNumber { get; set; }
+
     public string? VendorSku { get; set; }
     public decimal QuantityShipped { get; set; }
 }

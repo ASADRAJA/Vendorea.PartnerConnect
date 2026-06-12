@@ -382,6 +382,57 @@ public class SprEzasnParserTests
     }
 
     [Fact]
+    public void Parse_WithMultipleSalesOrdersInOneManifest_ReturnsOneNoticePerSalesOrder()
+    {
+        // A single manifest carrying two distinct customer POs must yield two correctly-scoped
+        // notices — each with only its own PO and lines — not one collapsed notice.
+        var xml = @"<?xml version=""1.0""?>
+<manifest>
+    <manifest_header>
+        <manifest_id>MAN-MULTI</manifest_id>
+        <ship_date>2026-06-06</ship_date>
+        <carrier_name>UPS</carrier_name>
+        <tracking_no>1Z-SHARED</tracking_no>
+    </manifest_header>
+    <sales_order customer_po_no=""PO-AAA"" so_no=""SO-AAA"">
+        <soline_group>
+            <item_id>SKU-A1</item_id>
+            <qty_shipped>3</qty_shipped>
+        </soline_group>
+        <soline_group>
+            <item_id>SKU-A2</item_id>
+            <qty_shipped>2</qty_shipped>
+        </soline_group>
+    </sales_order>
+    <sales_order customer_po_no=""PO-BBB"" so_no=""SO-BBB"">
+        <soline_group>
+            <item_id>SKU-B1</item_id>
+            <qty_shipped>7</qty_shipped>
+        </soline_group>
+    </sales_order>
+</manifest>";
+
+        var result = _sut.Parse(xml, dealerId: 1);
+
+        result.Success.Should().BeTrue();
+        result.Result.Should().HaveCount(2);
+        result.LineItemCount.Should().Be(3);
+
+        var first = result.Result!.Single(s => s.PoNumber == "PO-AAA");
+        first.PartnerOrderReference.Should().Be("SO-AAA");
+        first.ShipmentId.Should().Be("MAN-MULTI");
+        first.TrackingNumber.Should().Be("1Z-SHARED");
+        first.CarrierName.Should().Be("UPS");
+        first.Lines.Select(l => l.PartnerSku).Should().BeEquivalentTo("SKU-A1", "SKU-A2");
+
+        var second = result.Result!.Single(s => s.PoNumber == "PO-BBB");
+        second.PartnerOrderReference.Should().Be("SO-BBB");
+        second.ShipmentId.Should().Be("MAN-MULTI");
+        second.TrackingNumber.Should().Be("1Z-SHARED");
+        second.Lines.Select(l => l.PartnerSku).Should().BeEquivalentTo("SKU-B1");
+    }
+
+    [Fact]
     public void Parse_ExtractsShipFromAddress()
     {
         // Arrange

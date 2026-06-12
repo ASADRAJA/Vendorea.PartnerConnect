@@ -260,40 +260,44 @@ public class DocumentWorkflowIntegrationTests
         // Act
         var result = parser.Parse(asnXml, dealerId: 1, sourceDocumentId: "doc-asn-001");
 
-        // Assert - Multiple manifests parsed
+        // Assert - one notice per sales order (the first manifest's two POs are split apart).
         result.Success.Should().BeTrue();
-        result.Result.Should().HaveCount(2);
+        result.Result.Should().HaveCount(3);
 
-        // First manifest - has multiple sales orders but single tracking
-        var manifest1 = result.Result![0];
-        manifest1.ShipmentId.Should().Be("MAN-2026-001");
-        manifest1.CarrierName.Should().Be("UPS");
-        manifest1.CarrierScac.Should().Be("UPSN");
-        manifest1.TrackingNumber.Should().Be("1Z999AA10123456784");
-        manifest1.ShipDate.Should().Be(new DateTime(2026, 6, 6));
-        manifest1.ShipFrom.Should().NotBeNull();
-        manifest1.ShipFrom!.Name.Should().Be("SPR Chicago DC");
-        manifest1.ShipFrom.City.Should().Be("Chicago");
+        // First manifest, first sales order — shares manifest-header carrier/tracking, own PO + line.
+        var notice1 = result.Result!.Single(s => s.PoNumber == "PO-2026-001234");
+        notice1.ShipmentId.Should().Be("MAN-2026-001");
+        notice1.CarrierName.Should().Be("UPS");
+        notice1.CarrierScac.Should().Be("UPSN");
+        notice1.TrackingNumber.Should().Be("1Z999AA10123456784");
+        notice1.ShipDate.Should().Be(new DateTime(2026, 6, 6));
+        notice1.ShipFrom.Should().NotBeNull();
+        notice1.ShipFrom!.Name.Should().Be("SPR Chicago DC");
+        notice1.ShipFrom.City.Should().Be("Chicago");
+        notice1.PartnerOrderReference.Should().Be("SPR-SO-98765");
+        notice1.Lines.Select(l => l.PartnerSku).Should().BeEquivalentTo("SKU-001");
 
-        // Manifest 1 should have lines from both sales orders
-        manifest1.Lines.Should().HaveCount(3); // SKU-001, SKU-003, SKU-004
-        manifest1.PoNumber.Should().Be("PO-2026-001234"); // First PO reference
-        manifest1.PartnerOrderReference.Should().Be("SPR-SO-98765");
+        // First manifest, second sales order — same manifest/tracking, but only its own two lines.
+        var notice2 = result.Result!.Single(s => s.PoNumber == "PO-2026-001235");
+        notice2.ShipmentId.Should().Be("MAN-2026-001");
+        notice2.TrackingNumber.Should().Be("1Z999AA10123456784");
+        notice2.PartnerOrderReference.Should().Be("SPR-SO-98766");
+        notice2.Lines.Select(l => l.PartnerSku).Should().BeEquivalentTo("SKU-003", "SKU-004");
 
         // Second manifest
-        var manifest2 = result.Result[1];
-        manifest2.ShipmentId.Should().Be("MAN-2026-002");
-        manifest2.CarrierName.Should().Be("FedEx");
-        manifest2.TrackingNumber.Should().Be("794644790132");
-        manifest2.Lines.Should().HaveCount(1);
-        manifest2.PoNumber.Should().Be("PO-2026-001236");
+        var notice3 = result.Result!.Single(s => s.PoNumber == "PO-2026-001236");
+        notice3.ShipmentId.Should().Be("MAN-2026-002");
+        notice3.CarrierName.Should().Be("FedEx");
+        notice3.TrackingNumber.Should().Be("794644790132");
+        notice3.Lines.Should().HaveCount(1);
 
-        // Total line items across all manifests
+        // Total line items across all notices is unchanged by the split.
         result.LineItemCount.Should().Be(4);
 
         // Documents can be correlated to POs
         var correlationReferences = result.Result.Select(m => m.PoNumber).Distinct().ToList();
         correlationReferences.Should().Contain("PO-2026-001234");
+        correlationReferences.Should().Contain("PO-2026-001235");
         correlationReferences.Should().Contain("PO-2026-001236");
     }
 

@@ -95,6 +95,41 @@ public class OrderRepository : IOrderRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Order>> GetByPoNumberWithLinesAsync(
+        int tenantId,
+        string poNumber,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Orders
+            .Include(o => o.Lines.OrderBy(l => l.LineNumber))
+            .Where(o => o.TenantId == tenantId && o.PoNumber == poNumber)
+            .OrderByDescending(o => o.OrderDate)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> HasAppliedShipmentAsync(
+        int orderId,
+        string manifestId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.OrderAppliedShipments
+            .AnyAsync(s => s.OrderId == orderId && s.ManifestId == manifestId, cancellationToken);
+    }
+
+    public async Task RecordAppliedShipmentAsync(
+        int orderId,
+        string manifestId,
+        CancellationToken cancellationToken = default)
+    {
+        _context.OrderAppliedShipments.Add(new OrderAppliedShipment
+        {
+            OrderId = orderId,
+            ManifestId = manifestId,
+            AppliedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<Order?> GetByIdempotencyKeyAsync(
         int organizationId,
         string idempotencyKey,

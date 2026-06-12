@@ -662,8 +662,10 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     }
 
     /// <summary>
-    /// Correlates a parsed shipment notice to its order (by PO number) and enqueues a canonical
-    /// shipment callback to Merchant360 via the outbox. Non-fatal.
+    /// Correlates a parsed shipment notice to its order (by PO number), accumulates per-line shipped
+    /// quantities, advances the local order status (PartiallyShipped/Shipped), and enqueues a canonical
+    /// shipment callback (with a real isComplete) to Merchant360 via the outbox. Re-ingesting the same
+    /// manifest is idempotent — the (order, manifest) guard prevents double-counting. Non-fatal.
     /// </summary>
     private async Task SurfaceShipmentToM360Async(
         ShipmentNotice shipment, int dealerId, CancellationToken cancellationToken)
@@ -676,12 +678,54 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return;
             }
 
-            var order = (await _orderRepository.GetByPoNumberAsync(dealerId, shipment.PoNumber!, cancellationToken)).FirstOrDefault();
+            var order = (await _orderRepository.GetByPoNumberWithLinesAsync(dealerId, shipment.PoNumber!, cancellationToken)).FirstOrDefault();
             if (order == null)
             {
                 _logger.LogWarning("ASN for PO {PoNumber} could not be correlated to an order (dealer {DealerId})", shipment.PoNumber, dealerId);
                 return;
             }
+
+            // Idempotency guard: skip an already-applied manifest so re-ingestion doesn't double-count.
+            if (await _orderRepository.HasAppliedShipmentAsync(order.Id, shipment.ShipmentId, cancellationToken))
+            {
+                _logger.LogInformation(
+                    "Shipment manifest {ManifestId} already applied to order {OrderId}; skipping (idempotent)",
+                    shipment.ShipmentId, order.Id);
+                return;
+            }
+
+            // Accumulate shipped quantities onto the matched order lines and compute completeness.
+            var isComplete = AccumulateShipment(order, shipment);
+
+            // Advance local order status (forward-only) so PC's own view reflects reality. M360 derives
+            // its order status from isComplete on the shipment callback, so no separate status callback.
+            var newStatus = isComplete ? OrderStatus.Shipped : OrderStatus.PartiallyShipped;
+            var previousStatus = order.Status;
+            var statusChanged = (int)newStatus > (int)order.Status;
+            if (statusChanged)
+            {
+                order.Status = newStatus;
+                if (isComplete)
+                {
+                    order.ShippedAt ??= DateTime.UtcNow;
+                }
+            }
+
+            // Persist line accumulation + status, then record the manifest as applied (idempotency).
+            await _orderRepository.UpdateAsync(order, cancellationToken);
+            if (statusChanged)
+            {
+                await _orderRepository.AddStatusHistoryAsync(new OrderStatusHistory
+                {
+                    OrderId = order.Id,
+                    FromStatus = previousStatus,
+                    ToStatus = newStatus,
+                    ChangedAt = DateTime.UtcNow,
+                    Source = "EDI",
+                    Reason = $"SPR ASN manifest {shipment.ShipmentId} ({(isComplete ? "fully shipped" : "partial shipment")})"
+                }, cancellationToken);
+            }
+            await _orderRepository.RecordAppliedShipmentAsync(order.Id, shipment.ShipmentId, cancellationToken);
 
             var merchantId = await ResolveMerchantIdAsync(order.TenantId, cancellationToken);
             if (merchantId == null)
@@ -697,7 +741,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 PartnerConnectOrderId = order.Id,
                 CorrelationId = order.CorrelationId.ToString(),
                 PartnerOrderNumber = shipment.PartnerOrderReference,
-                IsComplete = null,
+                IsComplete = isComplete,
                 Shipments = new List<ShipmentDto>
                 {
                     new()
@@ -710,6 +754,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                         Lines = shipment.Lines.Select(l => new ShipmentLineDto
                         {
                             LineNumber = l.LineNumber,
+                            PoLineNumber = l.PoLineNumber,
                             VendorSku = l.PartnerSku,
                             QuantityShipped = l.QuantityShipped
                         }).ToList()
@@ -727,6 +772,59 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         {
             _logger.LogError(ex, "Failed to enqueue shipment callback for ASN {ShipmentId} (non-fatal)", shipment.ShipmentId);
         }
+    }
+
+    /// <summary>
+    /// Adds the shipment's per-line quantities to the matched order lines (cumulative across manifests),
+    /// marks fully-shipped lines, and returns whether every order line is now fully shipped.
+    /// Lines are matched on PO line number first, then VendorSku, then Sku.
+    /// </summary>
+    private bool AccumulateShipment(Order order, ShipmentNotice shipment)
+    {
+        foreach (var asnLine in shipment.Lines)
+        {
+            var orderLine = MatchOrderLine(order, asnLine);
+            if (orderLine == null)
+            {
+                _logger.LogWarning(
+                    "ASN {ManifestId} line (sku {Sku}, poLine {PoLine}) did not match any line on order {OrderId}",
+                    shipment.ShipmentId, asnLine.PartnerSku, asnLine.PoLineNumber, order.Id);
+                continue;
+            }
+
+            orderLine.ShippedQuantity = (orderLine.ShippedQuantity ?? 0) + asnLine.QuantityShipped;
+            if (orderLine.ShippedQuantity >= orderLine.Quantity)
+            {
+                orderLine.Status = OrderLineStatus.Shipped;
+            }
+            orderLine.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Complete only when every line has shipped at least its ordered quantity.
+        return order.Lines.Count > 0
+            && order.Lines.All(l => (l.ShippedQuantity ?? 0) >= l.Quantity);
+    }
+
+    private static OrderLine? MatchOrderLine(Order order, ShipmentLine asnLine)
+    {
+        if (asnLine.PoLineNumber.HasValue)
+        {
+            var byPoLine = order.Lines.FirstOrDefault(l => l.LineNumber == asnLine.PoLineNumber.Value);
+            if (byPoLine != null)
+            {
+                return byPoLine;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(asnLine.PartnerSku))
+        {
+            return order.Lines.FirstOrDefault(l =>
+                       string.Equals(l.VendorSku, asnLine.PartnerSku, StringComparison.OrdinalIgnoreCase))
+                   ?? order.Lines.FirstOrDefault(l =>
+                       string.Equals(l.Sku, asnLine.PartnerSku, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return null;
     }
 
     /// <summary>
