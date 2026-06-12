@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Contracts.Integration;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
@@ -272,26 +273,48 @@ public class AdminOrdersController : ControllerBase
             }).ToList() ?? new()
         };
 
-        // Parse JSON addresses
-        if (!string.IsNullOrEmpty(order.ShipToJson))
-        {
-            try
-            {
-                dto.ShipTo = JsonSerializer.Deserialize<AddressDto>(order.ShipToJson);
-            }
-            catch { /* Ignore parse errors */ }
-        }
-
-        if (!string.IsNullOrEmpty(order.BillToJson))
-        {
-            try
-            {
-                dto.BillTo = JsonSerializer.Deserialize<AddressDto>(order.BillToJson);
-            }
-            catch { /* Ignore parse errors */ }
-        }
+        // Parse JSON addresses. Stored addresses use the canonical CanonicalAddressInfo shape
+        // (Address1/Address2); map those onto AddressDto.Line1/Line2 for the admin response.
+        dto.ShipTo = MapStoredAddress(order.ShipToJson);
+        dto.BillTo = MapStoredAddress(order.BillToJson);
 
         return dto;
+    }
+
+    /// <summary>
+    /// Deserializes a stored canonical address (Address1/Address2) and maps it to the admin
+    /// AddressDto (Line1/Line2). Returns null for empty/unparseable JSON.
+    /// </summary>
+    private static AddressDto? MapStoredAddress(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var address = JsonSerializer.Deserialize<CanonicalAddressInfo>(json);
+            if (address == null)
+            {
+                return null;
+            }
+
+            return new AddressDto
+            {
+                Name = address.Name ?? address.Company,
+                Line1 = address.Address1,
+                Line2 = address.Address2,
+                City = address.City,
+                State = address.State,
+                PostalCode = address.PostalCode,
+                Country = address.Country
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 
