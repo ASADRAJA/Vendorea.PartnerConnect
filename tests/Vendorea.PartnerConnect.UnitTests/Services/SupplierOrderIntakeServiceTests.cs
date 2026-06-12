@@ -340,7 +340,7 @@ public class SupplierOrderIntakeServiceTests
         _orgRepoMock.Setup(r => r.GetByIdAsync(request.OrganizationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Organization { Id = 1, Code = "ORG", Name = "Test Org", Status = OrganizationStatus.Active });
 
-        _tenantRepoMock.Setup(r => r.GetByIdAsync(request.MerchantId, It.IsAny<CancellationToken>()))
+        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync(request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Tenant?)null);
 
         // Act
@@ -364,7 +364,7 @@ public class SupplierOrderIntakeServiceTests
         _orgRepoMock.Setup(r => r.GetByIdAsync(request.OrganizationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Organization { Id = 1, Code = "ORG", Name = "Test Org", Status = OrganizationStatus.Active });
 
-        _tenantRepoMock.Setup(r => r.GetByIdAsync(request.MerchantId, It.IsAny<CancellationToken>()))
+        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync(request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Tenant { Id = 10, OrganizationId = 999, Code = "TENANT", Name = "Test Tenant", Status = TenantStatus.Active });
 
         // Act
@@ -458,6 +458,51 @@ public class SupplierOrderIntakeServiceTests
     }
 
     [Fact]
+    public async Task SubmitOrder_ResolvesTenantByExternalId_NotInternalId()
+    {
+        // M360 sends its own merchant id (3), stored on the PC tenant as ExternalId — NOT PC's
+        // internal Tenant.Id. The created order must be attributed to the resolved internal id (2),
+        // even though a different tenant happens to have internal Id == 3.
+        var request = CreateValidRequest() with { MerchantId = 3 };
+
+        _orderRepoMock.Setup(r => r.GetByIdempotencyKeyAsync(
+                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Order?)null);
+        _orgRepoMock.Setup(r => r.GetByIdAsync(request.OrganizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Organization
+            {
+                Id = request.OrganizationId,
+                Code = "ORG",
+                Name = "Test Org",
+                Status = OrganizationStatus.Active
+            });
+        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync("3", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Tenant
+            {
+                Id = 2,
+                ExternalId = "3",
+                OrganizationId = request.OrganizationId,
+                Code = "ASAD",
+                Name = "Asad Merchant",
+                Status = TenantStatus.Active
+            });
+        SetupValidPartnerResolution(request);
+
+        Order? createdOrder = null;
+        _orderRepoMock.Setup(r => r.AddAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()))
+            .Callback<Order, CancellationToken>((o, _) => createdOrder = o)
+            .ReturnsAsync((Order o, CancellationToken _) => { o.Id = 55; return o; });
+
+        // Act
+        var result = await _service.SubmitOrderAsync(request);
+
+        // Assert
+        result.Accepted.Should().BeTrue();
+        createdOrder.Should().NotBeNull();
+        createdOrder!.TenantId.Should().Be(2);
+    }
+
+    [Fact]
     public async Task SubmitOrder_ValidRequest_CreatesOrderLines()
     {
         // Arrange
@@ -538,10 +583,11 @@ public class SupplierOrderIntakeServiceTests
                 Status = OrganizationStatus.Active
             });
 
-        _tenantRepoMock.Setup(r => r.GetByIdAsync(request.MerchantId, It.IsAny<CancellationToken>()))
+        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync(request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Tenant
             {
                 Id = request.MerchantId,
+                ExternalId = request.MerchantId.ToString(),
                 OrganizationId = request.OrganizationId,
                 Code = "TENANT",
                 Name = "Test Tenant",
