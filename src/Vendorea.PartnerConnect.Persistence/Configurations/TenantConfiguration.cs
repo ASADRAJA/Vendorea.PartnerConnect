@@ -24,6 +24,12 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasConversion<string>()
             .HasMaxLength(50);
 
+        builder.Property(e => e.ContactFirstName)
+            .HasMaxLength(100);
+
+        builder.Property(e => e.ContactLastName)
+            .HasMaxLength(100);
+
         builder.Property(e => e.ContactEmail)
             .HasMaxLength(255);
 
@@ -36,6 +42,12 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         // Unique constraint: Code must be unique within organization
         builder.HasIndex(e => new { e.OrganizationId, e.Code })
             .IsUnique();
+
+        // A tenant is unique per (organization, org-side external id). Filtered so existing
+        // tenants without an ExternalId don't collide.
+        builder.HasIndex(e => new { e.OrganizationId, e.ExternalId })
+            .IsUnique()
+            .HasFilter("[ExternalId] IS NOT NULL");
 
         builder.HasIndex(e => e.OrganizationId);
 

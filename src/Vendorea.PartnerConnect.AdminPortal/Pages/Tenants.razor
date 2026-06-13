@@ -25,9 +25,7 @@
                         </button>
                     </li>
                 </ul>
-                <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
-                    <span class="oi oi-plus me-1"></span> New Tenant
-                </button>
+                <span class="text-muted small">View only — tenants are created via the connections workflow</span>
             </div>
             <div class="card-body">
                 <div class="row mb-3">
@@ -44,18 +42,6 @@
                     <div class="col-md-4 d-flex align-items-end gap-2">
                         <button class="btn btn-outline-secondary btn-sm" @onclick="LoadTenants">
                             <span class="oi oi-reload me-1"></span> Refresh
-                        </button>
-                        <button class="btn btn-outline-info btn-sm" @onclick="SyncFromM360" disabled="@isSyncing">
-                            @if (isSyncing)
-                            {
-                                <span class="spinner-border spinner-border-sm me-1"></span>
-                                <span>Syncing...</span>
-                            }
-                            else
-                            {
-                                <span class="oi oi-cloud-download me-1"></span>
-                                <span>Sync from M360</span>
-                            }
                         </button>
                     </div>
                 </div>
@@ -111,21 +97,6 @@
                                         <td>@tenant.PartnerAccountCount</td>
                                         <td>@tenant.CreatedAt.ToLocalTime().ToString("d")</td>
                                         <td>
-                                            @if (tenant.Status == "Active")
-                                            {
-                                                <button class="btn btn-sm btn-warning me-1" @onclick="() => SuspendTenant(tenant.Id)" title="Suspend">
-                                                    <span class="oi oi-ban"></span>
-                                                </button>
-                                            }
-                                            else if (tenant.Status == "Suspended")
-                                            {
-                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ActivateTenant(tenant.Id)" title="Reactivate">
-                                                    <span class="oi oi-action-redo"></span>
-                                                </button>
-                                            }
-                                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(tenant)" title="Edit">
-                                                <span class="oi oi-pencil"></span>
-                                            </button>
                                             <button class="btn btn-sm btn-outline-info" @onclick="() => ShowAccountsModal(tenant)" title="Partner Accounts">
                                                 <span class="oi oi-key"></span>
                                             </button>
@@ -256,9 +227,6 @@
                 <div class="modal-body">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <span>Trading partner accounts linked to this tenant</span>
-                        <button class="btn btn-sm btn-primary" @onclick="ShowAddAccountModal">
-                            <span class="oi oi-plus me-1"></span> Link Account
-                        </button>
                     </div>
 
                     @if (isLoadingAccounts)
@@ -303,14 +271,7 @@
                                                 <span class="badge bg-secondary">Inactive</span>
                                             }
                                         </td>
-                                        <td>
-                                            @if (account.IsActive)
-                                            {
-                                                <button class="btn btn-sm btn-outline-warning" @onclick="() => DeactivateAccount(account.Id)" title="Deactivate">
-                                                    <span class="oi oi-ban"></span>
-                                                </button>
-                                            }
-                                        </td>
+                                        <td></td>
                                     </tr>
                                 }
                             </tbody>

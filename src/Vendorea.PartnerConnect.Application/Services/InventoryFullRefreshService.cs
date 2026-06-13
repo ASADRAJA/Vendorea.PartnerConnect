@@ -308,8 +308,8 @@ public class InventoryFullRefreshService : IInventoryFullRefreshService
         var accounts = await _tenantPartnerAccountRepository.GetByTradingPartnerIdAsync(
             snapshot.TradingPartnerId, cancellationToken);
         var pcTenantIds = accounts
-            .Where(a => a.IsActive)
-            .Select(a => a.TenantId)
+            .Where(a => a.IsActive && a.TenantId != null)
+            .Select(a => a.TenantId!.Value)
             .Distinct()
             .ToList();
 

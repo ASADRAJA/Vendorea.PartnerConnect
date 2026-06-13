@@ -576,6 +576,58 @@ public class UpdateOrganizationRequest
     public List<int> TradingPartnerIds { get; set; } = new();
 }
 
+// Tenant-partner connection models
+public class TenantConnectionDto
+{
+    public int Id { get; set; }
+    public int OrganizationId { get; set; }
+    public string? OrganizationName { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string? PartnerName { get; set; }
+    public string ExternalTenantId { get; set; } = string.Empty;
+    public int? TenantId { get; set; }
+    public string? TenantName { get; set; }
+    public string AccountNumber { get; set; } = string.Empty;
+    public string? ContactFirstName { get; set; }
+    public string? ContactLastName { get; set; }
+    public string? SpecialIdentifyingCode { get; set; }
+    public string? Notes { get; set; }
+    public Dictionary<string, string> ConfirmationFields { get; set; } = new();
+    public string ApprovalStatus { get; set; } = string.Empty;
+    public string? DecisionReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? DecidedAt { get; set; }
+}
+
+public class TenantConnectionListResult
+{
+    public int Total { get; set; }
+    public int PendingCount { get; set; }
+    public int ApprovedCount { get; set; }
+    public int DeniedCount { get; set; }
+    public List<TenantConnectionDto> Items { get; set; } = new();
+}
+
+public class ConnectionPartnerOption
+{
+    public int TradingPartnerId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+}
+
+public class CreateTenantConnectionRequest
+{
+    public int OrganizationId { get; set; }
+    public int TradingPartnerId { get; set; }
+    public string ExternalTenantId { get; set; } = string.Empty;
+    public string AccountNumber { get; set; } = string.Empty;
+    public string? ContactFirstName { get; set; }
+    public string? ContactLastName { get; set; }
+    public string? SpecialIdentifyingCode { get; set; }
+    public string? Notes { get; set; }
+    public Dictionary<string, string> ConfirmationFields { get; set; } = new();
+}
+
 // Tenant Models (Multi-Tenant)
 public class TenantDto
 {

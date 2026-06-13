@@ -11,6 +11,12 @@ public interface ITenantRepository
     Task<Tenant?> GetByIdWithOrganizationAsync(int id, CancellationToken cancellationToken = default);
     Task<Tenant?> GetByCodeAsync(int organizationId, string code, CancellationToken cancellationToken = default);
     Task<Tenant?> GetByExternalIdAsync(string externalId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves a tenant by its org-scoped external id (the org's own id for the tenant).
+    /// This is the correct, collision-free lookup once tenant external ids are per-org.
+    /// </summary>
+    Task<Tenant?> GetByOrgAndExternalIdAsync(int organizationId, string externalId, CancellationToken cancellationToken = default);
     Task<Tenant?> GetDefaultTenantAsync(int organizationId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Tenant>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Tenant>> GetByOrganizationIdAsync(int organizationId, CancellationToken cancellationToken = default);

@@ -16,9 +16,15 @@ public record SubmitSupplierOrderRequest
 
     /// <summary>
     /// Organization ID in PartnerConnect.
-    /// Required - the billable account holder.
+    /// Required - the billable account holder. May be omitted if <see cref="OrganizationCode"/> is supplied.
     /// </summary>
     public int OrganizationId { get; init; }
+
+    /// <summary>
+    /// The organization's PartnerConnect code (e.g. "ORG-00001"). When supplied, the org is
+    /// resolved by code instead of <see cref="OrganizationId"/> — the preferred external identifier.
+    /// </summary>
+    public string? OrganizationCode { get; init; }
 
     /// <summary>
     /// The source platform's own merchant id (e.g. M360's merchant id). PartnerConnect resolves

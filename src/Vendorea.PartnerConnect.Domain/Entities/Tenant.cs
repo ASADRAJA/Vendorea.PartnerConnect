@@ -34,6 +34,16 @@ public class Tenant
     public bool IsDefault { get; set; }
 
     /// <summary>
+    /// Contact first name (captured on the connection that created/updated this tenant).
+    /// </summary>
+    public string? ContactFirstName { get; set; }
+
+    /// <summary>
+    /// Contact last name.
+    /// </summary>
+    public string? ContactLastName { get; set; }
+
+    /// <summary>
     /// Primary contact email.
     /// </summary>
     public string? ContactEmail { get; set; }

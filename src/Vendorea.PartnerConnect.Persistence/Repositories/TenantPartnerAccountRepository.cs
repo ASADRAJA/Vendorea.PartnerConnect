@@ -92,4 +92,48 @@ public class TenantPartnerAccountRepository : ITenantPartnerAccountRepository
                      a.AccountNumber == accountNumber,
                 cancellationToken);
     }
+
+    public async Task<TenantPartnerAccount?> GetByIdWithDetailsAsync(int id, CancellationToken cancellationToken = default)
+    {
+        return await _context.TenantPartnerAccounts
+            .Include(a => a.Tenant)
+            .Include(a => a.TradingPartner)
+            .Include(a => a.Organization)
+            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<TenantPartnerAccount>> GetConnectionsAsync(
+        int? organizationId = null,
+        ConnectionApprovalStatus? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.TenantPartnerAccounts
+            .Include(a => a.Tenant)
+            .Include(a => a.TradingPartner)
+            .Include(a => a.Organization)
+            .Where(a => a.OrganizationId != null); // connection-workflow rows only
+
+        if (organizationId.HasValue)
+            query = query.Where(a => a.OrganizationId == organizationId.Value);
+        if (status.HasValue)
+            query = query.Where(a => a.ApprovalStatus == status.Value);
+
+        return await query
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> ConnectionExistsAsync(
+        int organizationId,
+        string externalTenantId,
+        int tradingPartnerId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.TenantPartnerAccounts
+            .AnyAsync(
+                a => a.OrganizationId == organizationId &&
+                     a.ExternalTenantId == externalTenantId &&
+                     a.TradingPartnerId == tradingPartnerId,
+                cancellationToken);
+    }
 }
