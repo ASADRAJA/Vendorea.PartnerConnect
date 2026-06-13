@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOutboxService, OutboxService>();
         services.AddScoped<IOutboxMessageProcessor, DefaultOutboxMessageProcessor>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddSingleton<ICredentialProtector, Security.AesCredentialProtector>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<IDealerOnboardingService, DealerOnboardingService>();
 

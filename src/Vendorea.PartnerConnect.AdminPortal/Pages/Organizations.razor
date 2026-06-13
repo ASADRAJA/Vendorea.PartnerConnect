@@ -4,7 +4,7 @@
 <PageTitle>Organizations - PartnerConnect Admin</PageTitle>
 
 <h1>Organizations</h1>
-<p class="text-muted">Manage billable accounts and their multi-tenant settings</p>
+<p class="text-muted">Register and manage organizations. Tenants are provisioned by the connections workflow.</p>
 
 <div class="row mb-4">
     <div class="col-12">
@@ -34,7 +34,7 @@
                     </li>
                 </ul>
                 <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
-                    <span class="oi oi-plus me-1"></span> New Organization
+                    <span class="oi oi-plus me-1"></span> Register Organization
                 </button>
             </div>
             <div class="card-body">
@@ -69,9 +69,9 @@
                                     <th>Code</th>
                                     <th>Name</th>
                                     <th>Status</th>
-                                    <th>Billing Plan</th>
-                                    <th>Multi-Tenant</th>
-                                    <th>Tenants</th>
+                                    <th>Order Mode</th>
+                                    <th>Type</th>
+                                    <th>Partners</th>
                                     <th>Created</th>
                                     <th>Actions</th>
                                 </tr>
@@ -85,24 +85,24 @@
                                         <td>
                                             <span class="badge @GetStatusBadgeClass(org.Status)">@org.Status</span>
                                         </td>
-                                        <td>@(org.BillingPlanName ?? "-")</td>
                                         <td>
-                                            @if (org.IsMultiTenant)
+                                            <span class="badge bg-secondary">PC Portal</span>
+                                            @if (org.ExternalPortalEnabled)
                                             {
-                                                <span class="badge bg-info">Multi-Tenant</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="badge bg-secondary">Single</span>
+                                                <span class="badge bg-info ms-1">External</span>
                                             }
                                         </td>
-                                        <td>@org.TenantCount</td>
+                                        <td>@(org.IsMultiTenant ? "Multi-Tenant" : "Single")</td>
+                                        <td>@org.TradingPartnerIds.Count</td>
                                         <td>@org.CreatedAt.ToLocalTime().ToString("d")</td>
                                         <td>
                                             @if (org.Status == "Pending")
                                             {
-                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ActivateOrganization(org.Id)" title="Activate">
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ApproveOrganization(org.Id)" title="Approve">
                                                     <span class="oi oi-check"></span>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => ShowRejectModal(org)" title="Reject">
+                                                    <span class="oi oi-x"></span>
                                                 </button>
                                             }
                                             else if (org.Status == "Active")
@@ -113,7 +113,7 @@
                                             }
                                             else if (org.Status == "Suspended")
                                             {
-                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ActivateOrganization(org.Id)" title="Reactivate">
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ApproveOrganization(org.Id)" title="Reactivate">
                                                     <span class="oi oi-action-redo"></span>
                                                 </button>
                                             }
@@ -135,52 +135,130 @@
     </div>
 </div>
 
-@* Create Organization Modal *@
-@if (showCreateModal)
+@* Register / Edit Organization Modal *@
+@if (showCreateModal || showEditModal)
 {
+    var isEdit = showEditModal;
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Create Organization</h5>
+                    <h5 class="modal-title">@(isEdit ? "Edit Organization" : "Register Organization")</h5>
                     <button type="button" class="btn-close" @onclick="CloseModals"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Code <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" @bind="createRequest.Code" placeholder="e.g., ACME, M360" />
-                        <small class="text-muted">Unique identifier for the organization</small>
+                    @if (isEdit)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Code</label>
+                            <input type="text" class="form-control" value="@selectedOrganization?.Code" disabled />
+                            <small class="text-muted">System-generated; cannot be changed</small>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-light border"><small><span class="oi oi-info me-1"></span> The organization code is generated automatically on save.</small></div>
+                    }
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" @bind="form.Name" placeholder="e.g., Acme Corporation" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Organization Type</label>
+                            <div class="form-check mt-2">
+                                <input type="checkbox" class="form-check-input" id="isMultiTenant" @bind="form.IsMultiTenant" disabled="@isEdit" />
+                                <label class="form-check-label" for="isMultiTenant">Multi-tenant</label>
+                            </div>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" @bind="createRequest.Name" placeholder="e.g., Acme Corporation" />
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Contact Email</label>
+                            <input type="email" class="form-control" @bind="form.ContactEmail" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Contact Phone</label>
+                            <input type="text" class="form-control" @bind="form.ContactPhone" />
+                        </div>
                     </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Billing Plan</label>
+                            <select class="form-select" @bind="selectedBillingPlanId">
+                                <option value="">Select Billing Plan...</option>
+                                @foreach (var plan in billingPlans)
+                                {
+                                    <option value="@plan.Id">@plan.Name - @plan.MonthlyPrice.ToString("C")/mo</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Payment Terms</label>
+                            <select class="form-select" @bind="form.PaymentTerms">
+                                @foreach (var term in PaymentTermsOptions)
+                                {
+                                    <option value="@term">@term</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="mb-3">
-                        <label class="form-label">Billing Plan</label>
-                        <select class="form-select" @bind="selectedBillingPlanId">
-                            <option value="">Select Billing Plan...</option>
-                            @foreach (var plan in billingPlans)
+                        <label class="form-label">Trading Partners</label>
+                        <div class="border rounded p-2">
+                            @if (tradingPartners.Count == 0)
                             {
-                                <option value="@plan.Id">@plan.Name - @plan.MonthlyPrice.ToString("C")/mo</option>
+                                <small class="text-muted">No partners available</small>
                             }
-                        </select>
+                            else
+                            {
+                                @foreach (var p in tradingPartners)
+                                {
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input" id="partner-@p.Id"
+                                               checked="@selectedPartnerIds.Contains(p.Id)"
+                                               @onchange="e => TogglePartner(p.Id, e)" />
+                                        <label class="form-check-label" for="partner-@p.Id">@p.Name (@p.Code)</label>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <small class="text-muted">Partners this organization's tenants may connect to</small>
                     </div>
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="isMultiTenant" @bind="createRequest.IsMultiTenant" />
-                        <label class="form-check-label" for="isMultiTenant">
-                            Multi-Tenant Organization
-                        </label>
-                        <br><small class="text-muted">Enable if this organization will have multiple tenants (e.g., M360)</small>
+
+                    <div class="mb-2 form-check">
+                        <input type="checkbox" class="form-check-input" id="externalPortal" @bind="form.ExternalPortalEnabled" />
+                        <label class="form-check-label" for="externalPortal">Also integrate via the organization's own external portal</label>
+                        <br><small class="text-muted">The PC portal is always available; enable this only if orders flow through the org's portal too.</small>
                     </div>
+                    @if (form.ExternalPortalEnabled)
+                    {
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Portal Base URL <span class="text-danger">*</span></label>
+                                <input type="url" class="form-control" @bind="form.PortalBaseUrl" placeholder="https://..." />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Portal API Key</label>
+                                <input type="password" class="form-control" @bind="form.PortalApiKey"
+                                       placeholder="@(isEdit && selectedOrganization?.HasPortalApiKey == true ? "•••••• (leave blank to keep)" : "")" />
+                                <small class="text-muted">Sent as X-Api-Key when PC calls the org's portal. Stored encrypted.</small>
+                            </div>
+                        </div>
+                    }
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="CreateOrganization" disabled="@(!CanCreate || isSubmitting)">
+                    <button type="button" class="btn btn-primary" @onclick="SaveOrganization" disabled="@(!CanSave || isSubmitting)">
                         @if (isSubmitting)
                         {
                             <span class="spinner-border spinner-border-sm me-1"></span>
                         }
-                        Create
+                        @(isEdit ? "Save Changes" : "Register")
                     </button>
                 </div>
             </div>
@@ -188,45 +266,28 @@
     </div>
 }
 
-@* Edit Organization Modal *@
-@if (showEditModal && selectedOrganization != null)
+@* Reject Modal *@
+@if (showRejectModal && selectedOrganization != null)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Edit Organization</h5>
-                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Reject @selectedOrganization.Name</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Code</label>
-                        <input type="text" class="form-control" value="@selectedOrganization.Code" disabled />
-                        <small class="text-muted">Code cannot be changed</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" @bind="updateRequest.Name" />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Billing Plan</label>
-                        <select class="form-select" @bind="selectedBillingPlanId">
-                            <option value="">Select Billing Plan...</option>
-                            @foreach (var plan in billingPlans)
-                            {
-                                <option value="@plan.Id">@plan.Name - @plan.MonthlyPrice.ToString("C")/mo</option>
-                            }
-                        </select>
-                    </div>
+                    <label class="form-label">Reason</label>
+                    <textarea class="form-control" rows="3" @bind="rejectReason" placeholder="Why is this registration being rejected?"></textarea>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="UpdateOrganization" disabled="@isSubmitting">
+                    <button type="button" class="btn btn-danger" @onclick="RejectOrganization" disabled="@isSubmitting">
                         @if (isSubmitting)
                         {
                             <span class="spinner-border spinner-border-sm me-1"></span>
                         }
-                        Save Changes
+                        Reject
                     </button>
                 </div>
             </div>
@@ -235,23 +296,29 @@
 }
 
 @code {
+    private static readonly string[] PaymentTermsOptions =
+        { "CreditCard", "Net15", "Net30", "Net45", "Net60", "Net90" };
+
     private OrganizationListResult orgResult = new();
     private List<BillingPlanDto> billingPlans = new();
+    private List<TradingPartnerDto> tradingPartners = new();
 
     private string activeTab = "active";
     private bool isLoading = true;
     private bool isSubmitting = false;
 
-    // Modals
     private bool showCreateModal = false;
     private bool showEditModal = false;
+    private bool showRejectModal = false;
 
     private OrganizationDto? selectedOrganization;
-    private CreateOrganizationRequest createRequest = new();
-    private UpdateOrganizationRequest updateRequest = new();
+    private OrgForm form = new();
     private string selectedBillingPlanId = "";
+    private readonly HashSet<int> selectedPartnerIds = new();
+    private string? rejectReason;
 
-    private bool CanCreate => !string.IsNullOrWhiteSpace(createRequest.Code) && !string.IsNullOrWhiteSpace(createRequest.Name);
+    private bool CanSave => !string.IsNullOrWhiteSpace(form.Name)
+        && (!form.ExternalPortalEnabled || !string.IsNullOrWhiteSpace(form.PortalBaseUrl));
 
     private List<OrganizationDto> filteredOrganizations => activeTab switch
     {
@@ -264,21 +331,18 @@
     {
         var orgsTask = LoadOrganizationsAsync();
         var plansTask = Api.GetBillingPlansAsync();
-
-        await Task.WhenAll(orgsTask, plansTask);
+        var partnersTask = Api.GetTradingPartnersAsync();
+        await Task.WhenAll(orgsTask, plansTask, partnersTask);
         billingPlans = await plansTask;
+        tradingPartners = await partnersTask;
     }
 
-    private async Task LoadOrganizations()
-    {
-        await LoadOrganizationsAsync();
-    }
+    private async Task LoadOrganizations() => await LoadOrganizationsAsync();
 
     private async Task LoadOrganizationsAsync()
     {
         isLoading = true;
         StateHasChanged();
-
         try
         {
             orgResult = await Api.GetOrganizationsAsync();
@@ -290,50 +354,106 @@
         }
     }
 
-    private void SetTab(string tab)
-    {
-        activeTab = tab;
-    }
+    private void SetTab(string tab) => activeTab = tab;
 
     private void ShowCreateModal()
     {
-        createRequest = new CreateOrganizationRequest();
+        form = new OrgForm();
         selectedBillingPlanId = "";
+        selectedPartnerIds.Clear();
+        selectedOrganization = null;
         showCreateModal = true;
     }
 
     private void ShowEditModal(OrganizationDto org)
     {
         selectedOrganization = org;
-        updateRequest = new UpdateOrganizationRequest { Name = org.Name };
+        form = new OrgForm
+        {
+            Name = org.Name,
+            ContactEmail = null,
+            ContactPhone = null,
+            PaymentTerms = org.PaymentTerms,
+            IsMultiTenant = org.IsMultiTenant,
+            ExternalPortalEnabled = org.ExternalPortalEnabled,
+            PortalBaseUrl = org.PortalBaseUrl,
+            PortalApiKey = null
+        };
         selectedBillingPlanId = org.BillingPlanId?.ToString() ?? "";
+        selectedPartnerIds.Clear();
+        foreach (var id in org.TradingPartnerIds) selectedPartnerIds.Add(id);
         showEditModal = true;
+    }
+
+    private void ShowRejectModal(OrganizationDto org)
+    {
+        selectedOrganization = org;
+        rejectReason = null;
+        showRejectModal = true;
     }
 
     private void CloseModals()
     {
         showCreateModal = false;
         showEditModal = false;
+        showRejectModal = false;
         selectedOrganization = null;
     }
 
-    private async Task CreateOrganization()
+    private void TogglePartner(int partnerId, ChangeEventArgs e)
     {
-        if (!CanCreate) return;
+        if (e.Value is bool b && b) selectedPartnerIds.Add(partnerId);
+        else selectedPartnerIds.Remove(partnerId);
+    }
 
+    private async Task SaveOrganization()
+    {
+        if (!CanSave) return;
         isSubmitting = true;
         try
         {
-            if (Guid.TryParse(selectedBillingPlanId, out var planId))
-            {
-                createRequest.BillingPlanId = planId;
-            }
+            Guid? planId = Guid.TryParse(selectedBillingPlanId, out var pid) ? pid : null;
 
-            var result = await Api.CreateOrganizationAsync(createRequest);
-            if (result != null)
+            if (showEditModal && selectedOrganization != null)
             {
-                CloseModals();
-                await LoadOrganizations();
+                var req = new UpdateOrganizationRequest
+                {
+                    Name = form.Name,
+                    ContactEmail = form.ContactEmail,
+                    ContactPhone = form.ContactPhone,
+                    BillingPlanId = planId,
+                    PaymentTerms = form.PaymentTerms,
+                    ExternalPortalEnabled = form.ExternalPortalEnabled,
+                    PortalBaseUrl = form.PortalBaseUrl,
+                    PortalApiKey = string.IsNullOrEmpty(form.PortalApiKey) ? null : form.PortalApiKey,
+                    TradingPartnerIds = selectedPartnerIds.ToList()
+                };
+                if (await Api.UpdateOrganizationAsync(selectedOrganization.Id, req))
+                {
+                    CloseModals();
+                    await LoadOrganizations();
+                }
+            }
+            else
+            {
+                var req = new CreateOrganizationRequest
+                {
+                    Name = form.Name,
+                    ContactEmail = form.ContactEmail,
+                    ContactPhone = form.ContactPhone,
+                    BillingPlanId = planId,
+                    PaymentTerms = form.PaymentTerms,
+                    IsMultiTenant = form.IsMultiTenant,
+                    ExternalPortalEnabled = form.ExternalPortalEnabled,
+                    PortalBaseUrl = form.PortalBaseUrl,
+                    PortalApiKey = form.PortalApiKey,
+                    TradingPartnerIds = selectedPartnerIds.ToList()
+                };
+                if (await Api.CreateOrganizationAsync(req) != null)
+                {
+                    CloseModals();
+                    await LoadOrganizations();
+                }
             }
         }
         finally
@@ -342,20 +462,18 @@
         }
     }
 
-    private async Task UpdateOrganization()
+    private async Task ApproveOrganization(int id)
+    {
+        if (await Api.ApproveOrganizationAsync(id)) await LoadOrganizations();
+    }
+
+    private async Task RejectOrganization()
     {
         if (selectedOrganization == null) return;
-
         isSubmitting = true;
         try
         {
-            if (Guid.TryParse(selectedBillingPlanId, out var planId))
-            {
-                updateRequest.BillingPlanId = planId;
-            }
-
-            var success = await Api.UpdateOrganizationAsync(selectedOrganization.Id, updateRequest);
-            if (success)
+            if (await Api.RejectOrganizationAsync(selectedOrganization.Id, rejectReason))
             {
                 CloseModals();
                 await LoadOrganizations();
@@ -364,25 +482,12 @@
         finally
         {
             isSubmitting = false;
-        }
-    }
-
-    private async Task ActivateOrganization(int id)
-    {
-        var success = await Api.ActivateOrganizationAsync(id);
-        if (success)
-        {
-            await LoadOrganizations();
         }
     }
 
     private async Task SuspendOrganization(int id)
     {
-        var success = await Api.SuspendOrganizationAsync(id);
-        if (success)
-        {
-            await LoadOrganizations();
-        }
+        if (await Api.SuspendOrganizationAsync(id)) await LoadOrganizations();
     }
 
     private static string GetStatusBadgeClass(string status) => status switch
@@ -390,7 +495,20 @@
         "Pending" => "bg-warning text-dark",
         "Active" => "bg-success",
         "Suspended" => "bg-danger",
+        "Rejected" => "bg-danger",
         "Closed" => "bg-secondary",
         _ => "bg-light text-dark"
     };
+
+    private class OrgForm
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? ContactEmail { get; set; }
+        public string? ContactPhone { get; set; }
+        public string PaymentTerms { get; set; } = "CreditCard";
+        public bool IsMultiTenant { get; set; }
+        public bool ExternalPortalEnabled { get; set; }
+        public string? PortalBaseUrl { get; set; }
+        public string? PortalApiKey { get; set; }
+    }
 }

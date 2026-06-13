@@ -19,10 +19,64 @@ public class OrganizationRepository : IOrganizationRepository
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
     }
 
+    public async Task<Organization?> GetByIdWithPartnersAsync(int id, CancellationToken cancellationToken = default)
+    {
+        return await _context.Organizations
+            .Include(o => o.Partners)
+                .ThenInclude(p => p.TradingPartner)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+    }
+
     public async Task<Organization?> GetByCodeAsync(string code, CancellationToken cancellationToken = default)
     {
         return await _context.Organizations
             .FirstOrDefaultAsync(o => o.Code == code, cancellationToken);
+    }
+
+    public async Task ReplacePartnersAsync(
+        int organizationId,
+        IReadOnlyCollection<int> tradingPartnerIds,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.OrganizationPartners
+            .Where(p => p.OrganizationId == organizationId)
+            .ToListAsync(cancellationToken);
+
+        _context.OrganizationPartners.RemoveRange(
+            existing.Where(p => !tradingPartnerIds.Contains(p.TradingPartnerId)));
+
+        var existingIds = existing.Select(p => p.TradingPartnerId).ToHashSet();
+        foreach (var partnerId in tradingPartnerIds.Distinct().Where(id => !existingIds.Contains(id)))
+        {
+            _context.OrganizationPartners.Add(new OrganizationPartner
+            {
+                OrganizationId = organizationId,
+                TradingPartnerId = partnerId,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<string> GenerateNextCodeAsync(CancellationToken cancellationToken = default)
+    {
+        // Sequential ORG-#####, derived from the highest existing ORG- code.
+        var codes = await _context.Organizations
+            .Where(o => o.Code.StartsWith("ORG-"))
+            .Select(o => o.Code)
+            .ToListAsync(cancellationToken);
+
+        var max = 0;
+        foreach (var code in codes)
+        {
+            if (int.TryParse(code.AsSpan(4), out var n) && n > max)
+            {
+                max = n;
+            }
+        }
+
+        return $"ORG-{(max + 1):D5}";
     }
 
     public async Task<IReadOnlyList<Organization>> GetAllAsync(CancellationToken cancellationToken = default)

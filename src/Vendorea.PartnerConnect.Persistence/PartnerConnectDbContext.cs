@@ -81,6 +81,7 @@ public class PartnerConnectDbContext : DbContext
 
     // Multi-Tenant and Orders
     public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<OrganizationPartner> OrganizationPartners => Set<OrganizationPartner>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantPartnerAccount> TenantPartnerAccounts => Set<TenantPartnerAccount>();
     public DbSet<Order> Orders => Set<Order>();
