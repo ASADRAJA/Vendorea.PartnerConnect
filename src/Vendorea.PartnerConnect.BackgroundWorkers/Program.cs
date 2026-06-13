@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Serilog;
 using Vendorea.PartnerConnect.BackgroundWorkers;
 using Vendorea.PartnerConnect.BackgroundWorkers.Workers;
@@ -9,7 +12,10 @@ using Vendorea.PartnerConnect.Storage;
 using Vendorea.PartnerConnect.Transport;
 using Vendorea.PartnerConnect.WorkerProcesses;
 
-var builder = Host.CreateApplicationBuilder(args);
+// Minimal web host: the background workers run as hosted services, and a lightweight HTTP
+// listener exposes /health so Azure App Service (which expects an HTTP endpoint) keeps the
+// always-on worker app loaded.
+var builder = WebApplication.CreateBuilder(args);
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -61,8 +67,9 @@ builder.Services.AddSprContentIngestionWorker();
 try
 {
     Log.Information("Starting Vendorea PartnerConnect Background Workers");
-    var host = builder.Build();
-    host.Run();
+    var app = builder.Build();
+    app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
+    app.Run();
 }
 catch (Exception ex)
 {
