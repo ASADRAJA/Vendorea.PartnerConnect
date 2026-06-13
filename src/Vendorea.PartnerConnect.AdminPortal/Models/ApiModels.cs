@@ -525,11 +525,17 @@ public class OrganizationDto
     public string Status { get; set; } = string.Empty;
     public Guid? BillingPlanId { get; set; }
     public string? BillingPlanName { get; set; }
+    public string PaymentTerms { get; set; } = "CreditCard";
     public bool IsMultiTenant { get; set; }
+    public bool ExternalPortalEnabled { get; set; }
+    public string? PortalBaseUrl { get; set; }
+    public bool HasPortalApiKey { get; set; }
     public int TenantCount { get; set; }
+    public List<int> TradingPartnerIds { get; set; } = new();
     public DateTime CreatedAt { get; set; }
     public DateTime? ActivatedAt { get; set; }
     public DateTime? SuspendedAt { get; set; }
+    public string? RejectionReason { get; set; }
 }
 
 public class OrganizationListResult
@@ -543,16 +549,31 @@ public class OrganizationListResult
 
 public class CreateOrganizationRequest
 {
+    // Code is system-generated server-side; kept for compatibility, not sent by the form.
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
     public Guid? BillingPlanId { get; set; }
+    public string PaymentTerms { get; set; } = "CreditCard";
     public bool IsMultiTenant { get; set; }
+    public bool ExternalPortalEnabled { get; set; }
+    public string? PortalBaseUrl { get; set; }
+    public string? PortalApiKey { get; set; }
+    public List<int> TradingPartnerIds { get; set; } = new();
 }
 
 public class UpdateOrganizationRequest
 {
     public string Name { get; set; } = string.Empty;
+    public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
     public Guid? BillingPlanId { get; set; }
+    public string PaymentTerms { get; set; } = "CreditCard";
+    public bool ExternalPortalEnabled { get; set; }
+    public string? PortalBaseUrl { get; set; }
+    public string? PortalApiKey { get; set; }
+    public List<int> TradingPartnerIds { get; set; } = new();
 }
 
 // Tenant Models (Multi-Tenant)

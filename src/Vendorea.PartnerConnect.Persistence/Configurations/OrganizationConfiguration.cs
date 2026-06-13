@@ -52,6 +52,19 @@ public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
         builder.Property(e => e.SuspensionReason)
             .HasMaxLength(1000);
 
+        builder.Property(e => e.RejectionReason)
+            .HasMaxLength(1000);
+
+        builder.Property(e => e.PaymentTerms)
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
+        builder.Property(e => e.PortalBaseUrl)
+            .HasMaxLength(500);
+
+        builder.Property(e => e.PortalApiKey)
+            .HasMaxLength(1000);
+
         builder.HasIndex(e => e.Code)
             .IsUnique();
 
@@ -61,5 +74,10 @@ public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
             .WithOne(e => e.Organization)
             .HasForeignKey(e => e.OrganizationId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasMany(e => e.Partners)
+            .WithOne(e => e.Organization)
+            .HasForeignKey(e => e.OrganizationId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -29,10 +29,37 @@ public class Organization
     public string? BillingPlanId { get; set; }
 
     /// <summary>
-    /// Whether this org supports multiple tenants.
-    /// If false, a default tenant is created automatically.
+    /// Whether this org supports multiple tenants. Tenant provisioning is handled by the
+    /// connections workflow (not at org creation).
     /// </summary>
     public bool IsMultiTenant { get; set; }
+
+    /// <summary>
+    /// Payment terms selected at registration (capture-only; no payment processing yet).
+    /// </summary>
+    public PaymentTerms PaymentTerms { get; set; } = PaymentTerms.CreditCard;
+
+    /// <summary>
+    /// When true, this org's tenants also place orders via the org's own external portal
+    /// (in addition to the always-available PC portal). Requires the portal connection details below.
+    /// </summary>
+    public bool ExternalPortalEnabled { get; set; }
+
+    /// <summary>
+    /// Base URL of the org's external portal that PartnerConnect calls back into (lifecycle callbacks).
+    /// </summary>
+    public string? PortalBaseUrl { get; set; }
+
+    /// <summary>
+    /// Encrypted API key PartnerConnect sends (X-Api-Key) when calling the org's portal.
+    /// Stored encrypted at rest; decrypt via ICredentialProtector before use.
+    /// </summary>
+    public string? PortalApiKey { get; set; }
+
+    /// <summary>
+    /// Reason an org registration was rejected (when Status is set to a rejected/closed state).
+    /// </summary>
+    public string? RejectionReason { get; set; }
 
     /// <summary>
     /// Primary contact email.
@@ -82,6 +109,24 @@ public class Organization
 
     // Navigation properties
     public ICollection<Tenant> Tenants { get; set; } = new List<Tenant>();
+
+    /// <summary>
+    /// Trading partners this organization's tenants are allowed to connect to (selected at registration).
+    /// </summary>
+    public ICollection<OrganizationPartner> Partners { get; set; } = new List<OrganizationPartner>();
+}
+
+/// <summary>
+/// Payment terms an organization registers with (capture-only).
+/// </summary>
+public enum PaymentTerms
+{
+    CreditCard,
+    Net15,
+    Net30,
+    Net45,
+    Net60,
+    Net90
 }
 
 /// <summary>
@@ -107,5 +152,10 @@ public enum OrganizationStatus
     /// <summary>
     /// Permanently closed.
     /// </summary>
-    Closed
+    Closed,
+
+    /// <summary>
+    /// Registration was reviewed and rejected.
+    /// </summary>
+    Rejected
 }

@@ -879,6 +879,34 @@ public class ApiClient
         }
     }
 
+    public async Task<bool> ApproveOrganizationAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/organizations/{id}/approve", null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to approve organization {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> RejectOrganizationAsync(int id, string? reason)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/admin/organizations/{id}/reject", new { Reason = reason });
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reject organization {Id}", id);
+            return false;
+        }
+    }
+
     // Tenant endpoints
     public async Task<TenantListResult> GetTenantsAsync(int? organizationId = null, string? status = null)
     {

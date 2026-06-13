@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vendorea.PartnerConnect.Persistence;
 
@@ -11,9 +12,11 @@ using Vendorea.PartnerConnect.Persistence;
 namespace Vendorea.PartnerConnect.Persistence.Migrations
 {
     [DbContext(typeof(PartnerConnectDbContext))]
-    partial class PartnerConnectDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260613181432_AddOrganizationRegistrationFields")]
+    partial class AddOrganizationRegistrationFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -8274,7 +8277,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Supplier.SupplierInventorySnapshot", "PreviousSnapshot")
                         .WithMany()
                         .HasForeignKey("PreviousSnapshotId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.TradingPartner", "TradingPartner")
                         .WithMany()

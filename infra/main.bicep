@@ -34,6 +34,10 @@ param merchant360BaseUrl string = ''
 @secure()
 param merchant360ApiKey string = ''
 
+@description('Shared key used to encrypt stored credentials (e.g., org portal API keys). Must match across API + workers.')
+@secure()
+param credentialEncryptionKey string = ''
+
 // Globally unique, short suffix for the storage account name.
 var uniqueSuffix = substring(uniqueString(resourceGroup().id), 0, 6)
 var resourcePrefix = '${baseName}-${environment}'
@@ -128,6 +132,10 @@ var merchant360AppSettings = [
   {
     name: 'Merchant360__ApiKey'
     value: merchant360ApiKey
+  }
+  {
+    name: 'CredentialEncryption__EncryptionKey'
+    value: credentialEncryptionKey
   }
 ]
 
