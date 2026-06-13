@@ -16,6 +16,14 @@ public class TradingPartner
     public string? ContactPhone { get; set; }
     public string? WebsiteUrl { get; set; }
     public string? LogoUrl { get; set; }
+
+    /// <summary>
+    /// Partner's "requirements for tenant confirmation": an ordered JSON list of field names
+    /// (collected as free text on the connection form) that PC staff use to verify a tenant
+    /// connection with the partner before approval. Authored by partner registration (future).
+    /// </summary>
+    public string? TenantConfirmationFieldsJson { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 

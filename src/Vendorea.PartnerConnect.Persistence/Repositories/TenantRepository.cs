@@ -39,6 +39,13 @@ public class TenantRepository : ITenantRepository
             .FirstOrDefaultAsync(t => t.ExternalId == externalId, cancellationToken);
     }
 
+    public async Task<Tenant?> GetByOrgAndExternalIdAsync(int organizationId, string externalId, CancellationToken cancellationToken = default)
+    {
+        return await _context.Tenants
+            .Include(t => t.Organization)
+            .FirstOrDefaultAsync(t => t.OrganizationId == organizationId && t.ExternalId == externalId, cancellationToken);
+    }
+
     public async Task<Tenant?> GetDefaultTenantAsync(int organizationId, CancellationToken cancellationToken = default)
     {
         return await _context.Tenants

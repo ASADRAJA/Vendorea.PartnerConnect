@@ -1,0 +1,385 @@
+@page "/tenant-connections"
+@inject ApiClient Api
+
+<PageTitle>Partner Connections - PartnerConnect Admin</PageTitle>
+
+<h1>Partner Connections</h1>
+<p class="text-muted">Tenant-partner connections. Approving a connection creates the tenant (if new) and activates it.</p>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <ul class="nav nav-tabs card-header-tabs">
+                    @foreach (var tab in Tabs)
+                    {
+                        <li class="nav-item">
+                            <button class="nav-link @(activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)">@tab</button>
+                        </li>
+                    }
+                </ul>
+                <button class="btn btn-primary btn-sm" @onclick="ShowRequestModal">
+                    <span class="oi oi-plus me-1"></span> Request Connection
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Filter by Organization</label>
+                        <select class="form-select" @bind="filterOrgId" @bind:after="LoadConnections">
+                            <option value="">All Organizations</option>
+                            @foreach (var o in orgs)
+                            {
+                                <option value="@o.Id">@o.Name (@o.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadConnections">
+                            <span class="oi oi-reload me-1"></span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+                }
+                else if (filtered.Count == 0)
+                {
+                    <div class="text-center py-4 text-muted"><span class="oi oi-link-intact" style="font-size:3rem;"></span><p class="mt-2">No connections</p></div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Organization</th>
+                                    <th>Partner</th>
+                                    <th>Tenant (org id)</th>
+                                    <th>Contact</th>
+                                    <th>Account #</th>
+                                    <th>Status</th>
+                                    <th>Requested</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in filtered)
+                                {
+                                    <tr>
+                                        <td>@(c.OrganizationName ?? $"Org #{c.OrganizationId}")</td>
+                                        <td>@(c.PartnerName ?? $"Partner #{c.TradingPartnerId}")</td>
+                                        <td><code>@c.ExternalTenantId</code>@if (c.TenantName != null) { <text> — @c.TenantName</text> }</td>
+                                        <td>@($"{c.ContactFirstName} {c.ContactLastName}".Trim())</td>
+                                        <td>@c.AccountNumber</td>
+                                        <td><span class="badge @StatusBadge(c.ApprovalStatus)">@c.ApprovalStatus</span></td>
+                                        <td>@c.CreatedAt.ToLocalTime().ToString("d")</td>
+                                        <td>
+                                            @if (c.ApprovalStatus == "Pending")
+                                            {
+                                                <button class="btn btn-sm btn-success me-1" @onclick="() => Approve(c.Id)" title="Approve"><span class="oi oi-check"></span></button>
+                                                <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => ShowDenyModal(c)" title="Deny"><span class="oi oi-x"></span></button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-info" @onclick="() => ShowDetails(c)" title="Details"><span class="oi oi-eye"></span></button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Request Connection Modal *@
+@if (showRequestModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Request Connection</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Organization <span class="text-danger">*</span></label>
+                            <select class="form-select" @bind="selectedOrgId" @bind:after="OnOrgChanged">
+                                <option value="0">Select organization...</option>
+                                @foreach (var o in orgs.Where(o => o.Status == "Active"))
+                                {
+                                    <option value="@o.Id">@o.Name (@o.Code)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Partner <span class="text-danger">*</span></label>
+                            <select class="form-select" @bind="selectedPartnerId" @bind:after="OnPartnerChanged" disabled="@(partnerOptions.Count == 0)">
+                                <option value="0">Select partner...</option>
+                                @foreach (var p in partnerOptions)
+                                {
+                                    <option value="@p.TradingPartnerId">@p.Name (@p.Code)</option>
+                                }
+                            </select>
+                            @if (selectedOrgId > 0 && partnerOptions.Count == 0)
+                            {
+                                <small class="text-danger">This org has no partners selected.</small>
+                            }
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Tenant's Org Id <span class="text-danger">*</span></label>
+                            <input class="form-control" @bind="form.ExternalTenantId" placeholder="the id the org sends on this tenant's orders" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Partner Account Number <span class="text-danger">*</span></label>
+                            <input class="form-control" @bind="form.AccountNumber" />
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">First Name</label>
+                            <input class="form-control" @bind="form.ContactFirstName" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Last Name</label>
+                            <input class="form-control" @bind="form.ContactLastName" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Special Identifying Code</label>
+                            <input class="form-control" @bind="form.SpecialIdentifyingCode" />
+                        </div>
+                    </div>
+                    @if (partnerFields.Count > 0)
+                    {
+                        <div class="mb-2"><strong>Partner confirmation fields</strong></div>
+                        <div class="row">
+                            @foreach (var field in partnerFields)
+                            {
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@field</label>
+                                    <input class="form-control" value="@GetField(field)" @onchange="e => SetField(field, e)" />
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" rows="2" @bind="form.Notes"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateConnection" disabled="@(!CanCreate || isSubmitting)">
+                        @if (isSubmitting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Request
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Deny Modal *@
+@if (showDenyModal && selected != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Deny Connection</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Reason</label>
+                    <textarea class="form-control" rows="3" @bind="decisionReason"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="Deny" disabled="@isSubmitting">Deny</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Details Modal *@
+@if (showDetailsModal && selected != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Connection Details</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="row mb-0">
+                        <dt class="col-5">Organization</dt><dd class="col-7">@selected.OrganizationName</dd>
+                        <dt class="col-5">Partner</dt><dd class="col-7">@selected.PartnerName</dd>
+                        <dt class="col-5">Tenant's Org Id</dt><dd class="col-7">@selected.ExternalTenantId</dd>
+                        <dt class="col-5">Tenant</dt><dd class="col-7">@(selected.TenantName ?? "(created on approval)")</dd>
+                        <dt class="col-5">Account #</dt><dd class="col-7">@selected.AccountNumber</dd>
+                        <dt class="col-5">Contact</dt><dd class="col-7">@($"{selected.ContactFirstName} {selected.ContactLastName}".Trim())</dd>
+                        <dt class="col-5">Special Code</dt><dd class="col-7">@selected.SpecialIdentifyingCode</dd>
+                        <dt class="col-5">Status</dt><dd class="col-7">@selected.ApprovalStatus</dd>
+                        @foreach (var kv in selected.ConfirmationFields)
+                        {
+                            <dt class="col-5">@kv.Key</dt><dd class="col-7">@kv.Value</dd>
+                        }
+                        @if (!string.IsNullOrEmpty(selected.Notes))
+                        {
+                            <dt class="col-5">Notes</dt><dd class="col-7">@selected.Notes</dd>
+                        }
+                        @if (!string.IsNullOrEmpty(selected.DecisionReason))
+                        {
+                            <dt class="col-5">Decision Reason</dt><dd class="col-7">@selected.DecisionReason</dd>
+                        }
+                    </dl>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly string[] Tabs = { "Pending", "Approved", "Denied", "All" };
+
+    private List<OrganizationDto> orgs = new();
+    private TenantConnectionListResult connResult = new();
+    private List<ConnectionPartnerOption> partnerOptions = new();
+    private List<string> partnerFields = new();
+
+    private string activeTab = "Pending";
+    private string? filterOrgId;
+    private bool isLoading = true;
+    private bool isSubmitting;
+
+    private bool showRequestModal, showDenyModal, showDetailsModal;
+    private TenantConnectionDto? selected;
+    private CreateTenantConnectionRequest form = new();
+    private int selectedOrgId;
+    private int selectedPartnerId;
+    private string? decisionReason;
+
+    private List<TenantConnectionDto> filtered =>
+        activeTab == "All" ? connResult.Items : connResult.Items.Where(c => c.ApprovalStatus == activeTab).ToList();
+
+    private bool CanCreate => selectedOrgId > 0 && selectedPartnerId > 0
+        && !string.IsNullOrWhiteSpace(form.ExternalTenantId) && !string.IsNullOrWhiteSpace(form.AccountNumber);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgsTask = Api.GetOrganizationsAsync();
+        var connTask = LoadConnectionsAsync();
+        await Task.WhenAll(orgsTask, connTask);
+        orgs = (await orgsTask).Items;
+    }
+
+    private async Task LoadConnections() => await LoadConnectionsAsync();
+
+    private async Task LoadConnectionsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            int? orgId = int.TryParse(filterOrgId, out var id) ? id : null;
+            connResult = await Api.GetConnectionsAsync(orgId);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetTab(string tab) => activeTab = tab;
+
+    private void ShowRequestModal()
+    {
+        form = new CreateTenantConnectionRequest();
+        selectedOrgId = 0;
+        selectedPartnerId = 0;
+        partnerOptions = new();
+        partnerFields = new();
+        showRequestModal = true;
+    }
+
+    private async Task OnOrgChanged()
+    {
+        selectedPartnerId = 0;
+        partnerFields = new();
+        partnerOptions = selectedOrgId > 0
+            ? await Api.GetConnectionPartnerOptionsAsync(selectedOrgId)
+            : new();
+    }
+
+    private async Task OnPartnerChanged()
+    {
+        partnerFields = selectedPartnerId > 0
+            ? await Api.GetPartnerConfirmationFieldsAsync(selectedPartnerId)
+            : new();
+    }
+
+    private string GetField(string name) => form.ConfirmationFields.TryGetValue(name, out var v) ? v : "";
+    private void SetField(string name, ChangeEventArgs e) => form.ConfirmationFields[name] = e.Value?.ToString() ?? "";
+
+    private void ShowDenyModal(TenantConnectionDto c) { selected = c; decisionReason = null; showDenyModal = true; }
+    private void ShowDetails(TenantConnectionDto c) { selected = c; showDetailsModal = true; }
+    private void CloseModals() { showRequestModal = showDenyModal = showDetailsModal = false; selected = null; }
+
+    private async Task CreateConnection()
+    {
+        if (!CanCreate) return;
+        isSubmitting = true;
+        try
+        {
+            form.OrganizationId = selectedOrgId;
+            form.TradingPartnerId = selectedPartnerId;
+            if (await Api.CreateConnectionAsync(form))
+            {
+                CloseModals();
+                await LoadConnections();
+            }
+        }
+        finally { isSubmitting = false; }
+    }
+
+    private async Task Approve(int id)
+    {
+        if (await Api.ApproveConnectionAsync(id, null)) await LoadConnections();
+    }
+
+    private async Task Deny()
+    {
+        if (selected == null) return;
+        isSubmitting = true;
+        try
+        {
+            if (await Api.DenyConnectionAsync(selected.Id, decisionReason))
+            {
+                CloseModals();
+                await LoadConnections();
+            }
+        }
+        finally { isSubmitting = false; }
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "Pending" => "bg-warning text-dark",
+        "Approved" => "bg-success",
+        "Denied" => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

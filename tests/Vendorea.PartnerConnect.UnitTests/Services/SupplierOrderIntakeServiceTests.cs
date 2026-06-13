@@ -340,7 +340,7 @@ public class SupplierOrderIntakeServiceTests
         _orgRepoMock.Setup(r => r.GetByIdAsync(request.OrganizationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Organization { Id = 1, Code = "ORG", Name = "Test Org", Status = OrganizationStatus.Active });
 
-        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync(request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
+        _tenantRepoMock.Setup(r => r.GetByOrgAndExternalIdAsync(request.OrganizationId, request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Tenant?)null);
 
         // Act
@@ -354,7 +354,8 @@ public class SupplierOrderIntakeServiceTests
     [Fact]
     public async Task SubmitOrder_TenantNotInOrganization_ReturnsValidationError()
     {
-        // Arrange
+        // Tenant resolution is now scoped to the org, so a tenant that belongs to a different org
+        // simply isn't found for this org's request.
         var request = CreateValidRequest();
 
         _orderRepoMock.Setup(r => r.GetByIdempotencyKeyAsync(
@@ -364,15 +365,16 @@ public class SupplierOrderIntakeServiceTests
         _orgRepoMock.Setup(r => r.GetByIdAsync(request.OrganizationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Organization { Id = 1, Code = "ORG", Name = "Test Org", Status = OrganizationStatus.Active });
 
-        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync(request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Tenant { Id = 10, OrganizationId = 999, Code = "TENANT", Name = "Test Tenant", Status = TenantStatus.Active });
+        // No tenant exists under this org for the supplied external id.
+        _tenantRepoMock.Setup(r => r.GetByOrgAndExternalIdAsync(request.OrganizationId, request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Tenant?)null);
 
         // Act
         var result = await _service.SubmitOrderAsync(request);
 
         // Assert
         result.Accepted.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Code == "MERCHANT_ORG_MISMATCH");
+        result.Errors.Should().Contain(e => e.Code == "MERCHANT_NOT_FOUND");
     }
 
     #endregion
@@ -476,7 +478,7 @@ public class SupplierOrderIntakeServiceTests
                 Name = "Test Org",
                 Status = OrganizationStatus.Active
             });
-        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync("3", It.IsAny<CancellationToken>()))
+        _tenantRepoMock.Setup(r => r.GetByOrgAndExternalIdAsync(request.OrganizationId, "3", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Tenant
             {
                 Id = 2,
@@ -583,7 +585,7 @@ public class SupplierOrderIntakeServiceTests
                 Status = OrganizationStatus.Active
             });
 
-        _tenantRepoMock.Setup(r => r.GetByExternalIdAsync(request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
+        _tenantRepoMock.Setup(r => r.GetByOrgAndExternalIdAsync(request.OrganizationId, request.MerchantId.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Tenant
             {
                 Id = request.MerchantId,

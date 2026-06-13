@@ -235,7 +235,7 @@ public class AdminTenantsController : ControllerBase
             accountDtos.Add(new TenantPartnerAccountDto
             {
                 Id = account.Id,
-                TenantId = account.TenantId,
+                TenantId = account.TenantId ?? tenantId,
                 TenantName = tenant.Name,
                 TradingPartnerId = account.TradingPartnerId,
                 TradingPartnerCode = partner?.Code,
@@ -288,7 +288,7 @@ public class AdminTenantsController : ControllerBase
         return CreatedAtAction(nameof(GetTenantPartnerAccounts), new { tenantId }, new TenantPartnerAccountDto
         {
             Id = account.Id,
-            TenantId = account.TenantId,
+            TenantId = account.TenantId ?? tenantId,
             TenantName = tenant.Name,
             TradingPartnerId = account.TradingPartnerId,
             TradingPartnerCode = partner.Code,

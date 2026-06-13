@@ -907,6 +907,95 @@ public class ApiClient
         }
     }
 
+    // --- Tenant-partner connections ---
+
+    public async Task<TenantConnectionListResult> GetConnectionsAsync(int? organizationId = null, string? status = null)
+    {
+        try
+        {
+            var query = new List<string>();
+            if (organizationId.HasValue) query.Add($"organizationId={organizationId}");
+            if (!string.IsNullOrEmpty(status)) query.Add($"status={status}");
+            var url = "/api/admin/connections" + (query.Count > 0 ? "?" + string.Join("&", query) : "");
+            return await _httpClient.GetFromJsonAsync<TenantConnectionListResult>(url) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get connections");
+            return new();
+        }
+    }
+
+    public async Task<List<ConnectionPartnerOption>> GetConnectionPartnerOptionsAsync(int organizationId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<ConnectionPartnerOption>>(
+                $"/api/admin/connections/options?organizationId={organizationId}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get connection partner options for org {OrgId}", organizationId);
+            return new();
+        }
+    }
+
+    public async Task<List<string>> GetPartnerConfirmationFieldsAsync(int tradingPartnerId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<string>>(
+                $"/api/admin/connections/partner-fields?tradingPartnerId={tradingPartnerId}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get partner confirmation fields for {PartnerId}", tradingPartnerId);
+            return new();
+        }
+    }
+
+    public async Task<bool> CreateConnectionAsync(CreateTenantConnectionRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/connections", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create connection");
+            return false;
+        }
+    }
+
+    public async Task<bool> ApproveConnectionAsync(int id, string? reason)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/admin/connections/{id}/approve", new { Reason = reason });
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to approve connection {Id}", id);
+            return false;
+        }
+    }
+
+    public async Task<bool> DenyConnectionAsync(int id, string? reason)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/admin/connections/{id}/deny", new { Reason = reason });
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deny connection {Id}", id);
+            return false;
+        }
+    }
+
     // Tenant endpoints
     public async Task<TenantListResult> GetTenantsAsync(int? organizationId = null, string? status = null)
     {

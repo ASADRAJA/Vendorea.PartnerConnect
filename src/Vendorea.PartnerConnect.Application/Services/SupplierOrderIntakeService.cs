@@ -99,8 +99,11 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             }
         }
 
-        // Step 4: Validate organization exists and is active
-        var org = await _organizationRepository.GetByIdAsync(request.OrganizationId, cancellationToken);
+        // Step 4: Validate organization exists and is active. Prefer the org Code (the external
+        // identifier) when supplied; otherwise fall back to the internal OrganizationId.
+        var org = !string.IsNullOrWhiteSpace(request.OrganizationCode)
+            ? await _organizationRepository.GetByCodeAsync(request.OrganizationCode, cancellationToken)
+            : await _organizationRepository.GetByIdAsync(request.OrganizationId, cancellationToken);
         if (org == null)
         {
             return SubmitSupplierOrderResponse.ValidationFailed(correlationId, [
@@ -114,21 +117,15 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             ]);
         }
 
-        // Step 5: Resolve the merchant. MerchantId is M360's own merchant id, stored on the PC
-        // tenant as ExternalId (NOT PC's internal Tenant.Id) — resolve by ExternalId so inbound
-        // matches the outbound callback routing, which also keys on Tenant.ExternalId.
-        var tenant = await _tenantRepository.GetByExternalIdAsync(
-            request.MerchantId.ToString(), cancellationToken);
+        // Step 5: Resolve the tenant scoped to the org. MerchantId is the org's own id for the
+        // tenant, stored as Tenant.ExternalId — and it's only unique WITHIN an org, so we must
+        // scope the lookup by org to avoid cross-org collisions.
+        var tenant = await _tenantRepository.GetByOrgAndExternalIdAsync(
+            org.Id, request.MerchantId.ToString(), cancellationToken);
         if (tenant == null)
         {
             return SubmitSupplierOrderResponse.ValidationFailed(correlationId, [
                 new ValidationError("MERCHANT_NOT_FOUND", "MerchantId", "Merchant/tenant not found for the supplied merchant id")
-            ]);
-        }
-        if (tenant.OrganizationId != request.OrganizationId)
-        {
-            return SubmitSupplierOrderResponse.ValidationFailed(correlationId, [
-                new ValidationError("MERCHANT_ORG_MISMATCH", "MerchantId", "Merchant does not belong to specified organization")
             ]);
         }
         if (tenant.Status != TenantStatus.Active)
