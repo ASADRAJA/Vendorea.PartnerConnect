@@ -18,8 +18,12 @@ SQL_USER="pcadmin"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-echo -n "Enter SQL Server admin password: "; read -s SQL_PASSWORD; echo ""
-if [ -z "$SQL_PASSWORD" ]; then echo -e "${RED}Error: SQL password is required${NC}"; exit 1; fi
+# Password can be supplied via the SQL_PASSWORD env var for non-interactive runs.
+SQL_PASSWORD="${SQL_PASSWORD:-}"
+if [ -z "$SQL_PASSWORD" ]; then
+    echo -n "Enter SQL Server admin password: "; read -s SQL_PASSWORD; echo ""
+fi
+if [ -z "$SQL_PASSWORD" ]; then echo -e "${RED}Error: SQL password is required (set SQL_PASSWORD or enter when prompted)${NC}"; exit 1; fi
 
 # Open the SQL firewall for this machine so migrations can connect.
 MY_IP=$(curl -s https://api.ipify.org)

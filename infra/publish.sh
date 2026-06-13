@@ -3,6 +3,8 @@
 # Usage: ./publish.sh <environment> [apps]
 # Example: ./publish.sh test            # deploys api, admin, workers
 #          ./publish.sh test "api"      # deploys only the api
+#
+# Note: written for bash 3.2 (macOS default) — no associative arrays.
 
 set -e
 
@@ -17,15 +19,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # app key -> project path
-declare -A PROJECTS=(
-  [api]="src/Vendorea.PartnerConnect.API"
-  [admin]="src/Vendorea.PartnerConnect.AdminPortal"
-  [workers]="src/Vendorea.PartnerConnect.BackgroundWorkers"
-)
+project_for() {
+    case "$1" in
+        api)     echo "src/Vendorea.PartnerConnect.API" ;;
+        admin)   echo "src/Vendorea.PartnerConnect.AdminPortal" ;;
+        workers) echo "src/Vendorea.PartnerConnect.BackgroundWorkers" ;;
+        *)       echo "" ;;
+    esac
+}
 
 deploy_app() {
     local app="$1"
-    local project="${PROJECTS[$app]}"
+    local project; project="$(project_for "$app")"
+    if [ -z "$project" ]; then echo "Unknown app: $app (expected api|admin|workers)"; exit 1; fi
+
     local webapp="${BASE_NAME}-${ENVIRONMENT}-${app}"
     local outdir; outdir="$(mktemp -d)"
     local zip="${outdir}/${app}.zip"
@@ -45,8 +52,7 @@ deploy_app() {
 
 IFS=',' read -ra APP_LIST <<< "$APPS"
 for app in "${APP_LIST[@]}"; do
-    app="$(echo "$app" | xargs)"  # trim
-    if [ -z "${PROJECTS[$app]}" ]; then echo "Unknown app: $app (expected api|admin|workers)"; exit 1; fi
+    app="$(echo "$app" | xargs)"  # trim whitespace
     deploy_app "$app"
 done
 

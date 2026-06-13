@@ -35,11 +35,23 @@ fi
 echo -e "${GREEN}Logged in: $(az account show --query name -o tsv)${NC}"
 echo ""
 
-# Secrets (not stored in parameters files)
-echo -n "Enter SQL Server admin password: "; read -s SQL_PASSWORD; echo ""
-if [ -z "$SQL_PASSWORD" ]; then echo -e "${RED}Error: SQL password is required${NC}"; exit 1; fi
-echo -n "Enter Merchant360 base URL (e.g. https://merchant360-test-api.azurewebsites.net): "; read M360_URL; echo ""
-echo -n "Enter Merchant360 shared X-Api-Key (blank to set later): "; read -s M360_KEY; echo ""
+# Secrets (not stored in parameters files). Each can be supplied via an environment
+# variable for non-interactive runs; otherwise you'll be prompted.
+SQL_PASSWORD="${SQL_PASSWORD:-}"
+if [ -z "$SQL_PASSWORD" ]; then
+    echo -n "Enter SQL Server admin password: "; read -s SQL_PASSWORD; echo ""
+fi
+if [ -z "$SQL_PASSWORD" ]; then echo -e "${RED}Error: SQL password is required (set SQL_PASSWORD or enter when prompted)${NC}"; exit 1; fi
+
+M360_URL="${M360_BASEURL:-}"
+if [ -z "$M360_URL" ]; then
+    echo -n "Enter Merchant360 base URL (e.g. https://merchant360-test-api.azurewebsites.net): "; read M360_URL; echo ""
+fi
+
+M360_KEY="${M360_APIKEY:-}"
+if [ -z "$M360_KEY" ]; then
+    echo -n "Enter Merchant360 shared X-Api-Key (blank to set later): "; read -s M360_KEY; echo ""
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
