@@ -75,9 +75,14 @@ public class InventoryFeedSyncWorker : BackgroundService
 
         var connections = await connectionRepo.GetActiveConnectionsAsync(cancellationToken);
 
-        // Filter to connections that support inventory feeds
+        // Inventory is shared master data per partner — pull it ONCE per partner over the
+        // partner's shared transport, not once per dealer connection. We process one
+        // representative connection per partner (transition step until DealerPartnerConnection
+        // is retired and pulls are driven directly off the partner).
         var inventoryConnections = connections
             .Where(c => SupportsInventoryFeeds(c))
+            .GroupBy(c => c.TradingPartnerId)
+            .Select(g => g.First())
             .ToList();
 
         if (inventoryConnections.Count == 0)
@@ -86,7 +91,7 @@ public class InventoryFeedSyncWorker : BackgroundService
             return;
         }
 
-        _logger.LogInformation("Found {Count} connections to process for inventory feeds", inventoryConnections.Count);
+        _logger.LogInformation("Processing inventory feeds for {Count} partner(s) (shared per partner)", inventoryConnections.Count);
 
         // Process connections with controlled concurrency
         var semaphore = new SemaphoreSlim(maxConcurrent);
