@@ -16,7 +16,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 public class AdminDocumentsController : ControllerBase
 {
     private readonly IPartnerDocumentRepository _documentRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IMerchant360Client _merchant360Client;
     private readonly IDocumentCorrelationRepository _correlationRepository;
@@ -26,7 +25,6 @@ public class AdminDocumentsController : ControllerBase
 
     public AdminDocumentsController(
         IPartnerDocumentRepository documentRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
         ITradingPartnerRepository partnerRepository,
         IMerchant360Client merchant360Client,
         IDocumentCorrelationRepository correlationRepository,
@@ -35,7 +33,6 @@ public class AdminDocumentsController : ControllerBase
         ILogger<AdminDocumentsController> logger)
     {
         _documentRepository = documentRepository;
-        _connectionRepository = connectionRepository;
         _partnerRepository = partnerRepository;
         _merchant360Client = merchant360Client;
         _correlationRepository = correlationRepository;
@@ -57,15 +54,15 @@ public class AdminDocumentsController : ControllerBase
         [FromQuery] int? tradingPartnerId = null,
         CancellationToken cancellationToken = default)
     {
-        // Get all connections to map documents to dealers/partners
-        var allConnections = await _connectionRepository.GetAllAsync(cancellationToken);
-        var connectionMap = allConnections.ToDictionary(c => c.Id);
+        // Get all trading partners to map documents to partners
+        var allPartners = await _partnerRepository.GetAllAsync(cancellationToken);
+        var partnerMap = allPartners.ToDictionary(p => p.Id);
 
-        // Get all documents from all connections
+        // Get all documents across all partners
         var allDocuments = new List<PartnerDocument>();
-        foreach (var connection in allConnections)
+        foreach (var partner in allPartners)
         {
-            var docs = await _documentRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
+            var docs = await _documentRepository.GetByTradingPartnerAsync(partner.Id, cancellationToken);
             allDocuments.AddRange(docs);
         }
 
@@ -84,14 +81,13 @@ public class AdminDocumentsController : ControllerBase
 
         if (dealerId.HasValue)
         {
-            var dealerConnectionIds = allConnections.Where(c => c.DealerId == dealerId.Value).Select(c => c.Id).ToHashSet();
-            filtered = filtered.Where(d => dealerConnectionIds.Contains(d.DealerPartnerConnectionId));
+            // dealer == tenant under the converged model
+            filtered = filtered.Where(d => d.TenantId == dealerId.Value);
         }
 
         if (tradingPartnerId.HasValue)
         {
-            var partnerConnectionIds = allConnections.Where(c => c.TradingPartnerId == tradingPartnerId.Value).Select(c => c.Id).ToHashSet();
-            filtered = filtered.Where(d => partnerConnectionIds.Contains(d.DealerPartnerConnectionId));
+            filtered = filtered.Where(d => d.TradingPartnerId == tradingPartnerId.Value);
         }
 
         var total = filtered.Count();
@@ -101,24 +97,17 @@ public class AdminDocumentsController : ControllerBase
             .Take(take)
             .ToList();
 
-        // Get dealer names
-        var dealerIds = results.Select(d => connectionMap.TryGetValue(d.DealerPartnerConnectionId, out var c) ? c.DealerId : 0).Distinct().ToList();
-        var dealerNames = await GetDealerNamesAsync(dealerIds, cancellationToken);
-
-        // Map to response with dealer/partner info
+        // Map to response with partner info
         var mappedResults = results.Select(doc =>
         {
-            connectionMap.TryGetValue(doc.DealerPartnerConnectionId, out var connection);
-            dealerNames.TryGetValue(connection?.DealerId ?? 0, out var dealerName);
+            partnerMap.TryGetValue(doc.TradingPartnerId, out var partner);
 
             return new AdminDocumentResponse
             {
                 Id = doc.Id,
-                DealerPartnerConnectionId = doc.DealerPartnerConnectionId,
-                DealerId = connection?.DealerId ?? 0,
-                DealerName = dealerName ?? $"Dealer #{connection?.DealerId}",
-                TradingPartnerId = connection?.TradingPartnerId ?? 0,
-                PartnerName = connection?.TradingPartner?.Name ?? $"Partner #{connection?.TradingPartnerId}",
+                TenantId = doc.TenantId,
+                TradingPartnerId = doc.TradingPartnerId,
+                PartnerName = partner?.Name ?? $"Partner #{doc.TradingPartnerId}",
                 DocumentType = doc.DocumentType.ToString(),
                 Direction = doc.Direction.ToString(),
                 Status = doc.Status.ToString(),
@@ -130,10 +119,9 @@ public class AdminDocumentsController : ControllerBase
             };
         }).ToList();
 
-        // Get unique document types, dealers, and partners for filter options
+        // Get unique document types and partners for filter options
         var documentTypes = allDocuments.Select(d => d.DocumentType.ToString()).Distinct().OrderBy(x => x).ToList();
-        var dealers = allConnections.GroupBy(c => c.DealerId).Select(g => new { Id = g.Key, Name = dealerNames.TryGetValue(g.Key, out var n) ? n : $"Dealer #{g.Key}" }).ToList();
-        var partners = allConnections.Where(c => c.TradingPartner != null).GroupBy(c => c.TradingPartnerId).Select(g => new { Id = g.Key, Name = g.First().TradingPartner?.Name ?? $"Partner #{g.Key}" }).ToList();
+        var partners = allPartners.Select(p => new { Id = p.Id, Name = p.Name }).ToList();
 
         return Ok(new
         {
@@ -144,43 +132,20 @@ public class AdminDocumentsController : ControllerBase
             FilterOptions = new
             {
                 DocumentTypes = documentTypes,
-                Dealers = dealers,
                 Partners = partners
             }
         });
     }
 
-    private async Task<Dictionary<int, string>> GetDealerNamesAsync(List<int> dealerIds, CancellationToken cancellationToken)
-    {
-        var result = new Dictionary<int, string>();
-        try
-        {
-            var merchants = await _merchant360Client.GetMerchantsAsync(activeOnly: false, cancellationToken);
-            foreach (var id in dealerIds)
-            {
-                var merchant = merchants.FirstOrDefault(m => m.Id == id);
-                if (merchant != null)
-                {
-                    result[id] = merchant.Name;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get dealer names from M360");
-        }
-        return result;
-    }
-
     /// <summary>
-    /// Gets documents by connection ID.
+    /// Gets documents by trading partner ID.
     /// </summary>
-    [HttpGet("connection/{connectionId:int}")]
-    public async Task<IActionResult> GetDocumentsByConnection(
-        int connectionId,
+    [HttpGet("partner/{tradingPartnerId:int}")]
+    public async Task<IActionResult> GetDocumentsByTradingPartner(
+        int tradingPartnerId,
         CancellationToken cancellationToken)
     {
-        var documents = await _documentRepository.GetByConnectionIdAsync(connectionId, cancellationToken);
+        var documents = await _documentRepository.GetByTradingPartnerAsync(tradingPartnerId, cancellationToken);
 
         return Ok(documents.Select(MapDocumentResponse));
     }
@@ -438,7 +403,8 @@ public class AdminDocumentsController : ControllerBase
         return new DocumentResponse
         {
             Id = doc.Id,
-            DealerPartnerConnectionId = doc.DealerPartnerConnectionId,
+            TradingPartnerId = doc.TradingPartnerId,
+            TenantId = doc.TenantId,
             DocumentType = doc.DocumentType.ToString(),
             Direction = doc.Direction.ToString(),
             Status = doc.Status.ToString(),
@@ -459,7 +425,8 @@ public class UpdateDocumentStatusRequest
 public class DocumentResponse
 {
     public int Id { get; set; }
-    public int DealerPartnerConnectionId { get; set; }
+    public int TradingPartnerId { get; set; }
+    public int? TenantId { get; set; }
     public string DocumentType { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -473,9 +440,7 @@ public class DocumentResponse
 public class AdminDocumentResponse
 {
     public int Id { get; set; }
-    public int DealerPartnerConnectionId { get; set; }
-    public int DealerId { get; set; }
-    public string? DealerName { get; set; }
+    public int? TenantId { get; set; }
     public int TradingPartnerId { get; set; }
     public string? PartnerName { get; set; }
     public string DocumentType { get; set; } = string.Empty;

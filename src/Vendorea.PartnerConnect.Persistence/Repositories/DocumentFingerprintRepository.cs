@@ -16,19 +16,18 @@ public class DocumentFingerprintRepository : IDocumentFingerprintRepository
     public async Task<DocumentFingerprint?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.DocumentFingerprints
-            .Include(f => f.DealerPartnerConnection)
             .FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
     }
 
     public async Task<DocumentFingerprint?> FindByHashAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default)
     {
         return await _context.DocumentFingerprints
             .FirstOrDefaultAsync(f =>
-                f.DealerPartnerConnectionId == dealerPartnerConnectionId &&
+                f.TradingPartnerId == tradingPartnerId &&
                 f.DocumentType == documentType &&
                 f.ContentHash == contentHash &&
                 (f.ExpiresAt == null || f.ExpiresAt > DateTime.UtcNow),
@@ -46,14 +45,14 @@ public class DocumentFingerprintRepository : IDocumentFingerprintRepository
     }
 
     public async Task<bool> ExistsAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default)
     {
         return await _context.DocumentFingerprints
             .AnyAsync(f =>
-                f.DealerPartnerConnectionId == dealerPartnerConnectionId &&
+                f.TradingPartnerId == tradingPartnerId &&
                 f.DocumentType == documentType &&
                 f.ContentHash == contentHash &&
                 (f.ExpiresAt == null || f.ExpiresAt > DateTime.UtcNow),
@@ -64,14 +63,6 @@ public class DocumentFingerprintRepository : IDocumentFingerprintRepository
         DocumentFingerprint fingerprint,
         CancellationToken cancellationToken = default)
     {
-        if (fingerprint.TradingPartnerId == 0 && fingerprint.DealerPartnerConnectionId > 0)
-        {
-            fingerprint.TradingPartnerId = await _context.DealerPartnerConnections
-                .Where(c => c.Id == fingerprint.DealerPartnerConnectionId)
-                .Select(c => c.TradingPartnerId)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
-
         _context.DocumentFingerprints.Add(fingerprint);
         await _context.SaveChangesAsync(cancellationToken);
         return fingerprint;
@@ -95,13 +86,13 @@ public class DocumentFingerprintRepository : IDocumentFingerprintRepository
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<DocumentFingerprint>> GetByConnectionAsync(
-        int dealerPartnerConnectionId,
+    public async Task<IReadOnlyList<DocumentFingerprint>> GetByPartnerAsync(
+        int tradingPartnerId,
         int maxRecords = 100,
         CancellationToken cancellationToken = default)
     {
         return await _context.DocumentFingerprints
-            .Where(f => f.DealerPartnerConnectionId == dealerPartnerConnectionId)
+            .Where(f => f.TradingPartnerId == tradingPartnerId)
             .OrderByDescending(f => f.CreatedAt)
             .Take(maxRecords)
             .ToListAsync(cancellationToken);

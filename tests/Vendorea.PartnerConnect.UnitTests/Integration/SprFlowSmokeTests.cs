@@ -57,14 +57,16 @@ public class SprFlowSmokeTests
         partnerDocRepo.Setup(r => r.UpdateAsync(It.IsAny<PartnerDocument>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var connRepo = new Mock<IDealerPartnerConnectionRepository>();
-        connRepo.Setup(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DealerPartnerConnection
+        var partnerRepo = new Mock<ITradingPartnerRepository>();
+        partnerRepo.Setup(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TradingPartner
             {
-                Id = ConnectionId,
-                DealerId = DealerId,
-                TradingPartnerId = TradingPartnerId
+                Id = TradingPartnerId,
+                Code = "SPR"
             });
+
+        var credProtector = new Mock<ICredentialProtector>();
+        credProtector.Setup(c => c.Unprotect(It.IsAny<string>())).Returns((string s) => s);
 
         var orderRepo = new Mock<IOrderRepository>();
         orderRepo.Setup(r => r.GetByPoNumberAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -122,7 +124,8 @@ public class SprFlowSmokeTests
         harness.Service = new SprXmlDocumentProcessingService(
             sprDocRepo.Object,
             partnerDocRepo.Object,
-            connRepo.Object,
+            partnerRepo.Object,
+            credProtector.Object,
             new SprPoackParser(NullLogger<SprPoackParser>.Instance),
             new SprEzasnParser(NullLogger<SprEzasnParser>.Instance),
             new SprEzinv4Parser(NullLogger<SprEzinv4Parser>.Instance),

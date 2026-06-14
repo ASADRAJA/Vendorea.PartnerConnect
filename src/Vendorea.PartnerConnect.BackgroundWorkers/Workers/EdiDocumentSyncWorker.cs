@@ -81,33 +81,33 @@ public class EdiDocumentSyncWorker : BackgroundService
         _logger.LogInformation("Starting EDI document sync at {Time}", DateTimeOffset.UtcNow);
 
         using var scope = _serviceProvider.CreateScope();
-        var connectionRepo = scope.ServiceProvider.GetRequiredService<IDealerPartnerConnectionRepository>();
+        var partnerRepo = scope.ServiceProvider.GetRequiredService<ITradingPartnerRepository>();
         var ediProcessingService = scope.ServiceProvider.GetRequiredService<IEdiDocumentProcessingService>();
 
-        var connections = await connectionRepo.GetActiveConnectionsAsync(cancellationToken);
+        var partners = await partnerRepo.GetByStatusAsync(TradingPartnerStatus.Active, cancellationToken);
 
-        // Filter to connections that support EDI (SPR partner with EDI configured)
-        var ediConnections = connections
-            .Where(c => c.TradingPartner?.Code == "SPR")
-            .Where(c => IsEdiEnabled(c))
+        // Filter to partners that support EDI (SPR partner with EDI configured)
+        var ediPartners = partners
+            .Where(p => p.Code == "SPR")
+            .Where(IsEdiEnabled)
             .ToList();
 
-        if (ediConnections.Count == 0)
+        if (ediPartners.Count == 0)
         {
-            _logger.LogDebug("No EDI-enabled connections found");
+            _logger.LogDebug("No EDI-enabled partners found");
             return;
         }
 
-        _logger.LogInformation("Processing EDI for {Count} connection(s)", ediConnections.Count);
+        _logger.LogInformation("Processing EDI for {Count} partner(s)", ediPartners.Count);
 
-        // Process connections with limited concurrency
+        // Process partners with limited concurrency
         using var semaphore = new SemaphoreSlim(maxConcurrent);
-        var tasks = ediConnections.Select(async connection =>
+        var tasks = ediPartners.Select(async partner =>
         {
             await semaphore.WaitAsync(cancellationToken);
             try
             {
-                await ProcessConnectionAsync(ediProcessingService, connection, cancellationToken);
+                await ProcessPartnerAsync(ediProcessingService, partner, cancellationToken);
             }
             finally
             {
@@ -120,47 +120,45 @@ public class EdiDocumentSyncWorker : BackgroundService
         _logger.LogInformation("Completed EDI document sync at {Time}", DateTimeOffset.UtcNow);
     }
 
-    private async Task ProcessConnectionAsync(
+    private async Task ProcessPartnerAsync(
         IEdiDocumentProcessingService ediProcessingService,
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken)
     {
         try
         {
-            _logger.LogDebug(
-                "Processing EDI for connection {ConnectionId} (Dealer: {DealerId})",
-                connection.Id, connection.DealerId);
+            _logger.LogDebug("Processing EDI for partner {TradingPartnerId}", partner.Id);
 
-            var result = await ediProcessingService.SyncEdiDocumentsAsync(connection.Id, cancellationToken);
+            var result = await ediProcessingService.SyncEdiDocumentsAsync(partner.Id, cancellationToken);
 
             if (result.Success)
             {
                 _logger.LogInformation(
-                    "EDI sync completed for connection {ConnectionId}: Found={Found}, Processed={Processed}, Failed={Failed}, Sent={Sent}",
-                    connection.Id, result.FilesFound, result.FilesProcessed, result.FilesFailed, result.OutboundDocumentsSent);
+                    "EDI sync completed for partner {TradingPartnerId}: Found={Found}, Processed={Processed}, Failed={Failed}, Sent={Sent}",
+                    partner.Id, result.FilesFound, result.FilesProcessed, result.FilesFailed, result.OutboundDocumentsSent);
             }
             else
             {
                 _logger.LogWarning(
-                    "EDI sync completed with errors for connection {ConnectionId}: {Error}",
-                    connection.Id, result.ErrorMessage);
+                    "EDI sync completed with errors for partner {TradingPartnerId}: {Error}",
+                    partner.Id, result.ErrorMessage);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error syncing EDI for connection {ConnectionId}", connection.Id);
+            _logger.LogError(ex, "Error syncing EDI for partner {TradingPartnerId}", partner.Id);
         }
     }
 
-    private bool IsEdiEnabled(DealerPartnerConnection connection)
+    private static bool IsEdiEnabled(TradingPartner partner)
     {
-        if (string.IsNullOrEmpty(connection.ConfigurationJson))
+        if (string.IsNullOrEmpty(partner.TransportConfigJson))
             return false;
 
         try
         {
             // Check if EDI paths are configured
-            var config = PartnerAdapters.SPR.SprConfiguration.FromJson(connection.ConfigurationJson);
+            var config = PartnerAdapters.SPR.SprConfiguration.FromJson(partner.TransportConfigJson);
             return !string.IsNullOrEmpty(config.SftpHost) &&
                    !string.IsNullOrEmpty(config.EdiInboundPath);
         }

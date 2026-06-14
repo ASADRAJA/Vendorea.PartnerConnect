@@ -15,7 +15,6 @@ public class PartnerConnectDbContext : DbContext
     }
 
     public DbSet<TradingPartner> TradingPartners => Set<TradingPartner>();
-    public DbSet<DealerPartnerConnection> DealerPartnerConnections => Set<DealerPartnerConnection>();
     public DbSet<PartnerCapabilityConfiguration> PartnerCapabilities => Set<PartnerCapabilityConfiguration>();
     public DbSet<PartnerDocument> PartnerDocuments => Set<PartnerDocument>();
     public DbSet<EdiDocument> EdiDocuments => Set<EdiDocument>();

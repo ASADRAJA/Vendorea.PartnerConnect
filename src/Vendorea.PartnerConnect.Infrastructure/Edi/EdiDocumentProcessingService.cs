@@ -20,7 +20,7 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
 {
     private readonly IEdiDocumentRepository _ediDocumentRepository;
     private readonly IPartnerDocumentRepository _partnerDocumentRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IEdiResponseService _responseService;
     private readonly ILogger<EdiDocumentProcessingService> _logger;
 
@@ -32,13 +32,13 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
     public EdiDocumentProcessingService(
         IEdiDocumentRepository ediDocumentRepository,
         IPartnerDocumentRepository partnerDocumentRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
+        ITradingPartnerRepository partnerRepository,
         IEdiResponseService responseService,
         ILogger<EdiDocumentProcessingService> logger)
     {
         _ediDocumentRepository = ediDocumentRepository;
         _partnerDocumentRepository = partnerDocumentRepository;
-        _connectionRepository = connectionRepository;
+        _partnerRepository = partnerRepository;
         _responseService = responseService;
         _logger = logger;
 
@@ -49,7 +49,7 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
     }
 
     public async Task<EdiProcessingResult> ProcessDocumentAsync(
-        int connectionId,
+        int tradingPartnerId,
         string ediContent,
         string fileName,
         CancellationToken cancellationToken = default)
@@ -60,17 +60,17 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
         try
         {
             _logger.LogInformation(
-                "Processing EDI document for connection {ConnectionId}: {FileName}",
-                connectionId, fileName);
+                "Processing EDI document for partner {ConnectionId}: {FileName}",
+                tradingPartnerId, fileName);
 
-            var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
-            if (connection == null)
+            var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+            if (partner == null)
             {
-                result.ErrorMessage = $"Connection {connectionId} not found";
+                result.ErrorMessage = $"Connection {tradingPartnerId} not found";
                 return result;
             }
 
-            var config = SprConfiguration.FromJson(connection.ConfigurationJson);
+            var config = SprConfiguration.FromJson(partner.TransportConfigJson);
 
             // Parse the raw X12 content
             var parseResult = _x12Parser.Parse(ediContent);
@@ -113,7 +113,7 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
             // Create PartnerDocument for tracking
             var partnerDocument = new PartnerDocument
             {
-                DealerPartnerConnectionId = connectionId,
+                TradingPartnerId = tradingPartnerId,
                 DocumentType = documentType,
                 Direction = DocumentDirection.Inbound,
                 State = DocumentState.Received,
@@ -133,8 +133,8 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
                 foreach (var transactionSet in group.TransactionSets)
                 {
                     var tsResult = await ProcessTransactionSetAsync(
-                        connectionId,
-                        connection.DealerId,
+                        tradingPartnerId,
+                        0,
                         partnerDocument.Id,
                         ediContent,
                         envelope,
@@ -172,7 +172,7 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing EDI document for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error processing EDI document for partner {ConnectionId}", tradingPartnerId);
             result.ErrorMessage = ex.Message;
             result.Errors.Add(ex.Message);
         }
@@ -202,7 +202,7 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
     }
 
     private async Task<EdiProcessingResult> ProcessTransactionSetAsync(
-        int connectionId,
+        int tradingPartnerId,
         int dealerId,
         int partnerDocumentId,
         string ediContent,
@@ -367,11 +367,11 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
     }
 
     public Task<EdiSyncResult> SyncEdiDocumentsAsync(
-        int connectionId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
         // SFTP sync requires proper SFTP client setup - to be implemented
-        _logger.LogWarning("SFTP sync not yet fully implemented for connection {ConnectionId}", connectionId);
+        _logger.LogWarning("SFTP sync not yet fully implemented for partner {ConnectionId}", tradingPartnerId);
 
         return Task.FromResult(new EdiSyncResult
         {
@@ -390,14 +390,14 @@ public class EdiDocumentProcessingService : IEdiDocumentProcessingService
     }
 
     public async Task<IReadOnlyList<EdiDocument>> GetDocumentsAsync(
-        int connectionId,
+        int tradingPartnerId,
         string? transactionSetCode = null,
         EdiDirection? direction = null,
         int skip = 0,
         int take = 20,
         CancellationToken cancellationToken = default)
     {
-        return await _ediDocumentRepository.GetByConnectionAsync(
-            connectionId, transactionSetCode, direction, skip, take, cancellationToken);
+        return await _ediDocumentRepository.GetByTradingPartnerAsync(
+            tradingPartnerId, transactionSetCode, direction, skip, take, cancellationToken);
     }
 }

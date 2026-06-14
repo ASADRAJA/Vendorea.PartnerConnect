@@ -17,6 +17,7 @@ public class DocumentProcessingOrchestrator : IDocumentProcessingOrchestrator
     private readonly IXsdValidationService _validationService;
     private readonly IDocumentCorrelationRepository _correlationRepository;
     private readonly IDocumentContentProvider _contentProvider;
+    private readonly ITradingPartnerRepository _partnerRepository;
     private readonly ILogger<DocumentProcessingOrchestrator> _logger;
 
     public DocumentProcessingOrchestrator(
@@ -24,12 +25,14 @@ public class DocumentProcessingOrchestrator : IDocumentProcessingOrchestrator
         IXsdValidationService validationService,
         IDocumentCorrelationRepository correlationRepository,
         IDocumentContentProvider contentProvider,
+        ITradingPartnerRepository partnerRepository,
         ILogger<DocumentProcessingOrchestrator> logger)
     {
         _documentRepository = documentRepository;
         _validationService = validationService;
         _correlationRepository = correlationRepository;
         _contentProvider = contentProvider;
+        _partnerRepository = partnerRepository;
         _logger = logger;
     }
 
@@ -390,9 +393,9 @@ public class DocumentProcessingOrchestrator : IDocumentProcessingOrchestrator
             };
         }
 
-        // Get partner code from connection (default to SPR for now)
-        // NOTE: Connection must be included/loaded for partner code lookup
-        var partnerCode = document.DealerPartnerConnection?.TradingPartner?.Code ?? "SPR";
+        // Get partner code from the document's trading partner (default to SPR for now)
+        var partner = await _partnerRepository.GetByIdAsync(document.TradingPartnerId, cancellationToken);
+        var partnerCode = partner?.Code ?? "SPR";
         var docType = MapDocumentTypeToXsdType(document.DocumentType);
 
         return await _validationService.ValidateAsync(content, docType, partnerCode, cancellationToken);

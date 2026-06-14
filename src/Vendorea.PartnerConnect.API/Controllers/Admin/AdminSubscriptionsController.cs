@@ -16,18 +16,15 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 public class AdminSubscriptionsController : ControllerBase
 {
     private readonly IMerchantSubscriptionRequestRepository _subscriptionRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
     private readonly IMerchant360Client _merchant360Client;
     private readonly ILogger<AdminSubscriptionsController> _logger;
 
     public AdminSubscriptionsController(
         IMerchantSubscriptionRequestRepository subscriptionRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
         IMerchant360Client merchant360Client,
         ILogger<AdminSubscriptionsController> logger)
     {
         _subscriptionRepository = subscriptionRepository;
-        _connectionRepository = connectionRepository;
         _merchant360Client = merchant360Client;
         _logger = logger;
     }
@@ -148,9 +145,6 @@ public class AdminSubscriptionsController : ControllerBase
 
         await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
 
-        // Create or update the DealerPartnerConnection
-        await CreateOrUpdateConnectionAsync(subscription, ConnectionStatus.Active, cancellationToken);
-
         _logger.LogInformation("Approved subscription {Id} for TenantId={TenantId}, TradingPartnerId={TradingPartnerId}",
             id, subscription.TenantId, subscription.TradingPartnerId);
 
@@ -216,9 +210,6 @@ public class AdminSubscriptionsController : ControllerBase
 
         await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
 
-        // Update the DealerPartnerConnection status
-        await UpdateConnectionStatusAsync(subscription.TenantId, subscription.TradingPartnerId, ConnectionStatus.Suspended, cancellationToken);
-
         _logger.LogInformation("Suspended subscription {Id} for TenantId={TenantId}", id, subscription.TenantId);
 
         // Notify M360 about the suspension
@@ -247,9 +238,6 @@ public class AdminSubscriptionsController : ControllerBase
         subscription.SuspendedByUserId = null;
 
         await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
-
-        // Update the DealerPartnerConnection status back to Active
-        await UpdateConnectionStatusAsync(subscription.TenantId, subscription.TradingPartnerId, ConnectionStatus.Active, cancellationToken);
 
         _logger.LogInformation("Reactivated subscription {Id} for TenantId={TenantId}", id, subscription.TenantId);
 
@@ -285,9 +273,6 @@ public class AdminSubscriptionsController : ControllerBase
 
         await _subscriptionRepository.UpdateAsync(subscription, cancellationToken);
 
-        // Update the DealerPartnerConnection status to Disconnected
-        await UpdateConnectionStatusAsync(subscription.TenantId, subscription.TradingPartnerId, ConnectionStatus.Disconnected, cancellationToken);
-
         _logger.LogInformation("Admin unsubscribed subscription {Id} for TenantId={TenantId}", id, subscription.TenantId);
 
         // Notify M360 about the unsubscription
@@ -312,24 +297,8 @@ public class AdminSubscriptionsController : ControllerBase
         _logger.LogInformation("Manual resync requested for subscription {Id}, TenantId={TenantId}, Status={Status}",
             id, subscription.TenantId, subscription.Status);
 
-        // Ensure DealerPartnerConnection exists for approved/suspended subscriptions
-        if (subscription.Status == SubscriptionRequestStatus.Approved)
-        {
-            await CreateOrUpdateConnectionAsync(subscription, ConnectionStatus.Active, cancellationToken);
-        }
-        else if (subscription.Status == SubscriptionRequestStatus.Suspended)
-        {
-            await CreateOrUpdateConnectionAsync(subscription, ConnectionStatus.Suspended, cancellationToken);
-        }
-
-        // Get the connection ID for approved/suspended subscriptions
+        // Connection lifecycle is now managed via TenantPartnerAccount; no legacy connection to ensure.
         int? connectionId = null;
-        if (subscription.Status == SubscriptionRequestStatus.Approved || subscription.Status == SubscriptionRequestStatus.Suspended)
-        {
-            var connection = await _connectionRepository.GetByDealerAndPartnerAsync(
-                subscription.TenantId, subscription.TradingPartnerId, cancellationToken);
-            connectionId = connection?.Id;
-        }
 
         var statusChange = new SubscriptionStatusChangedDto
         {
@@ -467,14 +436,8 @@ public class AdminSubscriptionsController : ControllerBase
         SubscriptionRequestStatus previousStatus,
         CancellationToken cancellationToken)
     {
-        // Get the connection ID for approved subscriptions
+        // Connection lifecycle is managed via TenantPartnerAccount; no legacy connection id to attach.
         int? connectionId = null;
-        if (subscription.Status == SubscriptionRequestStatus.Approved)
-        {
-            var connection = await _connectionRepository.GetByDealerAndPartnerAsync(
-                subscription.TenantId, subscription.TradingPartnerId, cancellationToken);
-            connectionId = connection?.Id;
-        }
 
         var statusChange = new SubscriptionStatusChangedDto
         {
@@ -518,70 +481,6 @@ public class AdminSubscriptionsController : ControllerBase
         }
     }
 
-    private async Task CreateOrUpdateConnectionAsync(
-        MerchantSubscriptionRequest subscription,
-        ConnectionStatus status,
-        CancellationToken cancellationToken)
-    {
-        var existingConnection = await _connectionRepository.GetByDealerAndPartnerAsync(
-            subscription.TenantId, subscription.TradingPartnerId, cancellationToken);
-
-        if (existingConnection != null)
-        {
-            existingConnection.Status = status;
-            existingConnection.UpdatedAt = DateTime.UtcNow;
-            if (status == ConnectionStatus.Active)
-            {
-                existingConnection.ConnectedAt = DateTime.UtcNow;
-                existingConnection.DisconnectedAt = null;
-            }
-            await _connectionRepository.UpdateAsync(existingConnection, cancellationToken);
-            _logger.LogInformation("Updated DealerPartnerConnection for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} to {Status}",
-                subscription.TenantId, subscription.TradingPartnerId, status);
-        }
-        else
-        {
-            var connection = new DealerPartnerConnection
-            {
-                DealerId = subscription.TenantId,
-                TradingPartnerId = subscription.TradingPartnerId,
-                ExternalAccountId = subscription.AccountNumber,
-                Status = status,
-                ConnectedAt = DateTime.UtcNow,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            await _connectionRepository.AddAsync(connection, cancellationToken);
-            _logger.LogInformation("Created DealerPartnerConnection for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} with Status={Status}",
-                subscription.TenantId, subscription.TradingPartnerId, status);
-        }
-    }
-
-    private async Task UpdateConnectionStatusAsync(
-        int dealerId,
-        int tradingPartnerId,
-        ConnectionStatus status,
-        CancellationToken cancellationToken)
-    {
-        var connection = await _connectionRepository.GetByDealerAndPartnerAsync(dealerId, tradingPartnerId, cancellationToken);
-        if (connection != null)
-        {
-            connection.Status = status;
-            connection.UpdatedAt = DateTime.UtcNow;
-            if (status == ConnectionStatus.Disconnected)
-            {
-                connection.DisconnectedAt = DateTime.UtcNow;
-            }
-            await _connectionRepository.UpdateAsync(connection, cancellationToken);
-            _logger.LogInformation("Updated DealerPartnerConnection status for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} to {Status}",
-                dealerId, tradingPartnerId, status);
-        }
-        else
-        {
-            _logger.LogWarning("No DealerPartnerConnection found for DealerId={DealerId}, TradingPartnerId={TradingPartnerId} to update status",
-                dealerId, tradingPartnerId);
-        }
-    }
 }
 
 #region DTOs

@@ -75,7 +75,6 @@ public class DocumentProcessingWorker : BackgroundService
     {
         using var scope = _serviceProvider.CreateScope();
         var documentRepo = scope.ServiceProvider.GetRequiredService<IPartnerDocumentRepository>();
-        var connectionRepo = scope.ServiceProvider.GetRequiredService<IDealerPartnerConnectionRepository>();
 
         var pendingDocuments = await documentRepo.GetPendingDocumentsAsync(cancellationToken);
 

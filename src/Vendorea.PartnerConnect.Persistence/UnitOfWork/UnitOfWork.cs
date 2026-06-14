@@ -15,7 +15,6 @@ public class UnitOfWork : IUnitOfWork
     private bool _disposed;
 
     private ITradingPartnerRepository? _tradingPartners;
-    private IDealerPartnerConnectionRepository? _dealerConnections;
     private IPartnerDocumentRepository? _partnerDocuments;
     private IDocumentFingerprintRepository? _documentFingerprints;
     private IPriceFeedBatchRepository? _priceFeedBatches;
@@ -31,9 +30,6 @@ public class UnitOfWork : IUnitOfWork
 
     public ITradingPartnerRepository TradingPartners =>
         _tradingPartners ??= new TradingPartnerRepository(_context);
-
-    public IDealerPartnerConnectionRepository DealerConnections =>
-        _dealerConnections ??= new DealerPartnerConnectionRepository(_context);
 
     public IPartnerDocumentRepository PartnerDocuments =>
         _partnerDocuments ??= new PartnerDocumentRepository(_context);

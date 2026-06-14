@@ -8,7 +8,8 @@ namespace Vendorea.PartnerConnect.Application.Interfaces;
 public interface IPartnerDocumentRepository
 {
     Task<PartnerDocument?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<PartnerDocument>> GetByConnectionIdAsync(int connectionId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PartnerDocument>> GetByTradingPartnerAsync(int tradingPartnerId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PartnerDocument>> GetByTenantAsync(int tenantId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PartnerDocument>> GetPendingDocumentsAsync(CancellationToken cancellationToken = default);
     Task<PartnerDocument> AddAsync(PartnerDocument document, CancellationToken cancellationToken = default);
     Task UpdateAsync(PartnerDocument document, CancellationToken cancellationToken = default);

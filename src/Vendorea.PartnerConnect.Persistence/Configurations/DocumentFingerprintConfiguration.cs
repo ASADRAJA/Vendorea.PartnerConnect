@@ -26,13 +26,13 @@ public class DocumentFingerprintConfiguration : IEntityTypeConfiguration<Documen
             .HasConversion<string>()
             .HasMaxLength(50);
 
-        // Unique index on connection + document type + content hash
-        // This prevents duplicate entries for the same document content
-        builder.HasIndex(x => new { x.DealerPartnerConnectionId, x.DocumentType, x.ContentHash })
+        // Unique index on partner + document type + content hash
+        // This prevents duplicate entries for the same document content (dedup is per-partner)
+        builder.HasIndex(x => new { x.TradingPartnerId, x.DocumentType, x.ContentHash })
             .IsUnique()
-            .HasDatabaseName("IX_DocumentFingerprints_Connection_Type_Hash");
+            .HasDatabaseName("IX_DocumentFingerprints_Partner_Type_Hash");
 
-        // Index for lookup by content hash across all connections
+        // Index for lookup by content hash across all partners
         builder.HasIndex(x => x.ContentHash)
             .HasDatabaseName("IX_DocumentFingerprints_ContentHash");
 
@@ -46,9 +46,9 @@ public class DocumentFingerprintConfiguration : IEntityTypeConfiguration<Documen
             .HasDatabaseName("IX_DocumentFingerprints_OriginalDocumentId");
 
         // Relationships
-        builder.HasOne(x => x.DealerPartnerConnection)
+        builder.HasOne<TradingPartner>()
             .WithMany()
-            .HasForeignKey(x => x.DealerPartnerConnectionId)
+            .HasForeignKey(x => x.TradingPartnerId)
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne(x => x.OriginalDocument)

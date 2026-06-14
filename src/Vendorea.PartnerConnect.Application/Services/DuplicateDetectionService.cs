@@ -44,7 +44,7 @@ public class DuplicateDetectionService : IDuplicateDetectionService
     }
 
     public async Task<bool> IsDuplicateAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default)
@@ -55,14 +55,14 @@ public class DuplicateDetectionService : IDuplicateDetectionService
         }
 
         return await _repository.ExistsAsync(
-            dealerPartnerConnectionId,
+            tradingPartnerId,
             documentType,
             contentHash,
             cancellationToken);
     }
 
     public async Task<DuplicateCheckResult> CheckDuplicateAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default)
@@ -73,7 +73,7 @@ public class DuplicateDetectionService : IDuplicateDetectionService
         }
 
         var existing = await _repository.FindByHashAsync(
-            dealerPartnerConnectionId,
+            tradingPartnerId,
             documentType,
             contentHash,
             cancellationToken);
@@ -84,15 +84,15 @@ public class DuplicateDetectionService : IDuplicateDetectionService
         }
 
         _logger.LogInformation(
-            "Duplicate document detected for connection {ConnectionId}, type {DocumentType}, " +
+            "Duplicate document detected for partner {TradingPartnerId}, type {DocumentType}, " +
             "hash {Hash}. Original document: {OriginalId}",
-            dealerPartnerConnectionId, documentType, contentHash[..16], existing.OriginalDocumentId);
+            tradingPartnerId, documentType, contentHash[..16], existing.OriginalDocumentId);
 
         return DuplicateCheckResult.Duplicate(existing);
     }
 
     public async Task RegisterFingerprintAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         int originalDocumentId,
@@ -110,7 +110,7 @@ public class DuplicateDetectionService : IDuplicateDetectionService
 
         var fingerprint = new DocumentFingerprint
         {
-            DealerPartnerConnectionId = dealerPartnerConnectionId,
+            TradingPartnerId = tradingPartnerId,
             DocumentType = documentType,
             ContentHash = contentHash,
             OriginalDocumentId = originalDocumentId,
@@ -134,8 +134,8 @@ public class DuplicateDetectionService : IDuplicateDetectionService
         {
             // Fingerprint already exists - this is fine, just log it
             _logger.LogDebug(
-                "Fingerprint already exists for connection {ConnectionId}, type {DocumentType}, hash {Hash}",
-                dealerPartnerConnectionId, documentType, contentHash[..16]);
+                "Fingerprint already exists for partner {TradingPartnerId}, type {DocumentType}, hash {Hash}",
+                tradingPartnerId, documentType, contentHash[..16]);
         }
     }
 

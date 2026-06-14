@@ -69,38 +69,34 @@ public class InventoryFeedSyncWorker : BackgroundService
         _logger.LogInformation("Starting inventory feed sync at {Time}", DateTimeOffset.UtcNow);
 
         using var scope = _serviceProvider.CreateScope();
-        var connectionRepo = scope.ServiceProvider.GetRequiredService<IDealerPartnerConnectionRepository>();
+        var partnerRepo = scope.ServiceProvider.GetRequiredService<ITradingPartnerRepository>();
         var feedService = scope.ServiceProvider.GetRequiredService<IFeedProcessingService>();
         var batchRepo = scope.ServiceProvider.GetRequiredService<IInventoryFeedBatchRepository>();
 
-        var connections = await connectionRepo.GetActiveConnectionsAsync(cancellationToken);
+        var partners = await partnerRepo.GetByStatusAsync(TradingPartnerStatus.Active, cancellationToken);
 
         // Inventory is shared master data per partner — pull it ONCE per partner over the
-        // partner's shared transport, not once per dealer connection. We process one
-        // representative connection per partner (transition step until DealerPartnerConnection
-        // is retired and pulls are driven directly off the partner).
-        var inventoryConnections = connections
-            .Where(c => SupportsInventoryFeeds(c))
-            .GroupBy(c => c.TradingPartnerId)
-            .Select(g => g.First())
+        // partner's shared transport.
+        var inventoryPartners = partners
+            .Where(SupportsInventoryFeeds)
             .ToList();
 
-        if (inventoryConnections.Count == 0)
+        if (inventoryPartners.Count == 0)
         {
-            _logger.LogInformation("No active connections with inventory feed capability found");
+            _logger.LogInformation("No active trading partners with inventory feed capability found");
             return;
         }
 
-        _logger.LogInformation("Processing inventory feeds for {Count} partner(s) (shared per partner)", inventoryConnections.Count);
+        _logger.LogInformation("Processing inventory feeds for {Count} partner(s) (shared per partner)", inventoryPartners.Count);
 
-        // Process connections with controlled concurrency
+        // Process partners with controlled concurrency
         var semaphore = new SemaphoreSlim(maxConcurrent);
-        var tasks = inventoryConnections.Select(async connection =>
+        var tasks = inventoryPartners.Select(async partner =>
         {
             await semaphore.WaitAsync(cancellationToken);
             try
             {
-                await ProcessConnectionInventoryFeedAsync(connection, feedService, batchRepo, cancellationToken);
+                await ProcessPartnerInventoryFeedAsync(partner, feedService, batchRepo, cancellationToken);
             }
             finally
             {
@@ -113,28 +109,19 @@ public class InventoryFeedSyncWorker : BackgroundService
         _logger.LogInformation("Inventory feed sync completed at {Time}", DateTimeOffset.UtcNow);
     }
 
-    private async Task ProcessConnectionInventoryFeedAsync(
-        DealerPartnerConnection connection,
+    private async Task ProcessPartnerInventoryFeedAsync(
+        TradingPartner partner,
         IFeedProcessingService feedService,
         IInventoryFeedBatchRepository batchRepo,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "Processing inventory feed for connection {ConnectionId} (Dealer: {DealerId}, Partner: {PartnerCode})",
-            connection.Id, connection.DealerId, connection.TradingPartner?.Code);
+            "Processing inventory feed for partner {TradingPartnerId} ({PartnerCode})",
+            partner.Id, partner.Code);
 
         try
         {
-            // Check if we should skip based on last sync time
-            if (ShouldSkipSync(connection))
-            {
-                _logger.LogDebug(
-                    "Skipping inventory feed sync for connection {ConnectionId} - synced recently",
-                    connection.Id);
-                return;
-            }
-
-            var batch = await feedService.ProcessInventoryFeedAsync(connection.Id, cancellationToken);
+            var batch = await feedService.ProcessInventoryFeedAsync(partner.Id, cancellationToken);
 
             // Save the batch result
             await batchRepo.AddAsync(batch, cancellationToken);
@@ -142,41 +129,26 @@ public class InventoryFeedSyncWorker : BackgroundService
             if (batch.Status == FeedBatchStatus.Completed)
             {
                 _logger.LogInformation(
-                    "Inventory feed completed for connection {ConnectionId}: {Processed} items processed, {Updated} updated",
-                    connection.Id, batch.ProcessedItems, batch.UpdatedItems);
+                    "Inventory feed completed for partner {TradingPartnerId}: {Processed} items processed, {Updated} updated",
+                    partner.Id, batch.ProcessedItems, batch.UpdatedItems);
             }
             else if (batch.Status == FeedBatchStatus.Failed)
             {
                 _logger.LogWarning(
-                    "Inventory feed failed for connection {ConnectionId}: {Error}",
-                    connection.Id, batch.ErrorSummary);
+                    "Inventory feed failed for partner {TradingPartnerId}: {Error}",
+                    partner.Id, batch.ErrorSummary);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex,
-                "Error processing inventory feed for connection {ConnectionId}",
-                connection.Id);
+                "Error processing inventory feed for partner {TradingPartnerId}",
+                partner.Id);
         }
     }
 
-    private bool SupportsInventoryFeeds(DealerPartnerConnection connection)
+    private static bool SupportsInventoryFeeds(TradingPartner partner)
     {
-        // Check if the partner supports inventory feeds
-        return connection.Status == ConnectionStatus.Active;
-    }
-
-    private bool ShouldSkipSync(DealerPartnerConnection connection)
-    {
-        // Inventory is more time-sensitive, use shorter minimum interval
-        var minimumInterval = _configuration.GetValue<int>("Workers:InventoryFeedSync:MinimumIntervalMinutes", 15);
-
-        if (connection.LastSyncAt.HasValue)
-        {
-            var elapsed = DateTime.UtcNow - connection.LastSyncAt.Value;
-            return elapsed.TotalMinutes < minimumInterval;
-        }
-
-        return false;
+        return partner.Status == TradingPartnerStatus.Active;
     }
 }

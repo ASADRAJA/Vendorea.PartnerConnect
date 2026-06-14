@@ -19,7 +19,7 @@ public class EdiResponseService : IEdiResponseService
 {
     private readonly IEdiDocumentRepository _ediDocumentRepository;
     private readonly IPartnerDocumentRepository _partnerDocumentRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly ITradingPartnerRepository _partnerRepository;
     private readonly ILogger<EdiResponseService> _logger;
 
     private readonly X12Parser _x12Parser;
@@ -29,12 +29,12 @@ public class EdiResponseService : IEdiResponseService
     public EdiResponseService(
         IEdiDocumentRepository ediDocumentRepository,
         IPartnerDocumentRepository partnerDocumentRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
+        ITradingPartnerRepository partnerRepository,
         ILogger<EdiResponseService> logger)
     {
         _ediDocumentRepository = ediDocumentRepository;
         _partnerDocumentRepository = partnerDocumentRepository;
-        _connectionRepository = connectionRepository;
+        _partnerRepository = partnerRepository;
         _logger = logger;
 
         _x12Parser = new X12Parser();
@@ -63,14 +63,15 @@ public class EdiResponseService : IEdiResponseService
                 return result;
             }
 
-            var connection = ediDocument.PartnerDocument?.DealerPartnerConnection;
-            if (connection == null)
+            var tradingPartnerId = ediDocument.PartnerDocument?.TradingPartnerId ?? 0;
+            var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+            if (partner == null)
             {
-                result.ErrorMessage = "Connection not found for document";
+                result.ErrorMessage = "Trading partner not found for document";
                 return result;
             }
 
-            var config = SprConfiguration.FromJson(connection.ConfigurationJson);
+            var config = SprConfiguration.FromJson(partner.TransportConfigJson);
 
             // Parse the original document to get envelope structure
             var parseResult = _x12Parser.Parse(ediDocument.RawEdiContent);
@@ -82,11 +83,11 @@ public class EdiResponseService : IEdiResponseService
 
             // Get next control numbers
             var isaControlNumber = await _ediDocumentRepository.GetNextControlNumberAsync(
-                connection.Id, "ISA", cancellationToken);
+                partner.Id, "ISA", cancellationToken);
             var gsControlNumber = await _ediDocumentRepository.GetNextControlNumberAsync(
-                connection.Id, "GS", cancellationToken);
+                partner.Id, "GS", cancellationToken);
             var stControlNumber = await _ediDocumentRepository.GetNextControlNumberAsync(
-                connection.Id, "ST", cancellationToken);
+                partner.Id, "ST", cancellationToken);
 
             // Generate 997 options (swap sender/receiver)
             var options = new Edi997GeneratorOptions
@@ -109,7 +110,7 @@ public class EdiResponseService : IEdiResponseService
             // Create response PartnerDocument
             var responsePartnerDoc = new PartnerDocument
             {
-                DealerPartnerConnectionId = connection.Id,
+                TradingPartnerId = partner.Id,
                 DocumentType = DocumentType.PurchaseOrderAcknowledgment,
                 Direction = DocumentDirection.Outbound,
                 State = DocumentState.Queued,
@@ -193,14 +194,15 @@ public class EdiResponseService : IEdiResponseService
                 return result;
             }
 
-            var connection = ediDocument.PartnerDocument?.DealerPartnerConnection;
-            if (connection == null)
+            var tradingPartnerId = ediDocument.PartnerDocument?.TradingPartnerId ?? 0;
+            var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+            if (partner == null)
             {
-                result.ErrorMessage = "Connection not found for document";
+                result.ErrorMessage = "Trading partner not found for document";
                 return result;
             }
 
-            var config = SprConfiguration.FromJson(connection.ConfigurationJson);
+            var config = SprConfiguration.FromJson(partner.TransportConfigJson);
 
             // Deserialize the purchase order
             var purchaseOrder = JsonSerializer.Deserialize<PurchaseOrder>(ediDocument.CanonicalJson);
@@ -212,11 +214,11 @@ public class EdiResponseService : IEdiResponseService
 
             // Get next control numbers
             var isaControlNumber = await _ediDocumentRepository.GetNextControlNumberAsync(
-                connection.Id, "ISA", cancellationToken);
+                partner.Id, "ISA", cancellationToken);
             var gsControlNumber = await _ediDocumentRepository.GetNextControlNumberAsync(
-                connection.Id, "GS", cancellationToken);
+                partner.Id, "GS", cancellationToken);
             var stControlNumber = await _ediDocumentRepository.GetNextControlNumberAsync(
-                connection.Id, "ST", cancellationToken);
+                partner.Id, "ST", cancellationToken);
 
             // Build acknowledgment model
             var acknowledgment = new X12PoAck
@@ -273,7 +275,7 @@ public class EdiResponseService : IEdiResponseService
             // Create response PartnerDocument
             var responsePartnerDoc = new PartnerDocument
             {
-                DealerPartnerConnectionId = connection.Id,
+                TradingPartnerId = partner.Id,
                 DocumentType = DocumentType.PurchaseOrderAcknowledgment,
                 Direction = DocumentDirection.Outbound,
                 State = DocumentState.Queued,
@@ -342,21 +344,21 @@ public class EdiResponseService : IEdiResponseService
     }
 
     public async Task<IReadOnlyList<EdiDocument>> GetPendingResponsesAsync(
-        int? connectionId = null,
+        int? tradingPartnerId = null,
         CancellationToken cancellationToken = default)
     {
-        return await _ediDocumentRepository.GetPendingOutboundAsync(connectionId, cancellationToken);
+        return await _ediDocumentRepository.GetPendingOutboundAsync(tradingPartnerId, cancellationToken);
     }
 
     public async Task<EdiBatchSendResult> SendPendingResponsesAsync(
-        int connectionId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
         var result = new EdiBatchSendResult();
 
         try
         {
-            var pendingDocuments = await _ediDocumentRepository.GetPendingOutboundAsync(connectionId, cancellationToken);
+            var pendingDocuments = await _ediDocumentRepository.GetPendingOutboundAsync(tradingPartnerId, cancellationToken);
 
             foreach (var document in pendingDocuments)
             {
@@ -377,7 +379,7 @@ public class EdiResponseService : IEdiResponseService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending pending responses for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error sending pending responses for connection {ConnectionId}", tradingPartnerId);
             result.ErrorMessage = ex.Message;
         }
 

@@ -14,6 +14,7 @@ public class DocumentProcessingOrchestratorTests
     private readonly Mock<IXsdValidationService> _validationServiceMock;
     private readonly Mock<IDocumentCorrelationRepository> _correlationRepoMock;
     private readonly Mock<IDocumentContentProvider> _contentProviderMock;
+    private readonly Mock<ITradingPartnerRepository> _partnerRepoMock;
     private readonly Mock<ILogger<DocumentProcessingOrchestrator>> _loggerMock;
     private readonly DocumentProcessingOrchestrator _sut;
 
@@ -23,6 +24,7 @@ public class DocumentProcessingOrchestratorTests
         _validationServiceMock = new Mock<IXsdValidationService>();
         _correlationRepoMock = new Mock<IDocumentCorrelationRepository>();
         _contentProviderMock = new Mock<IDocumentContentProvider>();
+        _partnerRepoMock = new Mock<ITradingPartnerRepository>();
         _loggerMock = new Mock<ILogger<DocumentProcessingOrchestrator>>();
 
         // Default content provider setup
@@ -35,6 +37,7 @@ public class DocumentProcessingOrchestratorTests
             _validationServiceMock.Object,
             _correlationRepoMock.Object,
             _contentProviderMock.Object,
+            _partnerRepoMock.Object,
             _loggerMock.Object);
     }
 

@@ -10,7 +10,6 @@ public class QuarantinedDocument
 {
     public int Id { get; set; }
     public int PartnerDocumentId { get; set; }
-    public int DealerPartnerConnectionId { get; set; }
 
     /// <summary>Trading partner this quarantined document belongs to (converged key).</summary>
     public int TradingPartnerId { get; set; }
@@ -35,14 +34,13 @@ public class QuarantinedDocument
 
     // Navigation properties
     public PartnerDocument? PartnerDocument { get; set; }
-    public DealerPartnerConnection? DealerPartnerConnection { get; set; }
 
     /// <summary>
     /// Creates a new quarantine entry for a document.
     /// </summary>
     public static QuarantinedDocument Create(
         int documentId,
-        int connectionId,
+        int tradingPartnerId,
         DocumentState fromState,
         QuarantineReason reason,
         string? errorCode = null,
@@ -52,7 +50,7 @@ public class QuarantinedDocument
         return new QuarantinedDocument
         {
             PartnerDocumentId = documentId,
-            DealerPartnerConnectionId = connectionId,
+            TradingPartnerId = tradingPartnerId,
             QuarantinedFromState = fromState,
             Reason = reason,
             ErrorCode = errorCode,

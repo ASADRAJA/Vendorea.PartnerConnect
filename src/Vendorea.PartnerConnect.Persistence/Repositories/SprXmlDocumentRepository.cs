@@ -56,8 +56,8 @@ public class SprXmlDocumentRepository : ISprXmlDocumentRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<SprXmlDocument>> GetByConnectionAsync(
-        int connectionId,
+    public async Task<IReadOnlyList<SprXmlDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         SprXmlDocumentType? documentType = null,
         EdiDirection? direction = null,
         SprXmlProcessingStatus? status = null,
@@ -67,7 +67,7 @@ public class SprXmlDocumentRepository : ISprXmlDocumentRepository
     {
         var query = _context.SprXmlDocuments
             .Include(x => x.PartnerDocument)
-            .Where(x => x.PartnerDocument != null && x.PartnerDocument.DealerPartnerConnectionId == connectionId);
+            .Where(x => x.PartnerDocument != null && x.PartnerDocument.TradingPartnerId == tradingPartnerId);
 
         if (documentType.HasValue)
             query = query.Where(x => x.DocumentType == documentType.Value);
@@ -86,12 +86,12 @@ public class SprXmlDocumentRepository : ISprXmlDocumentRepository
     }
 
     public async Task<IReadOnlyList<SprXmlDocument>> GetPendingOutboundAsync(
-        int connectionId, CancellationToken cancellationToken = default)
+        int tradingPartnerId, CancellationToken cancellationToken = default)
     {
         return await _context.SprXmlDocuments
             .Include(x => x.PartnerDocument)
             .Where(x => x.PartnerDocument != null
-                && x.PartnerDocument.DealerPartnerConnectionId == connectionId
+                && x.PartnerDocument.TradingPartnerId == tradingPartnerId
                 && x.Direction == EdiDirection.Outbound
                 && x.ProcessingStatus == SprXmlProcessingStatus.Pending)
             .OrderBy(x => x.CreatedAt)
@@ -127,12 +127,12 @@ public class SprXmlDocumentRepository : ISprXmlDocumentRepository
     }
 
     public async Task<IReadOnlyList<SprXmlDocument>> GetAwaitingAcknowledgmentAsync(
-        int connectionId, TimeSpan? olderThan = null, CancellationToken cancellationToken = default)
+        int tradingPartnerId, TimeSpan? olderThan = null, CancellationToken cancellationToken = default)
     {
         var query = _context.SprXmlDocuments
             .Include(x => x.PartnerDocument)
             .Where(x => x.PartnerDocument != null
-                && x.PartnerDocument.DealerPartnerConnectionId == connectionId
+                && x.PartnerDocument.TradingPartnerId == tradingPartnerId
                 && x.Direction == EdiDirection.Outbound
                 && x.DocumentType == SprXmlDocumentType.EZPO4
                 && x.ProcessingStatus == SprXmlProcessingStatus.Sent
@@ -150,12 +150,12 @@ public class SprXmlDocumentRepository : ISprXmlDocumentRepository
     }
 
     public async Task<IReadOnlyList<SprXmlDocument>> GetFailedDocumentsAsync(
-        int connectionId, int maxRetries = 3, CancellationToken cancellationToken = default)
+        int tradingPartnerId, int maxRetries = 3, CancellationToken cancellationToken = default)
     {
         return await _context.SprXmlDocuments
             .Include(x => x.PartnerDocument)
             .Where(x => x.PartnerDocument != null
-                && x.PartnerDocument.DealerPartnerConnectionId == connectionId
+                && x.PartnerDocument.TradingPartnerId == tradingPartnerId
                 && x.ProcessingStatus == SprXmlProcessingStatus.Failed)
             .OrderBy(x => x.CreatedAt)
             .ToListAsync(cancellationToken);

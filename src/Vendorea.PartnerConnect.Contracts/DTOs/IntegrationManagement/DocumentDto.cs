@@ -7,8 +7,8 @@ namespace Vendorea.PartnerConnect.Contracts.DTOs.IntegrationManagement;
 /// </summary>
 public record DocumentDto(
     int Id,
-    int DealerPartnerConnectionId,
-    int DealerId,
+    int TradingPartnerId,
+    int? TenantId,
     string? TradingPartnerCode,
     DocumentType DocumentType,
     DocumentDirection Direction,

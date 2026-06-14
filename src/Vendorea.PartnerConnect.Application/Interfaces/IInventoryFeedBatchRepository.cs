@@ -22,10 +22,10 @@ public interface IInventoryFeedBatchRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets all inventory feed batches for a specific dealer-partner connection.
+    /// Gets all inventory feed batches for a specific trading partner (inventory is shared per partner).
     /// </summary>
-    Task<IReadOnlyList<InventoryFeedBatch>> GetByConnectionIdAsync(
-        int connectionId,
+    Task<IReadOnlyList<InventoryFeedBatch>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -36,10 +36,10 @@ public interface IInventoryFeedBatchRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the most recent inventory feed batch for a connection.
+    /// Gets the most recent inventory feed batch for a trading partner.
     /// </summary>
-    Task<InventoryFeedBatch?> GetLatestByConnectionIdAsync(
-        int connectionId,
+    Task<InventoryFeedBatch?> GetLatestByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

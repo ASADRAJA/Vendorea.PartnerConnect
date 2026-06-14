@@ -40,7 +40,6 @@ public class TradingPartner
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
-    public ICollection<DealerPartnerConnection> DealerConnections { get; set; } = new List<DealerPartnerConnection>();
     public ICollection<PartnerCapabilityConfiguration> Capabilities { get; set; } = new List<PartnerCapabilityConfiguration>();
 }
 

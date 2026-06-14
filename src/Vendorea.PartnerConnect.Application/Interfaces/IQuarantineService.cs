@@ -26,10 +26,10 @@ public interface IQuarantineService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets all quarantined documents for a dealer connection.
+    /// Gets all quarantined documents for a trading partner.
     /// </summary>
-    Task<IReadOnlyList<QuarantinedDocument>> GetByConnectionIdAsync(
-        int connectionId,
+    Task<IReadOnlyList<QuarantinedDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -78,7 +78,7 @@ public interface IQuarantineService
     /// Gets quarantine statistics for a connection.
     /// </summary>
     Task<QuarantineStatistics> GetStatisticsAsync(
-        int? connectionId = null,
+        int? tradingPartnerId = null,
         CancellationToken cancellationToken = default);
 }
 

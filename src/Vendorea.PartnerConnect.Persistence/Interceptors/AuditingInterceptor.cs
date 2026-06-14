@@ -23,7 +23,6 @@ public class AuditingInterceptor : SaveChangesInterceptor
     private static readonly HashSet<Type> _auditedTypes = new()
     {
         typeof(TradingPartner),
-        typeof(DealerPartnerConnection),
         typeof(PartnerDocument),
         typeof(WebhookSubscription),
         typeof(QuarantinedDocument),

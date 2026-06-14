@@ -27,8 +27,8 @@ public interface IEdiDocumentRepository
     /// <summary>
     /// Gets EDI documents by connection with optional filtering.
     /// </summary>
-    Task<IReadOnlyList<EdiDocument>> GetByConnectionAsync(
-        int connectionId,
+    Task<IReadOnlyList<EdiDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         string? transactionSetCode = null,
         EdiDirection? direction = null,
         int skip = 0,
@@ -39,7 +39,7 @@ public interface IEdiDocumentRepository
     /// Gets pending outbound documents that haven't been sent.
     /// </summary>
     Task<IReadOnlyList<EdiDocument>> GetPendingOutboundAsync(
-        int? connectionId = null,
+        int? tradingPartnerId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -74,17 +74,17 @@ public interface IEdiDocumentRepository
     Task DeleteAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets count of documents by status for a connection.
+    /// Gets count of documents by status for a trading partner.
     /// </summary>
     Task<Dictionary<string, int>> GetCountsByTransactionSetAsync(
-        int connectionId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the next control number for a given type.
     /// </summary>
     Task<int> GetNextControlNumberAsync(
-        int connectionId,
+        int tradingPartnerId,
         string controlNumberType,
         CancellationToken cancellationToken = default);
 }

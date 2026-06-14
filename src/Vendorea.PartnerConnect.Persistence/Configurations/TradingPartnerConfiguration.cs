@@ -45,11 +45,6 @@ public class TradingPartnerConfiguration : IEntityTypeConfiguration<TradingPartn
 
         builder.HasIndex(e => e.Status);
 
-        builder.HasMany(e => e.DealerConnections)
-            .WithOne(e => e.TradingPartner)
-            .HasForeignKey(e => e.TradingPartnerId)
-            .OnDelete(DeleteBehavior.Restrict);
-
         builder.HasMany(e => e.Capabilities)
             .WithOne(e => e.TradingPartner)
             .HasForeignKey(e => e.TradingPartnerId)

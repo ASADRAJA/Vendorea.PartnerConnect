@@ -24,11 +24,6 @@ public class DocumentIdempotencyKeyConfiguration : IEntityTypeConfiguration<Docu
             .HasForeignKey(x => x.TradingPartnerId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne(x => x.Connection)
-            .WithMany()
-            .HasForeignKey(x => x.DealerPartnerConnectionId)
-            .OnDelete(DeleteBehavior.SetNull);
-
         builder.HasOne(x => x.PartnerDocument)
             .WithMany(x => x.IdempotencyKeys)
             .HasForeignKey(x => x.PartnerDocumentId)

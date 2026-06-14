@@ -154,28 +154,14 @@ public class ContentSyncWorker : BackgroundService
         try
         {
             using var scope = _serviceProvider.CreateScope();
-            var connectionRepo = scope.ServiceProvider.GetRequiredService<IDealerPartnerConnectionRepository>();
             var feedService = scope.ServiceProvider.GetRequiredService<IFeedProcessingService>();
 
-            // Any of the partner's dealer connections works — transport is the partner's shared one.
-            DealerPartnerConnection? connection = null;
-            foreach (var job in jobs)
-            {
-                connection = await connectionRepo.GetByDealerAndPartnerAsync(
-                    job.DealerId, job.TradingPartnerId, cancellationToken);
-                if (connection != null) break;
-            }
-
-            if (connection == null)
-            {
-                throw new InvalidOperationException($"No connection found for partner {partnerId}");
-            }
-
+            // Content is shared per partner; transport comes from the partner directly.
             _logger.LogInformation(
                 "Syncing shared content for partner {PartnerId} ({SyncType}) covering {Count} dealer job(s)",
                 partnerId, syncType, jobs.Count);
 
-            var result = await feedService.ProcessContentSyncAsync(connection.Id, syncType, cancellationToken);
+            var result = await feedService.ProcessContentSyncAsync(partnerId, syncType, cancellationToken);
 
             foreach (var job in jobs)
             {

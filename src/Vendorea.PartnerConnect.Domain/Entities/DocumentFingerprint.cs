@@ -8,13 +8,8 @@ public class DocumentFingerprint
     public int Id { get; set; }
 
     /// <summary>
-    /// The dealer-partner connection this fingerprint belongs to.
-    /// </summary>
-    public int DealerPartnerConnectionId { get; set; }
-
-    /// <summary>
     /// Trading partner this fingerprint belongs to. Duplicate detection is per-partner
-    /// (content is shared), so this is the key going forward.
+    /// (content is shared).
     /// </summary>
     public int TradingPartnerId { get; set; }
 
@@ -59,6 +54,5 @@ public class DocumentFingerprint
     public DateTime? ExpiresAt { get; set; }
 
     // Navigation properties
-    public DealerPartnerConnection? DealerPartnerConnection { get; set; }
     public PartnerDocument? OriginalDocument { get; set; }
 }

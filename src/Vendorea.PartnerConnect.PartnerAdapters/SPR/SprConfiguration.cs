@@ -4,7 +4,7 @@ namespace Vendorea.PartnerConnect.PartnerAdapters.SPR;
 
 /// <summary>
 /// Configuration for SPR partner connections.
-/// Stored as JSON in DealerPartnerConnection.ConfigurationJson.
+/// Stored as JSON in TradingPartner.TransportConfigJson.
 /// </summary>
 public class SprConfiguration
 {
@@ -263,7 +263,7 @@ public class SprConfiguration
 
 /// <summary>
 /// Credentials for SPR connections.
-/// Stored as JSON in DealerPartnerConnection.CredentialsJson.
+/// Stored as JSON in TradingPartner.TransportCredentialsJson (encrypted).
 /// </summary>
 public class SprCredentials
 {
