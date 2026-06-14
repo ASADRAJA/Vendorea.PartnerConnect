@@ -64,6 +64,14 @@ public class DocumentFingerprintRepository : IDocumentFingerprintRepository
         DocumentFingerprint fingerprint,
         CancellationToken cancellationToken = default)
     {
+        if (fingerprint.TradingPartnerId == 0 && fingerprint.DealerPartnerConnectionId > 0)
+        {
+            fingerprint.TradingPartnerId = await _context.DealerPartnerConnections
+                .Where(c => c.Id == fingerprint.DealerPartnerConnectionId)
+                .Select(c => c.TradingPartnerId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         _context.DocumentFingerprints.Add(fingerprint);
         await _context.SaveChangesAsync(cancellationToken);
         return fingerprint;
