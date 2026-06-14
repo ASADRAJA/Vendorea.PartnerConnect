@@ -95,7 +95,6 @@ public class ContentSyncWorker : BackgroundService
     {
         using var scope = _serviceProvider.CreateScope();
         var jobRepo = scope.ServiceProvider.GetRequiredService<IContentSyncJobRepository>();
-        var feedService = scope.ServiceProvider.GetRequiredService<IFeedProcessingService>();
 
         var scheduledJobs = await jobRepo.GetScheduledJobsAsync(DateTime.UtcNow, cancellationToken);
 
@@ -104,16 +103,24 @@ public class ContentSyncWorker : BackgroundService
             return;
         }
 
-        _logger.LogInformation("Found {Count} scheduled content sync jobs to process", scheduledJobs.Count);
+        // eContent is shared master data per partner — sync ONCE per (partner, sync type) and
+        // apply the outcome to every dealer job in that group, instead of re-pulling identical
+        // content once per dealer.
+        var groups = scheduledJobs
+            .GroupBy(j => (j.TradingPartnerId, j.SyncType))
+            .ToList();
 
-        // Process jobs with controlled concurrency
+        _logger.LogInformation(
+            "Processing content sync for {GroupCount} partner/type group(s) covering {JobCount} dealer job(s)",
+            groups.Count, scheduledJobs.Count);
+
         var semaphore = new SemaphoreSlim(maxConcurrent);
-        var tasks = scheduledJobs.Select(async job =>
+        var tasks = groups.Select(async group =>
         {
             await semaphore.WaitAsync(cancellationToken);
             try
             {
-                await ProcessContentSyncJobAsync(job, feedService, jobRepo, cancellationToken);
+                await ProcessPartnerContentGroupAsync(group.ToList(), jobRepo, cancellationToken);
             }
             finally
             {
@@ -124,73 +131,80 @@ public class ContentSyncWorker : BackgroundService
         await Task.WhenAll(tasks);
     }
 
-    private async Task ProcessContentSyncJobAsync(
-        ContentSyncJob job,
-        IFeedProcessingService feedService,
+    /// <summary>
+    /// Syncs a partner's shared content once (via a representative job's connection — transport
+    /// comes from the partner) and applies the outcome to every dealer job in the (partner, sync
+    /// type) group, since they're all satisfied by the single shared sync.
+    /// </summary>
+    private async Task ProcessPartnerContentGroupAsync(
+        List<ContentSyncJob> jobs,
         IContentSyncJobRepository jobRepo,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Starting content sync job {JobId} for dealer {DealerId}, partner {PartnerId}, type {SyncType}",
-            job.Id, job.DealerId, job.TradingPartnerId, job.SyncType);
+        var partnerId = jobs[0].TradingPartnerId;
+        var syncType = jobs[0].SyncType;
 
-        try
+        foreach (var job in jobs)
         {
-            // Mark as running
             job.Status = ContentSyncStatus.Running;
             job.StartedAt = DateTime.UtcNow;
             await jobRepo.UpdateAsync(job, cancellationToken);
+        }
 
-            // Get connection ID for this dealer-partner combination
+        try
+        {
             using var scope = _serviceProvider.CreateScope();
             var connectionRepo = scope.ServiceProvider.GetRequiredService<IDealerPartnerConnectionRepository>();
-            var connection = await connectionRepo.GetByDealerAndPartnerAsync(
-                job.DealerId, job.TradingPartnerId, cancellationToken);
+            var feedService = scope.ServiceProvider.GetRequiredService<IFeedProcessingService>();
+
+            // Any of the partner's dealer connections works — transport is the partner's shared one.
+            DealerPartnerConnection? connection = null;
+            foreach (var job in jobs)
+            {
+                connection = await connectionRepo.GetByDealerAndPartnerAsync(
+                    job.DealerId, job.TradingPartnerId, cancellationToken);
+                if (connection != null) break;
+            }
 
             if (connection == null)
             {
-                throw new InvalidOperationException(
-                    $"No connection found for dealer {job.DealerId} and partner {job.TradingPartnerId}");
+                throw new InvalidOperationException($"No connection found for partner {partnerId}");
             }
 
-            // Process the content sync
-            var result = await feedService.ProcessContentSyncAsync(
-                connection.Id, job.SyncType, cancellationToken);
+            _logger.LogInformation(
+                "Syncing shared content for partner {PartnerId} ({SyncType}) covering {Count} dealer job(s)",
+                partnerId, syncType, jobs.Count);
 
-            // Update job with results
-            job.TotalProducts = result.TotalProducts;
-            job.ProcessedProducts = result.ProcessedProducts;
-            job.UpdatedProducts = result.UpdatedProducts;
-            job.NewImagesDownloaded = result.NewImagesDownloaded;
-            job.SkippedProducts = result.SkippedProducts;
-            job.ErrorProducts = result.ErrorProducts;
-            job.Status = result.Status;
-            job.CompletedAt = result.CompletedAt;
-            job.ErrorDetails = result.ErrorDetails;
+            var result = await feedService.ProcessContentSyncAsync(connection.Id, syncType, cancellationToken);
 
-            await jobRepo.UpdateAsync(job, cancellationToken);
-
-            if (job.Status == ContentSyncStatus.Completed)
+            foreach (var job in jobs)
             {
-                _logger.LogInformation(
-                    "Content sync job {JobId} completed: {Processed} products processed, {Updated} updated, {Images} images",
-                    job.Id, job.ProcessedProducts, job.UpdatedProducts, job.NewImagesDownloaded);
+                job.TotalProducts = result.TotalProducts;
+                job.ProcessedProducts = result.ProcessedProducts;
+                job.UpdatedProducts = result.UpdatedProducts;
+                job.NewImagesDownloaded = result.NewImagesDownloaded;
+                job.SkippedProducts = result.SkippedProducts;
+                job.ErrorProducts = result.ErrorProducts;
+                job.Status = result.Status;
+                job.CompletedAt = result.CompletedAt;
+                job.ErrorDetails = result.ErrorDetails;
+                await jobRepo.UpdateAsync(job, cancellationToken);
             }
-            else
-            {
-                _logger.LogWarning(
-                    "Content sync job {JobId} ended with status {Status}: {Error}",
-                    job.Id, job.Status, job.ErrorDetails);
-            }
+
+            _logger.LogInformation(
+                "Shared content sync for partner {PartnerId} ended {Status}: {Processed} processed, {Updated} updated",
+                partnerId, result.Status, result.ProcessedProducts, result.UpdatedProducts);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing content sync job {JobId}", job.Id);
-
-            job.Status = ContentSyncStatus.Failed;
-            job.CompletedAt = DateTime.UtcNow;
-            job.ErrorDetails = ex.Message;
-            await jobRepo.UpdateAsync(job, cancellationToken);
+            _logger.LogError(ex, "Error processing shared content sync for partner {PartnerId}", partnerId);
+            foreach (var job in jobs)
+            {
+                job.Status = ContentSyncStatus.Failed;
+                job.CompletedAt = DateTime.UtcNow;
+                job.ErrorDetails = ex.Message;
+                await jobRepo.UpdateAsync(job, cancellationToken);
+            }
         }
     }
 }
