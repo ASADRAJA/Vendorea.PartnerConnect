@@ -42,6 +42,21 @@ public class ApiClient
     }
 
     // Trading Partners endpoints
+    public async Task<bool> UpdatePartnerConnectionRequirementsAsync(int id, List<string> requirements)
+    {
+        try
+        {
+            var response = await _httpClient.PutAsJsonAsync(
+                $"/api/v1/partners/{id}/connection-requirements", new { Requirements = requirements });
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update connection requirements for partner {Id}", id);
+            return false;
+        }
+    }
+
     public async Task<List<TradingPartnerDto>> GetTradingPartnersAsync()
     {
         try

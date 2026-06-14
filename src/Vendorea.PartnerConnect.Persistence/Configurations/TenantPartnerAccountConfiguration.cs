@@ -22,8 +22,12 @@ public class TenantPartnerAccountConfiguration : IEntityTypeConfiguration<Tenant
         builder.Property(e => e.ExternalTenantId)
             .HasMaxLength(100);
 
+        // Tolerant read: legacy rows predating this column have an empty-string value; map any
+        // unrecognized value to Pending instead of throwing during materialization.
         builder.Property(e => e.ApprovalStatus)
-            .HasConversion<string>()
+            .HasConversion(
+                v => v.ToString(),
+                v => ParseApprovalStatus(v))
             .HasMaxLength(20);
 
         builder.Property(e => e.DecisionReason)
@@ -66,4 +70,7 @@ public class TenantPartnerAccountConfiguration : IEntityTypeConfiguration<Tenant
             .HasForeignKey(e => e.TenantPartnerAccountId)
             .OnDelete(DeleteBehavior.Restrict);
     }
+
+    private static ConnectionApprovalStatus ParseApprovalStatus(string value) =>
+        Enum.TryParse<ConnectionApprovalStatus>(value, out var s) ? s : ConnectionApprovalStatus.Pending;
 }
