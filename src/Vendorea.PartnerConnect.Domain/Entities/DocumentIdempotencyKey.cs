@@ -24,11 +24,6 @@ public class DocumentIdempotencyKey
     public int TradingPartnerId { get; set; }
 
     /// <summary>
-    /// Connection this key is scoped to (if applicable).
-    /// </summary>
-    public int? DealerPartnerConnectionId { get; set; }
-
-    /// <summary>
     /// Document type this key applies to.
     /// </summary>
     public DocumentType DocumentType { get; set; }
@@ -60,7 +55,6 @@ public class DocumentIdempotencyKey
 
     // Navigation
     public TradingPartner? TradingPartner { get; set; }
-    public DealerPartnerConnection? Connection { get; set; }
     public PartnerDocument? PartnerDocument { get; set; }
 }
 

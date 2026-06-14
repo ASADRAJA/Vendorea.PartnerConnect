@@ -18,10 +18,10 @@ public interface IQuarantinedDocumentRepository
     Task<QuarantinedDocument?> GetByDocumentIdAsync(int documentId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets all quarantine entries for a dealer connection.
+    /// Gets all quarantine entries for a trading partner.
     /// </summary>
-    Task<IReadOnlyList<QuarantinedDocument>> GetByConnectionIdAsync(
-        int connectionId,
+    Task<IReadOnlyList<QuarantinedDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -53,6 +53,6 @@ public interface IQuarantinedDocumentRepository
     /// Gets quarantine statistics.
     /// </summary>
     Task<QuarantineStatistics> GetStatisticsAsync(
-        int? connectionId = null,
+        int? tradingPartnerId = null,
         CancellationToken cancellationToken = default);
 }

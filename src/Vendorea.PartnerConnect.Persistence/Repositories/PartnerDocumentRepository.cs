@@ -17,14 +17,21 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
     public async Task<PartnerDocument?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.PartnerDocuments
-            .Include(d => d.DealerPartnerConnection)
             .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<PartnerDocument>> GetByConnectionIdAsync(int connectionId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<PartnerDocument>> GetByTradingPartnerAsync(int tradingPartnerId, CancellationToken cancellationToken = default)
     {
         return await _context.PartnerDocuments
-            .Where(d => d.DealerPartnerConnectionId == connectionId)
+            .Where(d => d.TradingPartnerId == tradingPartnerId)
+            .OrderByDescending(d => d.ReceivedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PartnerDocument>> GetByTenantAsync(int tenantId, CancellationToken cancellationToken = default)
+    {
+        return await _context.PartnerDocuments
+            .Where(d => d.TenantId == tenantId)
             .OrderByDescending(d => d.ReceivedAt)
             .ToListAsync(cancellationToken);
     }
@@ -32,7 +39,6 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
     public async Task<IReadOnlyList<PartnerDocument>> GetPendingDocumentsAsync(CancellationToken cancellationToken = default)
     {
         return await _context.PartnerDocuments
-            .Include(d => d.DealerPartnerConnection)
             .Where(d => d.State == DocumentState.Received || d.State == DocumentState.Queued)
             .OrderBy(d => d.ReceivedAt)
             .ToListAsync(cancellationToken);
@@ -40,15 +46,6 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
 
     public async Task<PartnerDocument> AddAsync(PartnerDocument document, CancellationToken cancellationToken = default)
     {
-        // Converged key: derive the trading partner from the connection when not set by the caller.
-        if (document.TradingPartnerId == 0 && document.DealerPartnerConnectionId > 0)
-        {
-            document.TradingPartnerId = await _context.DealerPartnerConnections
-                .Where(c => c.Id == document.DealerPartnerConnectionId)
-                .Select(c => c.TradingPartnerId)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
-
         _context.PartnerDocuments.Add(document);
         await _context.SaveChangesAsync(cancellationToken);
         return document;
@@ -108,13 +105,11 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
         var targetStates = MapStatusToStates(status);
 
         var query = _context.PartnerDocuments
-            .Include(d => d.DealerPartnerConnection)
             .Where(d => targetStates.Contains(d.State) && d.Direction == direction);
 
         if (tradingPartnerId.HasValue)
         {
-            query = query.Where(d => d.DealerPartnerConnection != null &&
-                d.DealerPartnerConnection.TradingPartnerId == tradingPartnerId.Value);
+            query = query.Where(d => d.TradingPartnerId == tradingPartnerId.Value);
         }
 
         return await query
@@ -137,7 +132,6 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
         };
 
         return await _context.PartnerDocuments
-            .Include(d => d.DealerPartnerConnection)
             .Where(d => failedStates.Contains(d.State) && d.RetryCount < maxAttempts)
             .OrderBy(d => d.ProcessingCompletedAt ?? d.ReceivedAt)
             .Take(take)

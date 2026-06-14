@@ -44,21 +44,16 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
     }
 
     /// <summary>
-    /// Resolves SPR transport config + credentials, preferring the partner-level shared transport
-    /// (the converged model). Falls back to the dealer connection's own JSON when the partner has
-    /// no transport configured (transitional, pre-convergence).
+    /// Resolves SPR transport config + credentials from the partner-level shared transport
+    /// (the converged model). Transport now lives entirely on the trading partner.
     /// </summary>
-    private (SprConfiguration Config, SprCredentials Credentials) ResolveTransport(DealerPartnerConnection connection)
+    private (SprConfiguration Config, SprCredentials Credentials) ResolveTransport(TradingPartner partner)
     {
-        var partner = connection.TradingPartner;
+        var configJson = partner.TransportConfigJson;
 
-        var configJson = !string.IsNullOrWhiteSpace(partner?.TransportConfigJson)
-            ? partner!.TransportConfigJson
-            : connection.ConfigurationJson;
-
-        var credsJson = !string.IsNullOrWhiteSpace(partner?.TransportCredentialsJson)
-            ? _credentialProtector.Unprotect(partner!.TransportCredentialsJson)
-            : connection.CredentialsJson;
+        var credsJson = !string.IsNullOrWhiteSpace(partner.TransportCredentialsJson)
+            ? _credentialProtector.Unprotect(partner.TransportCredentialsJson)
+            : null;
 
         return (SprConfiguration.FromJson(configJson), SprCredentials.FromJson(credsJson));
     }
@@ -73,13 +68,13 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
     };
 
     public override async Task<bool> TestConnectionAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken = default)
     {
-        var (config, credentials) = ResolveTransport(connection);
+        var (config, credentials) = ResolveTransport(partner);
 
         LogInfo("Testing connection to SPR for dealer {DealerId} at {Host}",
-            connection.DealerId, config.SftpHost);
+            partner.Id, config.SftpHost);
 
         try
         {
@@ -98,18 +93,18 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         }
         catch (Exception ex)
         {
-            LogError(ex, "Connection test failed for dealer {DealerId}", connection.DealerId);
+            LogError(ex, "Connection test failed for dealer {DealerId}", partner.Id);
             return false;
         }
     }
 
     public async Task<PriceFeedResult> FetchPriceFeedAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken = default)
     {
-        var (config, credentials) = ResolveTransport(connection);
+        var (config, credentials) = ResolveTransport(partner);
 
-        LogInfo("Fetching price feed from SPR for dealer {DealerId}", connection.DealerId);
+        LogInfo("Fetching price feed from SPR for dealer {DealerId}", partner.Id);
 
         try
         {
@@ -124,7 +119,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
 
             if (matchingFiles.Count == 0)
             {
-                LogInfo("No price feed files found for dealer {DealerId}", connection.DealerId);
+                LogInfo("No price feed files found for dealer {DealerId}", partner.Id);
                 return new PriceFeedResult(true, null, 0, null);
             }
 
@@ -139,7 +134,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
                 }
 
                 var result = await ProcessPriceFeedFileAsync(
-                    client, connection, config, file, cancellationToken);
+                    client, partner, config, file, cancellationToken);
 
                 if (result.RecordCount.HasValue)
                 {
@@ -163,18 +158,18 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         }
         catch (Exception ex)
         {
-            LogError(ex, "Error fetching price feed for dealer {DealerId}", connection.DealerId);
+            LogError(ex, "Error fetching price feed for dealer {DealerId}", partner.Id);
             return new PriceFeedResult(false, null, null, ex.Message);
         }
     }
 
     public async Task<InventoryFeedResult> FetchInventoryFeedAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken = default)
     {
-        var (config, credentials) = ResolveTransport(connection);
+        var (config, credentials) = ResolveTransport(partner);
 
-        LogInfo("Fetching inventory feed from SPR for dealer {DealerId}", connection.DealerId);
+        LogInfo("Fetching inventory feed from SPR for dealer {DealerId}", partner.Id);
 
         try
         {
@@ -189,7 +184,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
 
             if (matchingFiles.Count == 0)
             {
-                LogInfo("No inventory feed files found for dealer {DealerId}", connection.DealerId);
+                LogInfo("No inventory feed files found for dealer {DealerId}", partner.Id);
                 return new InventoryFeedResult(true, null, 0, null);
             }
 
@@ -204,7 +199,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
                 }
 
                 var result = await ProcessInventoryFeedFileAsync(
-                    client, connection, config, file, cancellationToken);
+                    client, partner, config, file, cancellationToken);
 
                 if (result.RecordCount.HasValue)
                 {
@@ -228,14 +223,14 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         }
         catch (Exception ex)
         {
-            LogError(ex, "Error fetching inventory feed for dealer {DealerId}", connection.DealerId);
+            LogError(ex, "Error fetching inventory feed for dealer {DealerId}", partner.Id);
             return new InventoryFeedResult(false, null, null, ex.Message);
         }
     }
 
     private async Task<PriceFeedResult> ProcessPriceFeedFileAsync(
         IFileTransportClient client,
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         SprConfiguration config,
         RemoteFileInfo file,
         CancellationToken cancellationToken)
@@ -253,7 +248,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
 
         // Check for duplicates
         var duplicateCheck = await _duplicateDetection.CheckDuplicateAsync(
-            connection.Id,
+            partner.Id,
             DocumentType.PriceList,
             contentHash,
             cancellationToken);
@@ -270,14 +265,14 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         }
 
         // Store the raw document
-        var storagePath = $"spr/{connection.DealerId}/prices/{DateTime.UtcNow:yyyy/MM/dd}/{file.Name}";
+        var storagePath = $"spr/{partner.Id}/prices/{DateTime.UtcNow:yyyy/MM/dd}/{file.Name}";
         var metadata = new StorageMetadata
         {
             OriginalFileName = file.Name,
             ContentType = "text/csv",
             SizeBytes = file.Size,
             ContentHash = contentHash,
-            DealerId = connection.DealerId,
+            DealerId = partner.Id,
             TradingPartnerCode = AdapterCode,
             DocumentType = "PriceList",
             CorrelationId = Guid.NewGuid().ToString()
@@ -289,7 +284,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         memoryStream.Position = 0;
         var parseResult = await _priceFeedParser.ParseToCanonicalAsync(
             memoryStream,
-            connection.DealerId,
+            partner.Id,
             storagePath,
             config,
             cancellationToken);
@@ -311,7 +306,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
 
     private async Task<InventoryFeedResult> ProcessInventoryFeedFileAsync(
         IFileTransportClient client,
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         SprConfiguration config,
         RemoteFileInfo file,
         CancellationToken cancellationToken)
@@ -329,7 +324,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
 
         // Check for duplicates
         var duplicateCheck = await _duplicateDetection.CheckDuplicateAsync(
-            connection.Id,
+            partner.Id,
             DocumentType.InventoryFeed,
             contentHash,
             cancellationToken);
@@ -346,14 +341,14 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         }
 
         // Store the raw document
-        var storagePath = $"spr/{connection.DealerId}/inventory/{DateTime.UtcNow:yyyy/MM/dd}/{file.Name}";
+        var storagePath = $"spr/{partner.Id}/inventory/{DateTime.UtcNow:yyyy/MM/dd}/{file.Name}";
         var metadata = new StorageMetadata
         {
             OriginalFileName = file.Name,
             ContentType = "text/csv",
             SizeBytes = file.Size,
             ContentHash = contentHash,
-            DealerId = connection.DealerId,
+            DealerId = partner.Id,
             TradingPartnerCode = AdapterCode,
             DocumentType = "InventoryFeed",
             CorrelationId = Guid.NewGuid().ToString()
@@ -365,7 +360,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         memoryStream.Position = 0;
         var parseResult = await _inventoryFeedParser.ParseAsync(
             memoryStream,
-            connection.DealerId,
+            partner.Id,
             storagePath,
             config,
             cancellationToken);

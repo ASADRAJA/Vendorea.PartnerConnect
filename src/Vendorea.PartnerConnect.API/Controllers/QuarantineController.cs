@@ -40,12 +40,12 @@ public class QuarantineController : ControllerBase
     /// <summary>
     /// Gets quarantined documents for a specific connection.
     /// </summary>
-    [HttpGet("connection/{connectionId}")]
-    public async Task<ActionResult<IEnumerable<QuarantinedDocumentDto>>> GetByConnection(
-        int connectionId,
+    [HttpGet("partner/{tradingPartnerId}")]
+    public async Task<ActionResult<IEnumerable<QuarantinedDocumentDto>>> GetByTradingPartner(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        var items = await _quarantineService.GetByConnectionIdAsync(connectionId, cancellationToken);
+        var items = await _quarantineService.GetByTradingPartnerAsync(tradingPartnerId, cancellationToken);
         return Ok(items.Select(MapToDto));
     }
 
@@ -70,10 +70,10 @@ public class QuarantineController : ControllerBase
     /// </summary>
     [HttpGet("statistics")]
     public async Task<ActionResult<QuarantineStatisticsDto>> GetStatistics(
-        [FromQuery] int? connectionId = null,
+        [FromQuery] int? tradingPartnerId = null,
         CancellationToken cancellationToken = default)
     {
-        var stats = await _quarantineService.GetStatisticsAsync(connectionId, cancellationToken);
+        var stats = await _quarantineService.GetStatisticsAsync(tradingPartnerId, cancellationToken);
         return Ok(new QuarantineStatisticsDto
         {
             TotalQuarantined = stats.TotalQuarantined,
@@ -222,7 +222,7 @@ public class QuarantineController : ControllerBase
         {
             Id = q.Id,
             DocumentId = q.PartnerDocumentId,
-            ConnectionId = q.DealerPartnerConnectionId,
+            ConnectionId = q.TradingPartnerId,
             QuarantinedFromState = q.QuarantinedFromState.ToString(),
             Reason = q.Reason.ToString(),
             ErrorCode = q.ErrorCode,

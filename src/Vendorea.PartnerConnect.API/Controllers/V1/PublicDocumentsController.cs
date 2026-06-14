@@ -14,16 +14,13 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 public class PublicDocumentsController : ControllerBase
 {
     private readonly IPartnerDocumentRepository _documentRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
     private readonly ILogger<PublicDocumentsController> _logger;
 
     public PublicDocumentsController(
         IPartnerDocumentRepository documentRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
         ILogger<PublicDocumentsController> logger)
     {
         _documentRepository = documentRepository;
-        _connectionRepository = connectionRepository;
         _logger = logger;
     }
 
@@ -41,24 +38,15 @@ public class PublicDocumentsController : ControllerBase
             return Unauthorized("Dealer ID not found in API key claims");
         }
 
-        // Get dealer's connections
-        var connections = await _connectionRepository.GetByDealerIdAsync(dealerId.Value, cancellationToken);
-        var connectionIds = connections.Select(c => c.Id).ToHashSet();
-
-        // Get documents for connections
-        var allDocuments = new List<PartnerDocument>();
-        foreach (var connectionId in connectionIds)
-        {
-            var docs = await _documentRepository.GetByConnectionIdAsync(connectionId, cancellationToken);
-            allDocuments.AddRange(docs);
-        }
+        // Get the dealer's (tenant's) documents
+        var allDocuments = await _documentRepository.GetByTenantAsync(dealerId.Value, cancellationToken);
 
         // Apply filters
         var filtered = allDocuments.AsEnumerable();
 
-        if (request.ConnectionId.HasValue && connectionIds.Contains(request.ConnectionId.Value))
+        if (request.TradingPartnerId.HasValue)
         {
-            filtered = filtered.Where(d => d.DealerPartnerConnectionId == request.ConnectionId.Value);
+            filtered = filtered.Where(d => d.TradingPartnerId == request.TradingPartnerId.Value);
         }
 
         if (!string.IsNullOrEmpty(request.DocumentType))
@@ -127,9 +115,8 @@ public class PublicDocumentsController : ControllerBase
             return NotFound();
         }
 
-        // Verify ownership via connection
-        var connection = await _connectionRepository.GetByIdAsync(document.DealerPartnerConnectionId, cancellationToken);
-        if (connection == null || connection.DealerId != dealerId.Value)
+        // Verify ownership by tenant
+        if (document.TenantId != dealerId.Value)
         {
             return NotFound();
         }
@@ -157,8 +144,7 @@ public class PublicDocumentsController : ControllerBase
         }
 
         // Verify ownership
-        var connection = await _connectionRepository.GetByIdAsync(document.DealerPartnerConnectionId, cancellationToken);
-        if (connection == null || connection.DealerId != dealerId.Value)
+        if (document.TenantId != dealerId.Value)
         {
             return NotFound();
         }
@@ -195,8 +181,7 @@ public class PublicDocumentsController : ControllerBase
         }
 
         // Verify ownership
-        var connection = await _connectionRepository.GetByIdAsync(document.DealerPartnerConnectionId, cancellationToken);
-        if (connection == null || connection.DealerId != dealerId.Value)
+        if (document.TenantId != dealerId.Value)
         {
             return NotFound();
         }
@@ -240,15 +225,8 @@ public class PublicDocumentsController : ControllerBase
             return Unauthorized("Dealer ID not found in API key claims");
         }
 
-        // Get dealer's connections
-        var connections = await _connectionRepository.GetByDealerIdAsync(dealerId.Value, cancellationToken);
-
-        var allDocuments = new List<PartnerDocument>();
-        foreach (var connection in connections)
-        {
-            var docs = await _documentRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
-            allDocuments.AddRange(docs);
-        }
+        // Get the dealer's (tenant's) documents
+        var allDocuments = await _documentRepository.GetByTenantAsync(dealerId.Value, cancellationToken);
 
         var since = DateTime.UtcNow.AddDays(-days);
         var recentDocs = allDocuments.Where(d => d.ReceivedAt >= since).ToList();
@@ -266,12 +244,9 @@ public class PublicDocumentsController : ControllerBase
             ByDocumentType = recentDocs
                 .GroupBy(d => d.DocumentType)
                 .ToDictionary(g => g.Key, g => g.Count()),
-            ByConnection = connections.Select(c => new
-            {
-                ConnectionId = c.Id,
-                PartnerName = c.TradingPartner?.Name,
-                DocumentCount = recentDocs.Count(d => d.DealerPartnerConnectionId == c.Id)
-            }),
+            ByPartner = recentDocs
+                .GroupBy(d => d.TradingPartnerId)
+                .Select(g => new { TradingPartnerId = g.Key, DocumentCount = g.Count() }),
             DailyActivity = recentDocs
                 .GroupBy(d => d.ReceivedAt.Date)
                 .Select(g => new { Date = g.Key, Count = g.Count() })
@@ -297,7 +272,8 @@ public class PublicDocumentsController : ControllerBase
         return new
         {
             document.Id,
-            document.DealerPartnerConnectionId,
+            document.TradingPartnerId,
+            document.TenantId,
             document.DocumentType,
             Direction = document.Direction.ToString(),
             Status = document.Status.ToString(),
@@ -314,7 +290,7 @@ public class PublicDocumentsController : ControllerBase
 
 public class DocumentQueryRequest
 {
-    public int? ConnectionId { get; set; }
+    public int? TradingPartnerId { get; set; }
     public string? DocumentType { get; set; }
     public string? Status { get; set; }
     public string? Direction { get; set; }

@@ -95,17 +95,17 @@ public class GenericSftpAdapter : BasePartnerAdapter
     }
 
     public async Task<IReadOnlyList<PartnerDocument>> FetchDocumentsAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken = default)
     {
         var documents = new List<PartnerDocument>();
 
         try
         {
-            LogInfo("Fetching documents for connection {ConnectionId}", connection.Id);
+            LogInfo("Fetching documents for partner {ConnectionId}", partner.Id);
 
             await using var client = _transportFactory.CreateSftpClient();
-            var connectionInfo = ParseConnectionInfo(connection.CredentialsJson);
+            var connectionInfo = ParseConnectionInfo(partner.TransportCredentialsJson);
             await client.ConnectAsync(connectionInfo, cancellationToken);
 
             // List files matching the pattern
@@ -118,7 +118,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
             {
                 try
                 {
-                    var document = await ProcessFileAsync(connection, client, file, cancellationToken);
+                    var document = await ProcessFileAsync(partner, client, file, cancellationToken);
                     if (document != null)
                     {
                         documents.Add(document);
@@ -134,13 +134,13 @@ public class GenericSftpAdapter : BasePartnerAdapter
         }
         catch (Exception ex)
         {
-            LogError(ex, "Error fetching documents for connection {ConnectionId}", connection.Id);
+            LogError(ex, "Error fetching documents for partner {ConnectionId}", partner.Id);
             throw;
         }
     }
 
     private async Task<PartnerDocument?> ProcessFileAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         IFileTransportClient client,
         RemoteFileInfo file,
         CancellationToken cancellationToken)
@@ -155,7 +155,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
         // Check for duplicates
         var contentHash = _duplicateDetection.ComputeHash(content);
         if (await _duplicateDetection.IsDuplicateAsync(
-            connection.Id,
+            partner.Id,
             _config.DocumentType,
             contentHash,
             cancellationToken))
@@ -168,7 +168,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
         }
 
         // Store raw document
-        var storagePath = $"raw/{connection.DealerId}/{_config.DocumentType}/{DateTime.UtcNow:yyyyMMdd}/{file.Name}";
+        var storagePath = $"raw/{partner.Id}/{_config.DocumentType}/{DateTime.UtcNow:yyyyMMdd}/{file.Name}";
         var storageKey = await _documentStorage.StoreAsync(
             new MemoryStream(content),
             storagePath,
@@ -176,8 +176,8 @@ public class GenericSftpAdapter : BasePartnerAdapter
             {
                 OriginalFileName = file.Name,
                 ContentType = _config.ContentType,
-                DealerId = connection.DealerId,
-                TradingPartnerCode = connection.TradingPartner?.Code,
+                DealerId = partner.Id,
+                TradingPartnerCode = partner.Code,
                 DocumentType = _config.DocumentType.ToString(),
                 SizeBytes = content.Length,
                 ContentHash = contentHash
@@ -187,7 +187,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
         // Create document record
         var document = new PartnerDocument
         {
-            DealerPartnerConnectionId = connection.Id,
+            TradingPartnerId = partner.Id,
             DocumentType = _config.DocumentType,
             Direction = DocumentDirection.Inbound,
             FileName = file.Name,
@@ -199,7 +199,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
 
         // Register fingerprint
         await _duplicateDetection.RegisterFingerprintAsync(
-            connection.Id,
+            partner.Id,
             _config.DocumentType,
             contentHash,
             document.Id,
@@ -248,7 +248,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
     }
 
     public async Task<bool> SendDocumentAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         PartnerDocument document,
         Stream content,
         CancellationToken cancellationToken = default)
@@ -256,7 +256,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
         try
         {
             await using var client = _transportFactory.CreateSftpClient();
-            var connectionInfo = ParseConnectionInfo(connection.CredentialsJson);
+            var connectionInfo = ParseConnectionInfo(partner.TransportCredentialsJson);
             await client.ConnectAsync(connectionInfo, cancellationToken);
 
             var fileName = document.FileName ?? $"{document.DocumentType}_{DateTime.UtcNow:yyyyMMddHHmmss}.dat";
@@ -275,13 +275,13 @@ public class GenericSftpAdapter : BasePartnerAdapter
     }
 
     public override async Task<bool> TestConnectionAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken = default)
     {
         try
         {
             await using var client = _transportFactory.CreateSftpClient();
-            var connectionInfo = ParseConnectionInfo(connection.CredentialsJson);
+            var connectionInfo = ParseConnectionInfo(partner.TransportCredentialsJson);
             await client.ConnectAsync(connectionInfo, cancellationToken);
 
             // Try to list the inbound directory
@@ -290,7 +290,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
         }
         catch (Exception ex)
         {
-            LogError(ex, "Connection test failed for {ConnectionId}", connection.Id);
+            LogError(ex, "Connection test failed for {ConnectionId}", partner.Id);
             return false;
         }
     }
@@ -299,7 +299,7 @@ public class GenericSftpAdapter : BasePartnerAdapter
     {
         if (string.IsNullOrEmpty(credentialsJson))
         {
-            throw new InvalidOperationException("No credentials configured for connection");
+            throw new InvalidOperationException("No credentials configured for partner");
         }
 
         var creds = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(credentialsJson);

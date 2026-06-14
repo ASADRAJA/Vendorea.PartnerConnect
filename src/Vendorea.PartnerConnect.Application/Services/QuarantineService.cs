@@ -47,7 +47,7 @@ public class QuarantineService : IQuarantineService
 
         var quarantine = QuarantinedDocument.Create(
             document.Id,
-            document.DealerPartnerConnectionId,
+            document.TradingPartnerId,
             document.State,
             reason,
             errorCode,
@@ -72,11 +72,11 @@ public class QuarantineService : IQuarantineService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<QuarantinedDocument>> GetByConnectionIdAsync(
-        int connectionId,
+    public async Task<IReadOnlyList<QuarantinedDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        return await _repository.GetByConnectionIdAsync(connectionId, cancellationToken);
+        return await _repository.GetByTradingPartnerAsync(tradingPartnerId, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -205,9 +205,9 @@ public class QuarantineService : IQuarantineService
 
     /// <inheritdoc />
     public async Task<QuarantineStatistics> GetStatisticsAsync(
-        int? connectionId = null,
+        int? tradingPartnerId = null,
         CancellationToken cancellationToken = default)
     {
-        return await _repository.GetStatisticsAsync(connectionId, cancellationToken);
+        return await _repository.GetStatisticsAsync(tradingPartnerId, cancellationToken);
     }
 }

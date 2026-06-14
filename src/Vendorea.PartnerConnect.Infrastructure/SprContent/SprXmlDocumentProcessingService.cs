@@ -26,7 +26,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
 {
     private readonly ISprXmlDocumentRepository _documentRepository;
     private readonly IPartnerDocumentRepository _partnerDocumentRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly ITradingPartnerRepository _partnerRepository;
+    private readonly ICredentialProtector _credentialProtector;
     private readonly ISprPoackParser _poackParser;
     private readonly ISprEzasnParser _asnParser;
     private readonly ISprEzinv4Parser _invoiceParser;
@@ -41,7 +42,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     public SprXmlDocumentProcessingService(
         ISprXmlDocumentRepository documentRepository,
         IPartnerDocumentRepository partnerDocumentRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
+        ITradingPartnerRepository partnerRepository,
+        ICredentialProtector credentialProtector,
         ISprPoackParser poackParser,
         ISprEzasnParser asnParser,
         ISprEzinv4Parser invoiceParser,
@@ -55,7 +57,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     {
         _documentRepository = documentRepository;
         _partnerDocumentRepository = partnerDocumentRepository;
-        _connectionRepository = connectionRepository;
+        _partnerRepository = partnerRepository;
+        _credentialProtector = credentialProtector;
         _poackParser = poackParser;
         _asnParser = asnParser;
         _invoiceParser = invoiceParser;
@@ -69,7 +72,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     }
 
     public async Task<SprXmlProcessingResult> ProcessInboundDocumentAsync(
-        int connectionId,
+        int tradingPartnerId,
         string xmlContent,
         string fileName,
         SprXmlDocumentType? documentType = null,
@@ -81,14 +84,14 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         try
         {
             _logger.LogInformation(
-                "Processing inbound SPR XML document for connection {ConnectionId}: {FileName}",
-                connectionId, fileName);
+                "Processing inbound SPR XML document for partner {ConnectionId}: {FileName}",
+                tradingPartnerId, fileName);
 
-            // Validate connection
-            var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
-            if (connection == null)
+            // Validate partner
+            var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+            if (partner == null)
             {
-                result.ErrorMessage = $"Connection {connectionId} not found";
+                result.ErrorMessage = $"Connection {tradingPartnerId} not found";
                 return result;
             }
 
@@ -105,7 +108,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             // Create PartnerDocument for tracking
             var partnerDocument = new PartnerDocument
             {
-                DealerPartnerConnectionId = connectionId,
+                TradingPartnerId = tradingPartnerId,
                 DocumentType = MapToDocumentType(detectedType.Value),
                 Direction = DocumentDirection.Inbound,
                 State = DocumentState.Received,
@@ -132,15 +135,15 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             switch (detectedType.Value)
             {
                 case SprXmlDocumentType.EZPOACK:
-                    await ProcessPoAckAsync(sprDocument, xmlContent, connection.DealerId, result, cancellationToken);
+                    await ProcessPoAckAsync(sprDocument, xmlContent, 0, result, cancellationToken);
                     break;
 
                 case SprXmlDocumentType.EZASNS:
-                    await ProcessAsnAsync(sprDocument, xmlContent, connection.DealerId, result, cancellationToken);
+                    await ProcessAsnAsync(sprDocument, xmlContent, 0, result, cancellationToken);
                     break;
 
                 case SprXmlDocumentType.EZINV4:
-                    await ProcessInvoiceAsync(sprDocument, xmlContent, connection.DealerId, result, cancellationToken);
+                    await ProcessInvoiceAsync(sprDocument, xmlContent, 0, result, cancellationToken);
                     break;
 
                 default:
@@ -167,7 +170,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing SPR XML document for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error processing SPR XML document for partner {ConnectionId}", tradingPartnerId);
             result.ErrorMessage = ex.Message;
             result.Errors.Add(ex.Message);
         }
@@ -181,7 +184,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     }
 
     public async Task<SprXmlProcessingResult> CreateOutboundOrderAsync(
-        int connectionId,
+        int tradingPartnerId,
         PurchaseOrder order,
         CancellationToken cancellationToken = default)
     {
@@ -191,17 +194,17 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         try
         {
             _logger.LogInformation(
-                "Creating outbound SPR order for connection {ConnectionId}: PO {PoNumber}",
-                connectionId, order.PoNumber);
+                "Creating outbound SPR order for partner {ConnectionId}: PO {PoNumber}",
+                tradingPartnerId, order.PoNumber);
 
-            var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
-            if (connection == null)
+            var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+            if (partner == null)
             {
-                result.ErrorMessage = $"Connection {connectionId} not found";
+                result.ErrorMessage = $"Connection {tradingPartnerId} not found";
                 return result;
             }
 
-            var config = SprConfiguration.FromJson(connection.ConfigurationJson);
+            var config = SprConfiguration.FromJson(partner.TransportConfigJson);
 
             // Generate the XML
             var generateResult = _orderGenerator.Generate(
@@ -235,7 +238,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             // Create PartnerDocument
             var partnerDocument = new PartnerDocument
             {
-                DealerPartnerConnectionId = connectionId,
+                TradingPartnerId = tradingPartnerId,
                 DocumentType = DocumentType.PurchaseOrder,
                 Direction = DocumentDirection.Outbound,
                 State = DocumentState.Received,
@@ -281,7 +284,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating outbound SPR order for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error creating outbound SPR order for partner {ConnectionId}", tradingPartnerId);
             result.ErrorMessage = ex.Message;
             result.Errors.Add(ex.Message);
         }
@@ -321,13 +324,13 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return result;
             }
 
-            // Get connection config
-            var connection = await _connectionRepository.GetByIdAsync(
-                document.PartnerDocument!.DealerPartnerConnectionId, cancellationToken);
+            // Get partner transport config
+            var sendPartner = await _partnerRepository.GetByIdAsync(
+                document.PartnerDocument!.TradingPartnerId, cancellationToken);
 
-            if (connection == null)
+            if (sendPartner == null)
             {
-                result.ErrorMessage = "Connection not found";
+                result.ErrorMessage = "Trading partner not found";
                 return result;
             }
 
@@ -350,8 +353,11 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return result;
             }
 
-            var config = SprConfiguration.FromJson(connection.ConfigurationJson);
-            var credentials = SprCredentials.FromJson(connection.CredentialsJson);
+            var config = SprConfiguration.FromJson(sendPartner.TransportConfigJson);
+            var credsJson = !string.IsNullOrWhiteSpace(sendPartner.TransportCredentialsJson)
+                ? _credentialProtector.Unprotect(sendPartner.TransportCredentialsJson)
+                : null;
+            var credentials = SprCredentials.FromJson(credsJson);
             var fileName = document.PartnerDocument!.FileName;
             var remotePath = CombineRemotePath(config.SprXmlOutboundPath, fileName);
 
@@ -408,7 +414,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     }
 
     public async Task<IReadOnlyList<SprXmlDocument>> GetDocumentsAsync(
-        int connectionId,
+        int tradingPartnerId,
         SprXmlDocumentType? documentType = null,
         EdiDirection? direction = null,
         SprXmlProcessingStatus? status = null,
@@ -416,8 +422,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         int take = 20,
         CancellationToken cancellationToken = default)
     {
-        return await _documentRepository.GetByConnectionAsync(
-            connectionId, documentType, direction, status, skip, take, cancellationToken);
+        return await _documentRepository.GetByTradingPartnerAsync(
+            tradingPartnerId, documentType, direction, status, skip, take, cancellationToken);
     }
 
     public async Task LinkAcknowledgmentAsync(

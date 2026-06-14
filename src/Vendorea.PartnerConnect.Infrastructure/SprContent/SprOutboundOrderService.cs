@@ -16,18 +16,18 @@ public class SprOutboundOrderService : ISprOutboundOrderService
     };
 
     private readonly IOrderRepository _orderRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly ITradingPartnerRepository _partnerRepository;
     private readonly ISprXmlDocumentProcessingService _processingService;
     private readonly ILogger<SprOutboundOrderService> _logger;
 
     public SprOutboundOrderService(
         IOrderRepository orderRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
+        ITradingPartnerRepository partnerRepository,
         ISprXmlDocumentProcessingService processingService,
         ILogger<SprOutboundOrderService> logger)
     {
         _orderRepository = orderRepository;
-        _connectionRepository = connectionRepository;
+        _partnerRepository = partnerRepository;
         _processingService = processingService;
         _logger = logger;
     }
@@ -47,12 +47,12 @@ public class SprOutboundOrderService : ISprOutboundOrderService
             };
         }
 
-        var connection = await ResolveSprConnectionAsync(order, cancellationToken);
-        if (connection == null)
+        var partner = await ResolveSprPartnerAsync(order, cancellationToken);
+        if (partner == null)
         {
             return new SprTransmitResult
             {
-                ErrorMessage = "No SPR partner connection is configured for this order's trading partner"
+                ErrorMessage = "No SPR trading partner is configured for this order's trading partner"
             };
         }
 
@@ -60,7 +60,7 @@ public class SprOutboundOrderService : ISprOutboundOrderService
 
         // Generate + strictly validate the EZPO4 against the real SPR schema.
         var createResult = await _processingService.CreateOutboundOrderAsync(
-            connection.Id, purchaseOrder, cancellationToken);
+            partner.Id, purchaseOrder, cancellationToken);
 
         if (!createResult.Success || createResult.SprXmlDocumentId == null)
         {
@@ -111,16 +111,11 @@ public class SprOutboundOrderService : ISprOutboundOrderService
         };
     }
 
-    private async Task<DealerPartnerConnection?> ResolveSprConnectionAsync(
+    private async Task<TradingPartner?> ResolveSprPartnerAsync(
         Order order, CancellationToken cancellationToken)
     {
-        var connection = await _connectionRepository.GetByDealerAndPartnerAsync(
-            order.TenantId, order.TradingPartnerId, cancellationToken);
-        if (connection != null)
-            return connection;
-
-        var byPartner = await _connectionRepository.GetByPartnerIdAsync(order.TradingPartnerId, cancellationToken);
-        return byPartner.FirstOrDefault();
+        // Transport now lives on the trading partner; resolve it directly from the order.
+        return await _partnerRepository.GetByIdAsync(order.TradingPartnerId, cancellationToken);
     }
 
     private async Task MarkOrderFailedAsync(Order order, string error, CancellationToken cancellationToken)

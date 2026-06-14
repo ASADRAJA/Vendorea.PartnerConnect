@@ -15,20 +15,17 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 public class AdminDashboardController : ControllerBase
 {
     private readonly IPartnerDocumentRepository _documentRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IMerchant360Client _merchant360Client;
     private readonly ILogger<AdminDashboardController> _logger;
 
     public AdminDashboardController(
         IPartnerDocumentRepository documentRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
         ITradingPartnerRepository partnerRepository,
         IMerchant360Client merchant360Client,
         ILogger<AdminDashboardController> logger)
     {
         _documentRepository = documentRepository;
-        _connectionRepository = connectionRepository;
         _partnerRepository = partnerRepository;
         _merchant360Client = merchant360Client;
         _logger = logger;
@@ -62,8 +59,8 @@ public class AdminDashboardController : ControllerBase
         // Get dealers from M360
         var merchants = await _merchant360Client.GetMerchantsAsync(activeOnly: false, cancellationToken);
 
-        // Get connections
-        var connections = await _connectionRepository.GetActiveConnectionsAsync(cancellationToken);
+        // Get active trading partners
+        var activePartners = await _partnerRepository.GetByStatusAsync(TradingPartnerStatus.Active, cancellationToken);
 
         // Get document stats
         var documentStats = await _documentRepository.GetDocumentStatsAsync(cancellationToken);
@@ -71,7 +68,7 @@ public class AdminDashboardController : ControllerBase
         return Ok(new
         {
             TotalDealers = merchants.Count,
-            ActiveConnections = connections.Count,
+            ActivePartners = activePartners.Count,
             TotalDocuments = documentStats.Total,
             PendingDocuments = documentStats.Pending,
             FailedDocuments = documentStats.Failed,
@@ -90,85 +87,14 @@ public class AdminDashboardController : ControllerBase
         return Ok(documents.Select(d => new
         {
             d.Id,
-            d.DealerPartnerConnectionId,
+            d.TradingPartnerId,
+            d.TenantId,
             d.DocumentType,
             d.Direction,
             d.Status,
             d.FileName,
             d.ReceivedAt
         }));
-    }
-
-    /// <summary>
-    /// Gets active connections (legacy endpoint).
-    /// </summary>
-    [HttpGet("connections")]
-    public async Task<IActionResult> GetActiveConnections(CancellationToken cancellationToken)
-    {
-        var connections = await _connectionRepository.GetActiveConnectionsAsync(cancellationToken);
-
-        return Ok(new
-        {
-            Total = connections.Count,
-            Connections = connections.Select(c => new
-            {
-                c.Id,
-                c.DealerId,
-                c.TradingPartnerId,
-                IsActive = c.Status == ConnectionStatus.Active,
-                LastSuccessfulSync = c.LastSuccessfulSyncAt,
-                LastSyncAttempt = c.LastSyncAt
-            })
-        });
-    }
-
-    /// <summary>
-    /// Gets all connections (all statuses) for admin portal.
-    /// </summary>
-    [HttpGet("connections/all")]
-    public async Task<IActionResult> GetAllConnections(CancellationToken cancellationToken)
-    {
-        var connections = await _connectionRepository.GetAllAsync(cancellationToken);
-
-        // Get dealer names from M360
-        var dealerIds = connections.Select(c => c.DealerId).Distinct().ToList();
-        var dealerNames = await GetDealerNamesAsync(dealerIds, cancellationToken);
-
-        return Ok(connections.Select(c => new
-        {
-            c.Id,
-            c.DealerId,
-            DealerName = dealerNames.TryGetValue(c.DealerId, out var name) ? name : $"Dealer #{c.DealerId}",
-            c.TradingPartnerId,
-            PartnerName = c.TradingPartner?.Name,
-            IsActive = c.Status == ConnectionStatus.Active,
-            Status = c.Status.ToString(),
-            LastSuccessfulSync = c.LastSuccessfulSyncAt,
-            LastSyncAttempt = c.LastSyncAt,
-            c.CreatedAt
-        }));
-    }
-
-    private async Task<Dictionary<int, string>> GetDealerNamesAsync(List<int> dealerIds, CancellationToken cancellationToken)
-    {
-        var result = new Dictionary<int, string>();
-        try
-        {
-            var merchants = await _merchant360Client.GetMerchantsAsync(activeOnly: false, cancellationToken);
-            foreach (var id in dealerIds)
-            {
-                var merchant = merchants.FirstOrDefault(m => m.Id == id);
-                if (merchant != null)
-                {
-                    result[id] = merchant.Name;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get dealer names from M360");
-        }
-        return result;
     }
 
     /// <summary>

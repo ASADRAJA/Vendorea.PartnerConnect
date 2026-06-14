@@ -51,7 +51,6 @@ public static class DependencyInjection
     private static void RegisterRepositories(IServiceCollection services)
     {
         services.AddScoped<ITradingPartnerRepository, TradingPartnerRepository>();
-        services.AddScoped<IDealerPartnerConnectionRepository, DealerPartnerConnectionRepository>();
         services.AddScoped<IPartnerDocumentRepository, PartnerDocumentRepository>();
         services.AddScoped<IEdiDocumentRepository, EdiDocumentRepository>();
         services.AddScoped<ISprXmlDocumentRepository, SprXmlDocumentRepository>();

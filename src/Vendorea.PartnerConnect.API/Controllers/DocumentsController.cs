@@ -14,30 +14,30 @@ namespace Vendorea.PartnerConnect.API.Controllers;
 public class DocumentsController : ControllerBase
 {
     private readonly IPartnerDocumentRepository _documentRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IDocumentStorage _documentStorage;
     private readonly ILogger<DocumentsController> _logger;
 
     public DocumentsController(
         IPartnerDocumentRepository documentRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
+        ITradingPartnerRepository partnerRepository,
         IDocumentStorage documentStorage,
         ILogger<DocumentsController> logger)
     {
         _documentRepository = documentRepository;
-        _connectionRepository = connectionRepository;
+        _partnerRepository = partnerRepository;
         _documentStorage = documentStorage;
         _logger = logger;
     }
 
     /// <summary>
-    /// Gets documents for a connection.
+    /// Gets documents for a trading partner.
     /// </summary>
-    [HttpGet("connection/{connectionId:int}")]
+    [HttpGet("partner/{tradingPartnerId:int}")]
     [ProducesResponseType(typeof(IEnumerable<DocumentDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetByConnection(int connectionId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetByTradingPartner(int tradingPartnerId, CancellationToken cancellationToken)
     {
-        var documents = await _documentRepository.GetByConnectionIdAsync(connectionId, cancellationToken);
+        var documents = await _documentRepository.GetByTradingPartnerAsync(tradingPartnerId, cancellationToken);
         var dtos = await MapToDtosAsync(documents, cancellationToken);
         return Ok(dtos);
     }
@@ -191,28 +191,17 @@ public class DocumentsController : ControllerBase
     private async Task<DocumentDto> MapToDtoAsync(PartnerDocument document, CancellationToken cancellationToken)
     {
         string? partnerCode = null;
-        int dealerId = 0;
 
-        if (document.DealerPartnerConnection is not null)
+        if (document.TradingPartnerId > 0)
         {
-            partnerCode = document.DealerPartnerConnection.TradingPartner?.Code;
-            dealerId = document.DealerPartnerConnection.DealerId;
-        }
-        else if (document.DealerPartnerConnectionId > 0)
-        {
-            var connection = await _connectionRepository.GetByIdAsync(
-                document.DealerPartnerConnectionId, cancellationToken);
-            if (connection is not null)
-            {
-                partnerCode = connection.TradingPartner?.Code;
-                dealerId = connection.DealerId;
-            }
+            var partner = await _partnerRepository.GetByIdAsync(document.TradingPartnerId, cancellationToken);
+            partnerCode = partner?.Code;
         }
 
         return new DocumentDto(
             Id: document.Id,
-            DealerPartnerConnectionId: document.DealerPartnerConnectionId,
-            DealerId: dealerId,
+            TradingPartnerId: document.TradingPartnerId,
+            TenantId: document.TenantId,
             TradingPartnerCode: partnerCode,
             DocumentType: document.DocumentType,
             Direction: document.Direction,

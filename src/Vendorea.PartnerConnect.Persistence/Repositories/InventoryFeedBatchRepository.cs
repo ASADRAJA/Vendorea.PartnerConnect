@@ -44,21 +44,12 @@ public class InventoryFeedBatchRepository : IInventoryFeedBatchRepository
         return await query.ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<InventoryFeedBatch>> GetByConnectionIdAsync(
-        int connectionId,
+    public async Task<IReadOnlyList<InventoryFeedBatch>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        var connection = await _context.DealerPartnerConnections
-            .FirstOrDefaultAsync(c => c.Id == connectionId, cancellationToken);
-
-        if (connection == null)
-        {
-            return Array.Empty<InventoryFeedBatch>();
-        }
-
         return await _context.InventoryFeedBatches
-            .Where(b => b.DealerId == connection.DealerId &&
-                        b.TradingPartnerId == connection.TradingPartnerId)
+            .Where(b => b.TradingPartnerId == tradingPartnerId)
             .OrderByDescending(b => b.ReceivedAt)
             .ToListAsync(cancellationToken);
     }
@@ -73,21 +64,12 @@ public class InventoryFeedBatchRepository : IInventoryFeedBatchRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<InventoryFeedBatch?> GetLatestByConnectionIdAsync(
-        int connectionId,
+    public async Task<InventoryFeedBatch?> GetLatestByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        var connection = await _context.DealerPartnerConnections
-            .FirstOrDefaultAsync(c => c.Id == connectionId, cancellationToken);
-
-        if (connection == null)
-        {
-            return null;
-        }
-
         return await _context.InventoryFeedBatches
-            .Where(b => b.DealerId == connection.DealerId &&
-                        b.TradingPartnerId == connection.TradingPartnerId)
+            .Where(b => b.TradingPartnerId == tradingPartnerId)
             .OrderByDescending(b => b.ReceivedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }

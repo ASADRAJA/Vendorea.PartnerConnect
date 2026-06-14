@@ -22,10 +22,11 @@ public interface IPriceFeedBatchRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets all price feed batches for a specific dealer-partner connection.
+    /// Gets all price feed batches for a specific dealer + trading partner (price lists are dealer-specific).
     /// </summary>
-    Task<IReadOnlyList<PriceFeedBatch>> GetByConnectionIdAsync(
-        int connectionId,
+    Task<IReadOnlyList<PriceFeedBatch>> GetByDealerAndPartnerAsync(
+        int dealerId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -36,10 +37,11 @@ public interface IPriceFeedBatchRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the most recent price feed batch for a connection.
+    /// Gets the most recent price feed batch for a dealer + trading partner.
     /// </summary>
-    Task<PriceFeedBatch?> GetLatestByConnectionIdAsync(
-        int connectionId,
+    Task<PriceFeedBatch?> GetLatestByDealerAndPartnerAsync(
+        int dealerId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

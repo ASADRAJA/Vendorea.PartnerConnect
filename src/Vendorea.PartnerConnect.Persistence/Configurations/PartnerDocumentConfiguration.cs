@@ -61,18 +61,19 @@ public class PartnerDocumentConfiguration : IEntityTypeConfiguration<PartnerDocu
             .HasMaxLength(100);
 
         // Indexes for common queries
-        builder.HasIndex(e => e.DealerPartnerConnectionId);
+        builder.HasIndex(e => e.TradingPartnerId);
+        builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => e.State);
         builder.HasIndex(e => e.ReceivedAt);
         builder.HasIndex(e => e.ContentHash);
         builder.HasIndex(e => e.CorrelationId);
-        builder.HasIndex(e => new { e.DealerPartnerConnectionId, e.State });
-        builder.HasIndex(e => new { e.DealerPartnerConnectionId, e.ReceivedAt });
+        builder.HasIndex(e => new { e.TradingPartnerId, e.State });
+        builder.HasIndex(e => new { e.TradingPartnerId, e.ReceivedAt });
 
         // Relationship
-        builder.HasOne(e => e.DealerPartnerConnection)
+        builder.HasOne<TradingPartner>()
             .WithMany()
-            .HasForeignKey(e => e.DealerPartnerConnectionId)
+            .HasForeignKey(e => e.TradingPartnerId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

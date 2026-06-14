@@ -10,13 +10,13 @@ public interface IDuplicateDetectionService
     /// <summary>
     /// Checks if a document with the given content hash is a duplicate.
     /// </summary>
-    /// <param name="dealerPartnerConnectionId">The connection ID.</param>
+    /// <param name="tradingPartnerId">The trading partner ID.</param>
     /// <param name="documentType">The document type.</param>
     /// <param name="contentHash">SHA-256 hash of the content.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if duplicate, false otherwise.</returns>
     Task<bool> IsDuplicateAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default);
@@ -24,13 +24,13 @@ public interface IDuplicateDetectionService
     /// <summary>
     /// Checks if a document is a duplicate and returns the original if found.
     /// </summary>
-    /// <param name="dealerPartnerConnectionId">The connection ID.</param>
+    /// <param name="tradingPartnerId">The trading partner ID.</param>
     /// <param name="documentType">The document type.</param>
     /// <param name="contentHash">SHA-256 hash of the content.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The duplicate check result.</returns>
     Task<DuplicateCheckResult> CheckDuplicateAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default);
@@ -38,7 +38,7 @@ public interface IDuplicateDetectionService
     /// <summary>
     /// Registers a document fingerprint after successful processing.
     /// </summary>
-    /// <param name="dealerPartnerConnectionId">The connection ID.</param>
+    /// <param name="tradingPartnerId">The trading partner ID.</param>
     /// <param name="documentType">The document type.</param>
     /// <param name="contentHash">SHA-256 hash of the content.</param>
     /// <param name="originalDocumentId">The ID of the processed document.</param>
@@ -47,7 +47,7 @@ public interface IDuplicateDetectionService
     /// <param name="retentionDays">Days to retain the fingerprint (null = forever).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task RegisterFingerprintAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         int originalDocumentId,

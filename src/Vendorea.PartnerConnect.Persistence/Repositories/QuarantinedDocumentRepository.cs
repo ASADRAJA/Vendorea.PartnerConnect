@@ -35,13 +35,13 @@ public class QuarantinedDocumentRepository : IQuarantinedDocumentRepository
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<QuarantinedDocument>> GetByConnectionIdAsync(
-        int connectionId,
+    public async Task<IReadOnlyList<QuarantinedDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
         return await _context.QuarantinedDocuments
             .Include(q => q.PartnerDocument)
-            .Where(q => q.DealerPartnerConnectionId == connectionId)
+            .Where(q => q.TradingPartnerId == tradingPartnerId)
             .OrderByDescending(q => q.QuarantinedAt)
             .ToListAsync(cancellationToken);
     }
@@ -87,14 +87,6 @@ public class QuarantinedDocumentRepository : IQuarantinedDocumentRepository
     /// <inheritdoc />
     public async Task AddAsync(QuarantinedDocument quarantine, CancellationToken cancellationToken = default)
     {
-        if (quarantine.TradingPartnerId == 0 && quarantine.DealerPartnerConnectionId > 0)
-        {
-            quarantine.TradingPartnerId = await _context.DealerPartnerConnections
-                .Where(c => c.Id == quarantine.DealerPartnerConnectionId)
-                .Select(c => c.TradingPartnerId)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
-
         _context.QuarantinedDocuments.Add(quarantine);
         await _context.SaveChangesAsync(cancellationToken);
     }
@@ -108,14 +100,14 @@ public class QuarantinedDocumentRepository : IQuarantinedDocumentRepository
 
     /// <inheritdoc />
     public async Task<QuarantineStatistics> GetStatisticsAsync(
-        int? connectionId = null,
+        int? tradingPartnerId = null,
         CancellationToken cancellationToken = default)
     {
         var query = _context.QuarantinedDocuments.AsQueryable();
 
-        if (connectionId.HasValue)
+        if (tradingPartnerId.HasValue)
         {
-            query = query.Where(q => q.DealerPartnerConnectionId == connectionId.Value);
+            query = query.Where(q => q.TradingPartnerId == tradingPartnerId.Value);
         }
 
         var allQuarantined = await query.ToListAsync(cancellationToken);

@@ -9,11 +9,10 @@ namespace Vendorea.PartnerConnect.Domain.Entities;
 public class PartnerDocument
 {
     public int Id { get; set; }
-    public int DealerPartnerConnectionId { get; set; }
 
     /// <summary>
     /// Trading partner this document belongs to (the converged key; replaces the per-dealer
-    /// connection). Set from the connection during the transition.
+    /// connection).
     /// </summary>
     public int TradingPartnerId { get; set; }
 
@@ -58,7 +57,6 @@ public class PartnerDocument
     public string? ParentDocumentId { get; set; }
 
     // Navigation properties
-    public DealerPartnerConnection? DealerPartnerConnection { get; set; }
     public ICollection<DocumentStateHistory> StateHistory { get; set; } = new List<DocumentStateHistory>();
     public QuarantinedDocument? QuarantineEntry { get; set; }
     public RawDocumentArchive? Archive { get; set; }

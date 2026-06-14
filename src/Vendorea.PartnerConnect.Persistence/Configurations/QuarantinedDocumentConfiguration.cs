@@ -51,11 +51,12 @@ public class QuarantinedDocumentConfiguration : IEntityTypeConfiguration<Quarant
         // Indexes
         builder.HasIndex(x => x.PartnerDocumentId)
             .IsUnique();
-        builder.HasIndex(x => x.DealerPartnerConnectionId);
+        builder.HasIndex(x => x.TradingPartnerId);
+        builder.HasIndex(x => x.TenantId);
         builder.HasIndex(x => x.QuarantinedAt);
         builder.HasIndex(x => x.Reason);
         builder.HasIndex(x => x.Resolution);
-        builder.HasIndex(x => new { x.DealerPartnerConnectionId, x.QuarantinedAt });
+        builder.HasIndex(x => new { x.TradingPartnerId, x.QuarantinedAt });
 
         // Relationships
         builder.HasOne(x => x.PartnerDocument)
@@ -63,9 +64,9 @@ public class QuarantinedDocumentConfiguration : IEntityTypeConfiguration<Quarant
             .HasForeignKey<QuarantinedDocument>(x => x.PartnerDocumentId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasOne(x => x.DealerPartnerConnection)
+        builder.HasOne<TradingPartner>()
             .WithMany()
-            .HasForeignKey(x => x.DealerPartnerConnectionId)
+            .HasForeignKey(x => x.TradingPartnerId)
             .OnDelete(DeleteBehavior.NoAction);
     }
 }

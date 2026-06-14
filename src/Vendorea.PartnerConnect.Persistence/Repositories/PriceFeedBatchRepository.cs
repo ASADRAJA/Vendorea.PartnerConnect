@@ -44,22 +44,15 @@ public class PriceFeedBatchRepository : IPriceFeedBatchRepository
         return await query.ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<PriceFeedBatch>> GetByConnectionIdAsync(
-        int connectionId,
+    public async Task<IReadOnlyList<PriceFeedBatch>> GetByDealerAndPartnerAsync(
+        int dealerId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        // Get connection to get dealerId and tradingPartnerId
-        var connection = await _context.DealerPartnerConnections
-            .FirstOrDefaultAsync(c => c.Id == connectionId, cancellationToken);
-
-        if (connection == null)
-        {
-            return Array.Empty<PriceFeedBatch>();
-        }
-
+        // Price lists are dealer-specific, so scope by both dealer and partner.
         return await _context.PriceFeedBatches
-            .Where(b => b.DealerId == connection.DealerId &&
-                        b.TradingPartnerId == connection.TradingPartnerId)
+            .Where(b => b.DealerId == dealerId &&
+                        b.TradingPartnerId == tradingPartnerId)
             .OrderByDescending(b => b.ReceivedAt)
             .ToListAsync(cancellationToken);
     }
@@ -74,21 +67,14 @@ public class PriceFeedBatchRepository : IPriceFeedBatchRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<PriceFeedBatch?> GetLatestByConnectionIdAsync(
-        int connectionId,
+    public async Task<PriceFeedBatch?> GetLatestByDealerAndPartnerAsync(
+        int dealerId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        var connection = await _context.DealerPartnerConnections
-            .FirstOrDefaultAsync(c => c.Id == connectionId, cancellationToken);
-
-        if (connection == null)
-        {
-            return null;
-        }
-
         return await _context.PriceFeedBatches
-            .Where(b => b.DealerId == connection.DealerId &&
-                        b.TradingPartnerId == connection.TradingPartnerId)
+            .Where(b => b.DealerId == dealerId &&
+                        b.TradingPartnerId == tradingPartnerId)
             .OrderByDescending(b => b.ReceivedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }

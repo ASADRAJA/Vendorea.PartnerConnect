@@ -20,7 +20,7 @@ public abstract class BasePartnerAdapter : IPartnerAdapter
 
     public abstract IReadOnlyList<PartnerCapability> SupportedCapabilities { get; }
 
-    public abstract Task<bool> TestConnectionAsync(DealerPartnerConnection connection, CancellationToken cancellationToken = default);
+    public abstract Task<bool> TestConnectionAsync(TradingPartner partner, CancellationToken cancellationToken = default);
 
     protected void LogInfo(string message, params object[] args) => Logger.LogInformation(message, args);
 

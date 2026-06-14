@@ -11,11 +11,6 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     ITradingPartnerRepository TradingPartners { get; }
 
     /// <summary>
-    /// Gets the dealer-partner connection repository.
-    /// </summary>
-    IDealerPartnerConnectionRepository DealerConnections { get; }
-
-    /// <summary>
     /// Gets the partner document repository.
     /// </summary>
     IPartnerDocumentRepository PartnerDocuments { get; }

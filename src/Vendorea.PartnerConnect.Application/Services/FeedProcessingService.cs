@@ -17,7 +17,7 @@ namespace Vendorea.PartnerConnect.Application.Services;
 /// </summary>
 public class FeedProcessingService : IFeedProcessingService
 {
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IPartnerDocumentRepository _documentRepository;
     private readonly IDuplicateDetectionService _duplicateDetection;
     private readonly IDocumentValidator<PriceUpdate> _priceValidator;
@@ -28,7 +28,7 @@ public class FeedProcessingService : IFeedProcessingService
     private readonly ILogger<FeedProcessingService> _logger;
 
     public FeedProcessingService(
-        IDealerPartnerConnectionRepository connectionRepository,
+        ITradingPartnerRepository partnerRepository,
         IPartnerDocumentRepository documentRepository,
         IDuplicateDetectionService duplicateDetection,
         IDocumentValidator<PriceUpdate> priceValidator,
@@ -38,7 +38,7 @@ public class FeedProcessingService : IFeedProcessingService
         IEnumerable<IInventoryFeedAdapter> inventoryFeedAdapters,
         ILogger<FeedProcessingService> logger)
     {
-        _connectionRepository = connectionRepository;
+        _partnerRepository = partnerRepository;
         _documentRepository = documentRepository;
         _duplicateDetection = duplicateDetection;
         _priceValidator = priceValidator;
@@ -50,21 +50,20 @@ public class FeedProcessingService : IFeedProcessingService
     }
 
     public async Task<PriceFeedBatch> ProcessPriceFeedAsync(
-        int connectionId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting price feed processing for connection {ConnectionId}", connectionId);
+        _logger.LogInformation("Starting price feed processing for partner {TradingPartnerId}", tradingPartnerId);
 
-        var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
-        if (connection == null)
+        var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+        if (partner == null)
         {
-            throw new InvalidOperationException($"Connection {connectionId} not found");
+            throw new InvalidOperationException($"Trading partner {tradingPartnerId} not found");
         }
 
         var batch = new PriceFeedBatch
         {
-            DealerId = connection.DealerId,
-            TradingPartnerId = connection.TradingPartnerId,
+            TradingPartnerId = partner.Id,
             Status = FeedBatchStatus.Processing,
             ReceivedAt = DateTime.UtcNow,
             ProcessingStartedAt = DateTime.UtcNow
@@ -73,15 +72,15 @@ public class FeedProcessingService : IFeedProcessingService
         try
         {
             // Find the appropriate adapter
-            var adapter = FindPriceFeedAdapter(connection.TradingPartner?.Code);
+            var adapter = FindPriceFeedAdapter(partner.Code);
             if (adapter == null)
             {
                 throw new InvalidOperationException(
-                    $"No price feed adapter found for partner {connection.TradingPartner?.Code}");
+                    $"No price feed adapter found for partner {partner.Code}");
             }
 
             // Fetch the price feed
-            var fetchResult = await adapter.FetchPriceFeedAsync(connection, cancellationToken);
+            var fetchResult = await adapter.FetchPriceFeedAsync(partner, cancellationToken);
 
             if (!fetchResult.Success)
             {
@@ -105,7 +104,7 @@ public class FeedProcessingService : IFeedProcessingService
             // Create document record
             var document = new PartnerDocument
             {
-                DealerPartnerConnectionId = connectionId,
+                TradingPartnerId = partner.Id,
                 DocumentType = DocumentType.PriceList,
                 Direction = DocumentDirection.Inbound,
                 Status = DocumentStatus.Processing,
@@ -135,7 +134,7 @@ public class FeedProcessingService : IFeedProcessingService
             if (!string.IsNullOrEmpty(document.ContentHash))
             {
                 await _duplicateDetection.RegisterFingerprintAsync(
-                    connectionId,
+                    partner.Id,
                     DocumentType.PriceList,
                     document.ContentHash,
                     document.Id,
@@ -144,21 +143,17 @@ public class FeedProcessingService : IFeedProcessingService
                     cancellationToken: cancellationToken);
             }
 
-            // Update connection last sync time
-            connection.LastSyncAt = DateTime.UtcNow;
-            await _connectionRepository.UpdateAsync(connection, cancellationToken);
-
             batch.ProcessingCompletedAt = DateTime.UtcNow;
 
             _logger.LogInformation(
-                "Completed price feed processing for connection {ConnectionId}: {ProcessedItems} items processed",
-                connectionId, batch.ProcessedItems);
+                "Completed price feed processing for partner {TradingPartnerId}: {ProcessedItems} items processed",
+                partner.Id, batch.ProcessedItems);
 
             return batch;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing price feed for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error processing price feed for partner {TradingPartnerId}", tradingPartnerId);
 
             batch.Status = FeedBatchStatus.Failed;
             batch.ErrorSummary = ex.Message;
@@ -169,21 +164,20 @@ public class FeedProcessingService : IFeedProcessingService
     }
 
     public async Task<InventoryFeedBatch> ProcessInventoryFeedAsync(
-        int connectionId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting inventory feed processing for connection {ConnectionId}", connectionId);
+        _logger.LogInformation("Starting inventory feed processing for partner {TradingPartnerId}", tradingPartnerId);
 
-        var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
-        if (connection == null)
+        var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+        if (partner == null)
         {
-            throw new InvalidOperationException($"Connection {connectionId} not found");
+            throw new InvalidOperationException($"Trading partner {tradingPartnerId} not found");
         }
 
         var batch = new InventoryFeedBatch
         {
-            DealerId = connection.DealerId,
-            TradingPartnerId = connection.TradingPartnerId,
+            TradingPartnerId = partner.Id,
             Status = FeedBatchStatus.Processing,
             ReceivedAt = DateTime.UtcNow,
             ProcessingStartedAt = DateTime.UtcNow
@@ -192,15 +186,15 @@ public class FeedProcessingService : IFeedProcessingService
         try
         {
             // Find the appropriate adapter
-            var adapter = FindInventoryFeedAdapter(connection.TradingPartner?.Code);
+            var adapter = FindInventoryFeedAdapter(partner.Code);
             if (adapter == null)
             {
                 throw new InvalidOperationException(
-                    $"No inventory feed adapter found for partner {connection.TradingPartner?.Code}");
+                    $"No inventory feed adapter found for partner {partner.Code}");
             }
 
             // Fetch the inventory feed
-            var fetchResult = await adapter.FetchInventoryFeedAsync(connection, cancellationToken);
+            var fetchResult = await adapter.FetchInventoryFeedAsync(partner, cancellationToken);
 
             if (!fetchResult.Success)
             {
@@ -224,7 +218,7 @@ public class FeedProcessingService : IFeedProcessingService
             // Create document record
             var document = new PartnerDocument
             {
-                DealerPartnerConnectionId = connectionId,
+                TradingPartnerId = partner.Id,
                 DocumentType = DocumentType.InventoryFeed,
                 Direction = DocumentDirection.Inbound,
                 Status = DocumentStatus.Processing,
@@ -253,7 +247,7 @@ public class FeedProcessingService : IFeedProcessingService
             if (!string.IsNullOrEmpty(document.ContentHash))
             {
                 await _duplicateDetection.RegisterFingerprintAsync(
-                    connectionId,
+                    partner.Id,
                     DocumentType.InventoryFeed,
                     document.ContentHash,
                     document.Id,
@@ -262,21 +256,17 @@ public class FeedProcessingService : IFeedProcessingService
                     cancellationToken: cancellationToken);
             }
 
-            // Update connection last sync time
-            connection.LastSyncAt = DateTime.UtcNow;
-            await _connectionRepository.UpdateAsync(connection, cancellationToken);
-
             batch.ProcessingCompletedAt = DateTime.UtcNow;
 
             _logger.LogInformation(
-                "Completed inventory feed processing for connection {ConnectionId}: {ProcessedItems} items processed",
-                connectionId, batch.ProcessedItems);
+                "Completed inventory feed processing for partner {TradingPartnerId}: {ProcessedItems} items processed",
+                partner.Id, batch.ProcessedItems);
 
             return batch;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing inventory feed for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error processing inventory feed for partner {TradingPartnerId}", tradingPartnerId);
 
             batch.Status = FeedBatchStatus.Failed;
             batch.ErrorSummary = ex.Message;
@@ -287,24 +277,23 @@ public class FeedProcessingService : IFeedProcessingService
     }
 
     public async Task<ContentSyncJob> ProcessContentSyncAsync(
-        int connectionId,
+        int tradingPartnerId,
         ContentSyncType syncType,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Starting content sync ({SyncType}) for connection {ConnectionId}",
-            syncType, connectionId);
+            "Starting content sync ({SyncType}) for partner {TradingPartnerId}",
+            syncType, tradingPartnerId);
 
-        var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
-        if (connection == null)
+        var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+        if (partner == null)
         {
-            throw new InvalidOperationException($"Connection {connectionId} not found");
+            throw new InvalidOperationException($"Trading partner {tradingPartnerId} not found");
         }
 
         var job = new ContentSyncJob
         {
-            DealerId = connection.DealerId,
-            TradingPartnerId = connection.TradingPartnerId,
+            TradingPartnerId = partner.Id,
             SyncType = syncType,
             Status = ContentSyncStatus.Running,
             ScheduledAt = DateTime.UtcNow,
@@ -324,14 +313,14 @@ public class FeedProcessingService : IFeedProcessingService
             job.CompletedAt = DateTime.UtcNow;
 
             _logger.LogInformation(
-                "Completed content sync for connection {ConnectionId}: {ProcessedProducts} products processed",
-                connectionId, job.ProcessedProducts);
+                "Completed content sync for partner {TradingPartnerId}: {ProcessedProducts} products processed",
+                partner.Id, job.ProcessedProducts);
 
             return job;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing content sync for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error processing content sync for partner {TradingPartnerId}", tradingPartnerId);
 
             job.Status = ContentSyncStatus.Failed;
             job.ErrorDetails = ex.Message;

@@ -16,7 +16,7 @@ public interface IPartnerAdapter
     /// <summary>
     /// Tests connectivity to the partner system.
     /// </summary>
-    Task<bool> TestConnectionAsync(DealerPartnerConnection connection, CancellationToken cancellationToken = default);
+    Task<bool> TestConnectionAsync(TradingPartner partner, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the list of capabilities supported by this adapter.
@@ -29,7 +29,7 @@ public interface IPartnerAdapter
 /// </summary>
 public interface IPriceFeedAdapter : IPartnerAdapter
 {
-    Task<PriceFeedResult> FetchPriceFeedAsync(DealerPartnerConnection connection, CancellationToken cancellationToken = default);
+    Task<PriceFeedResult> FetchPriceFeedAsync(TradingPartner partner, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -37,7 +37,7 @@ public interface IPriceFeedAdapter : IPartnerAdapter
 /// </summary>
 public interface IInventoryFeedAdapter : IPartnerAdapter
 {
-    Task<InventoryFeedResult> FetchInventoryFeedAsync(DealerPartnerConnection connection, CancellationToken cancellationToken = default);
+    Task<InventoryFeedResult> FetchInventoryFeedAsync(TradingPartner partner, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

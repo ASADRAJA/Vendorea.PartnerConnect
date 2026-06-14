@@ -23,7 +23,6 @@ public class EdiDocumentRepository : IEdiDocumentRepository
     {
         return await _context.EdiDocuments
             .Include(e => e.PartnerDocument)
-                .ThenInclude(pd => pd!.DealerPartnerConnection)
             .Include(e => e.ResponseDocument)
             .Include(e => e.OriginalDocument)
             .Include(e => e.Responses)
@@ -40,8 +39,8 @@ public class EdiDocumentRepository : IEdiDocumentRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<EdiDocument>> GetByConnectionAsync(
-        int connectionId,
+    public async Task<IReadOnlyList<EdiDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         string? transactionSetCode = null,
         EdiDirection? direction = null,
         int skip = 0,
@@ -50,7 +49,7 @@ public class EdiDocumentRepository : IEdiDocumentRepository
     {
         var query = _context.EdiDocuments
             .Include(e => e.PartnerDocument)
-            .Where(e => e.PartnerDocument!.DealerPartnerConnectionId == connectionId);
+            .Where(e => e.PartnerDocument!.TradingPartnerId == tradingPartnerId);
 
         if (!string.IsNullOrEmpty(transactionSetCode))
         {
@@ -70,18 +69,17 @@ public class EdiDocumentRepository : IEdiDocumentRepository
     }
 
     public async Task<IReadOnlyList<EdiDocument>> GetPendingOutboundAsync(
-        int? connectionId = null,
+        int? tradingPartnerId = null,
         CancellationToken cancellationToken = default)
     {
         var query = _context.EdiDocuments
             .Include(e => e.PartnerDocument)
-                .ThenInclude(pd => pd!.DealerPartnerConnection)
             .Where(e => e.Direction == EdiDirection.Outbound)
             .Where(e => !e.AcknowledgmentSent);
 
-        if (connectionId.HasValue)
+        if (tradingPartnerId.HasValue)
         {
-            query = query.Where(e => e.PartnerDocument!.DealerPartnerConnectionId == connectionId.Value);
+            query = query.Where(e => e.PartnerDocument!.TradingPartnerId == tradingPartnerId.Value);
         }
 
         return await query
@@ -138,12 +136,12 @@ public class EdiDocumentRepository : IEdiDocumentRepository
     }
 
     public async Task<Dictionary<string, int>> GetCountsByTransactionSetAsync(
-        int connectionId,
+        int tradingPartnerId,
         CancellationToken cancellationToken = default)
     {
         return await _context.EdiDocuments
             .Include(e => e.PartnerDocument)
-            .Where(e => e.PartnerDocument!.DealerPartnerConnectionId == connectionId)
+            .Where(e => e.PartnerDocument!.TradingPartnerId == tradingPartnerId)
             .GroupBy(e => e.TransactionSetCode)
             .ToDictionaryAsync(
                 g => g.Key,
@@ -152,7 +150,7 @@ public class EdiDocumentRepository : IEdiDocumentRepository
     }
 
     public async Task<int> GetNextControlNumberAsync(
-        int connectionId,
+        int tradingPartnerId,
         string controlNumberType,
         CancellationToken cancellationToken = default)
     {
@@ -161,22 +159,22 @@ public class EdiDocumentRepository : IEdiDocumentRepository
         {
             "ISA" => _context.EdiDocuments
                 .Include(e => e.PartnerDocument)
-                .Where(e => e.PartnerDocument!.DealerPartnerConnectionId == connectionId)
+                .Where(e => e.PartnerDocument!.TradingPartnerId == tradingPartnerId)
                 .Where(e => e.Direction == EdiDirection.Outbound)
                 .Select(e => e.InterchangeControlNumber),
             "GS" => _context.EdiDocuments
                 .Include(e => e.PartnerDocument)
-                .Where(e => e.PartnerDocument!.DealerPartnerConnectionId == connectionId)
+                .Where(e => e.PartnerDocument!.TradingPartnerId == tradingPartnerId)
                 .Where(e => e.Direction == EdiDirection.Outbound)
                 .Select(e => e.GroupControlNumber),
             "ST" => _context.EdiDocuments
                 .Include(e => e.PartnerDocument)
-                .Where(e => e.PartnerDocument!.DealerPartnerConnectionId == connectionId)
+                .Where(e => e.PartnerDocument!.TradingPartnerId == tradingPartnerId)
                 .Where(e => e.Direction == EdiDirection.Outbound)
                 .Select(e => e.TransactionControlNumber),
             _ => _context.EdiDocuments
                 .Include(e => e.PartnerDocument)
-                .Where(e => e.PartnerDocument!.DealerPartnerConnectionId == connectionId)
+                .Where(e => e.PartnerDocument!.TradingPartnerId == tradingPartnerId)
                 .Where(e => e.Direction == EdiDirection.Outbound)
                 .Select(e => e.InterchangeControlNumber)
         };

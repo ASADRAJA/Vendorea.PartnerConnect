@@ -16,7 +16,7 @@ public class FeedsController : ControllerBase
     private readonly IPriceFeedBatchRepository _priceBatchRepository;
     private readonly IInventoryFeedBatchRepository _inventoryBatchRepository;
     private readonly IContentSyncJobRepository _contentSyncRepository;
-    private readonly IDealerPartnerConnectionRepository _connectionRepository;
+    private readonly ITradingPartnerRepository _partnerRepository;
     private readonly ILogger<FeedsController> _logger;
 
     public FeedsController(
@@ -24,14 +24,14 @@ public class FeedsController : ControllerBase
         IPriceFeedBatchRepository priceBatchRepository,
         IInventoryFeedBatchRepository inventoryBatchRepository,
         IContentSyncJobRepository contentSyncRepository,
-        IDealerPartnerConnectionRepository connectionRepository,
+        ITradingPartnerRepository partnerRepository,
         ILogger<FeedsController> logger)
     {
         _feedProcessingService = feedProcessingService;
         _priceBatchRepository = priceBatchRepository;
         _inventoryBatchRepository = inventoryBatchRepository;
         _contentSyncRepository = contentSyncRepository;
-        _connectionRepository = connectionRepository;
+        _partnerRepository = partnerRepository;
         _logger = logger;
     }
 
@@ -192,32 +192,32 @@ public class FeedsController : ControllerBase
     }
 
     /// <summary>
-    /// Triggers a manual feed sync for a connection.
+    /// Triggers a manual feed sync for a trading partner.
     /// </summary>
-    [HttpPost("connection/{connectionId:int}/sync")]
+    [HttpPost("partner/{tradingPartnerId:int}/sync")]
     [ProducesResponseType(typeof(SyncTriggerResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> TriggerSync(
-        int connectionId,
+        int tradingPartnerId,
         [FromBody] TriggerFeedSyncCommand command,
         CancellationToken cancellationToken)
     {
-        var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
+        var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
 
-        if (connection is null)
+        if (partner is null)
         {
             return NotFound();
         }
 
-        if (connection.Status != ConnectionStatus.Active)
+        if (partner.Status != TradingPartnerStatus.Active)
         {
-            return BadRequest(new { Error = "Connection must be active to trigger sync" });
+            return BadRequest(new { Error = "Trading partner must be active to trigger sync" });
         }
 
         _logger.LogInformation(
-            "Triggering manual {FeedType} sync for connection {ConnectionId}",
-            command.FeedType, connectionId);
+            "Triggering manual {FeedType} sync for partner {TradingPartnerId}",
+            command.FeedType, tradingPartnerId);
 
         try
         {
@@ -225,13 +225,13 @@ public class FeedsController : ControllerBase
 
             if (command.FeedType == FeedType.Price)
             {
-                var batch = await _feedProcessingService.ProcessPriceFeedAsync(connectionId, cancellationToken);
+                var batch = await _feedProcessingService.ProcessPriceFeedAsync(tradingPartnerId, cancellationToken);
                 await _priceBatchRepository.AddAsync(batch, cancellationToken);
                 batchId = batch.Id;
             }
             else
             {
-                var batch = await _feedProcessingService.ProcessInventoryFeedAsync(connectionId, cancellationToken);
+                var batch = await _feedProcessingService.ProcessInventoryFeedAsync(tradingPartnerId, cancellationToken);
                 await _inventoryBatchRepository.AddAsync(batch, cancellationToken);
                 batchId = batch.Id;
             }
@@ -243,7 +243,7 @@ public class FeedsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error triggering feed sync for connection {ConnectionId}", connectionId);
+            _logger.LogError(ex, "Error triggering feed sync for partner {TradingPartnerId}", tradingPartnerId);
 
             return StatusCode(StatusCodes.Status500InternalServerError, new SyncTriggerResponse(
                 Accepted: false,
@@ -253,33 +253,32 @@ public class FeedsController : ControllerBase
     }
 
     /// <summary>
-    /// Schedules a content sync for a connection.
+    /// Schedules a content sync for a trading partner.
     /// </summary>
-    [HttpPost("connection/{connectionId:int}/content-sync")]
+    [HttpPost("partner/{tradingPartnerId:int}/content-sync")]
     [ProducesResponseType(typeof(ContentSyncJobDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ScheduleContentSync(
-        int connectionId,
+        int tradingPartnerId,
         [FromBody] ScheduleContentSyncCommand command,
         CancellationToken cancellationToken)
     {
-        var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken);
+        var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
 
-        if (connection is null)
+        if (partner is null)
         {
             return NotFound();
         }
 
-        if (connection.Status != ConnectionStatus.Active)
+        if (partner.Status != TradingPartnerStatus.Active)
         {
-            return BadRequest(new { Error = "Connection must be active to schedule content sync" });
+            return BadRequest(new { Error = "Trading partner must be active to schedule content sync" });
         }
 
         var job = new ContentSyncJob
         {
-            DealerId = connection.DealerId,
-            TradingPartnerId = connection.TradingPartnerId,
+            TradingPartnerId = tradingPartnerId,
             SyncType = command.SyncType,
             Status = ContentSyncStatus.Scheduled,
             ScheduledAt = command.ScheduleAt ?? DateTime.UtcNow,
@@ -289,8 +288,8 @@ public class FeedsController : ControllerBase
         var created = await _contentSyncRepository.AddAsync(job, cancellationToken);
 
         _logger.LogInformation(
-            "Scheduled content sync job {JobId} for connection {ConnectionId}",
-            created.Id, connectionId);
+            "Scheduled content sync job {JobId} for partner {TradingPartnerId}",
+            created.Id, tradingPartnerId);
 
         return CreatedAtAction(
             nameof(GetContentSyncJob),

@@ -38,8 +38,8 @@ public interface ISprXmlDocumentRepository
     /// <summary>
     /// Gets documents for a connection with optional filtering.
     /// </summary>
-    Task<IReadOnlyList<SprXmlDocument>> GetByConnectionAsync(
-        int connectionId,
+    Task<IReadOnlyList<SprXmlDocument>> GetByTradingPartnerAsync(
+        int tradingPartnerId,
         SprXmlDocumentType? documentType = null,
         EdiDirection? direction = null,
         SprXmlProcessingStatus? status = null,
@@ -51,7 +51,7 @@ public interface ISprXmlDocumentRepository
     /// Gets pending outbound documents that need to be sent.
     /// </summary>
     Task<IReadOnlyList<SprXmlDocument>> GetPendingOutboundAsync(
-        int connectionId, CancellationToken cancellationToken = default);
+        int tradingPartnerId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Checks if a document exists by business reference (order number, manifest, invoice).
@@ -76,11 +76,11 @@ public interface ISprXmlDocumentRepository
     /// Gets documents awaiting acknowledgment.
     /// </summary>
     Task<IReadOnlyList<SprXmlDocument>> GetAwaitingAcknowledgmentAsync(
-        int connectionId, TimeSpan? olderThan = null, CancellationToken cancellationToken = default);
+        int tradingPartnerId, TimeSpan? olderThan = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets failed documents for retry.
     /// </summary>
     Task<IReadOnlyList<SprXmlDocument>> GetFailedDocumentsAsync(
-        int connectionId, int maxRetries = 3, CancellationToken cancellationToken = default);
+        int tradingPartnerId, int maxRetries = 3, CancellationToken cancellationToken = default);
 }

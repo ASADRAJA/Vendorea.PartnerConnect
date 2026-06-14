@@ -13,26 +13,26 @@ public interface IDocumentFingerprintRepository
     Task<DocumentFingerprint?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Finds a fingerprint by content hash for a specific connection and document type.
+    /// Finds a fingerprint by content hash for a specific trading partner and document type.
     /// </summary>
     Task<DocumentFingerprint?> FindByHashAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Finds all fingerprints matching a content hash across all connections.
+    /// Finds all fingerprints matching a content hash across all partners.
     /// </summary>
     Task<IReadOnlyList<DocumentFingerprint>> FindAllByHashAsync(
         string contentHash,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Checks if a document with the given hash already exists.
+    /// Checks if a document with the given hash already exists for the trading partner.
     /// </summary>
     Task<bool> ExistsAsync(
-        int dealerPartnerConnectionId,
+        int tradingPartnerId,
         DocumentType documentType,
         string contentHash,
         CancellationToken cancellationToken = default);
@@ -56,10 +56,10 @@ public interface IDocumentFingerprintRepository
     Task<int> DeleteExpiredAsync(DateTime cutoffDate, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets fingerprints for a specific connection.
+    /// Gets fingerprints for a specific trading partner.
     /// </summary>
-    Task<IReadOnlyList<DocumentFingerprint>> GetByConnectionAsync(
-        int dealerPartnerConnectionId,
+    Task<IReadOnlyList<DocumentFingerprint>> GetByPartnerAsync(
+        int tradingPartnerId,
         int maxRecords = 100,
         CancellationToken cancellationToken = default);
 }

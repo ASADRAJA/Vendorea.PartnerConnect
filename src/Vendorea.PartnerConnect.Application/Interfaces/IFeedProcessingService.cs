@@ -7,7 +7,7 @@ namespace Vendorea.PartnerConnect.Application.Interfaces;
 /// </summary>
 public interface IFeedProcessingService
 {
-    Task<PriceFeedBatch> ProcessPriceFeedAsync(int connectionId, CancellationToken cancellationToken = default);
-    Task<InventoryFeedBatch> ProcessInventoryFeedAsync(int connectionId, CancellationToken cancellationToken = default);
-    Task<ContentSyncJob> ProcessContentSyncAsync(int connectionId, ContentSyncType syncType, CancellationToken cancellationToken = default);
+    Task<PriceFeedBatch> ProcessPriceFeedAsync(int tradingPartnerId, CancellationToken cancellationToken = default);
+    Task<InventoryFeedBatch> ProcessInventoryFeedAsync(int tradingPartnerId, CancellationToken cancellationToken = default);
+    Task<ContentSyncJob> ProcessContentSyncAsync(int tradingPartnerId, ContentSyncType syncType, CancellationToken cancellationToken = default);
 }

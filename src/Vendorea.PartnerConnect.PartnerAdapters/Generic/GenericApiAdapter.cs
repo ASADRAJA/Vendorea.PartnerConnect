@@ -121,16 +121,16 @@ public class GenericApiAdapter : BasePartnerAdapter
     }
 
     public async Task<IReadOnlyList<PartnerDocument>> FetchDocumentsAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken = default)
     {
         var documents = new List<PartnerDocument>();
 
         try
         {
-            LogInfo("Fetching documents from API for connection {ConnectionId}", connection.Id);
+            LogInfo("Fetching documents from API for partner {ConnectionId}", partner.Id);
 
-            using var client = CreateHttpClient(connection);
+            using var client = CreateHttpClient(partner);
             var url = $"{_config.BaseUrl.TrimEnd('/')}{_config.FetchEndpoint}";
 
             var response = await client.GetAsync(url, cancellationToken);
@@ -142,7 +142,7 @@ public class GenericApiAdapter : BasePartnerAdapter
             // Check for duplicates using content hash
             var contentHash = _duplicateDetection.ComputeHash(contentBytes);
             if (await _duplicateDetection.IsDuplicateAsync(
-                connection.Id,
+                partner.Id,
                 _config.DocumentType,
                 contentHash,
                 cancellationToken))
@@ -153,7 +153,7 @@ public class GenericApiAdapter : BasePartnerAdapter
 
             // Store raw response
             var fileName = $"api_response_{DateTime.UtcNow:yyyyMMddHHmmss}.json";
-            var storagePath = $"raw/{connection.DealerId}/{_config.DocumentType}/{DateTime.UtcNow:yyyyMMdd}/{fileName}";
+            var storagePath = $"raw/{partner.Id}/{_config.DocumentType}/{DateTime.UtcNow:yyyyMMdd}/{fileName}";
             var storageKey = await _documentStorage.StoreAsync(
                 new MemoryStream(contentBytes),
                 storagePath,
@@ -161,8 +161,8 @@ public class GenericApiAdapter : BasePartnerAdapter
                 {
                     OriginalFileName = fileName,
                     ContentType = _config.ContentType,
-                    DealerId = connection.DealerId,
-                    TradingPartnerCode = connection.TradingPartner?.Code,
+                    DealerId = partner.Id,
+                    TradingPartnerCode = partner.Code,
                     DocumentType = _config.DocumentType.ToString(),
                     SizeBytes = contentBytes.Length,
                     ContentHash = contentHash
@@ -172,7 +172,7 @@ public class GenericApiAdapter : BasePartnerAdapter
             // Create document record
             var document = new PartnerDocument
             {
-                DealerPartnerConnectionId = connection.Id,
+                TradingPartnerId = partner.Id,
                 DocumentType = _config.DocumentType,
                 Direction = DocumentDirection.Inbound,
                 FileName = fileName,
@@ -184,7 +184,7 @@ public class GenericApiAdapter : BasePartnerAdapter
 
             // Register fingerprint
             await _duplicateDetection.RegisterFingerprintAsync(
-                connection.Id,
+                partner.Id,
                 _config.DocumentType,
                 contentHash,
                 document.Id,
@@ -200,20 +200,20 @@ public class GenericApiAdapter : BasePartnerAdapter
         }
         catch (Exception ex)
         {
-            LogError(ex, "Error fetching documents from API for connection {ConnectionId}", connection.Id);
+            LogError(ex, "Error fetching documents from API for partner {ConnectionId}", partner.Id);
             throw;
         }
     }
 
     public async Task<bool> SendDocumentAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         PartnerDocument document,
         Stream content,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            using var client = CreateHttpClient(connection);
+            using var client = CreateHttpClient(partner);
             var url = $"{_config.BaseUrl.TrimEnd('/')}{_config.SendEndpoint}";
 
             using var reader = new StreamReader(content);
@@ -246,12 +246,12 @@ public class GenericApiAdapter : BasePartnerAdapter
     }
 
     public override async Task<bool> TestConnectionAsync(
-        DealerPartnerConnection connection,
+        TradingPartner partner,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            using var client = CreateHttpClient(connection);
+            using var client = CreateHttpClient(partner);
             var url = $"{_config.BaseUrl.TrimEnd('/')}/health";
 
             // Try a health endpoint first, fall back to base URL
@@ -269,18 +269,18 @@ public class GenericApiAdapter : BasePartnerAdapter
         }
         catch (Exception ex)
         {
-            LogError(ex, "API connection test failed for {ConnectionId}", connection.Id);
+            LogError(ex, "API partner test failed for {ConnectionId}", partner.Id);
             return false;
         }
     }
 
-    private HttpClient CreateHttpClient(DealerPartnerConnection connection)
+    private HttpClient CreateHttpClient(TradingPartner partner)
     {
         var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(_config.TimeoutSeconds);
 
         // Apply authentication
-        ApplyAuthentication(client, connection);
+        ApplyAuthentication(client, partner);
 
         // Apply custom headers
         foreach (var header in _config.CustomHeaders)
@@ -291,10 +291,10 @@ public class GenericApiAdapter : BasePartnerAdapter
         return client;
     }
 
-    private void ApplyAuthentication(HttpClient client, DealerPartnerConnection connection)
+    private void ApplyAuthentication(HttpClient client, TradingPartner partner)
     {
-        // Try to get credentials from connection details first, fall back to config
-        var credentials = ParseCredentials(connection.CredentialsJson);
+        // Try to get credentials from partner details first, fall back to config
+        var credentials = ParseCredentials(partner.TransportCredentialsJson);
 
         switch (_config.AuthType.ToLowerInvariant())
         {
