@@ -13,6 +13,12 @@ public class DocumentFingerprint
     public int DealerPartnerConnectionId { get; set; }
 
     /// <summary>
+    /// Trading partner this fingerprint belongs to. Duplicate detection is per-partner
+    /// (content is shared), so this is the key going forward.
+    /// </summary>
+    public int TradingPartnerId { get; set; }
+
+    /// <summary>
     /// The type of document.
     /// </summary>
     public DocumentType DocumentType { get; set; }

@@ -40,6 +40,15 @@ public class PartnerDocumentRepository : IPartnerDocumentRepository
 
     public async Task<PartnerDocument> AddAsync(PartnerDocument document, CancellationToken cancellationToken = default)
     {
+        // Converged key: derive the trading partner from the connection when not set by the caller.
+        if (document.TradingPartnerId == 0 && document.DealerPartnerConnectionId > 0)
+        {
+            document.TradingPartnerId = await _context.DealerPartnerConnections
+                .Where(c => c.Id == document.DealerPartnerConnectionId)
+                .Select(c => c.TradingPartnerId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         _context.PartnerDocuments.Add(document);
         await _context.SaveChangesAsync(cancellationToken);
         return document;

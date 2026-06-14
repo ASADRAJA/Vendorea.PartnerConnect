@@ -87,6 +87,14 @@ public class QuarantinedDocumentRepository : IQuarantinedDocumentRepository
     /// <inheritdoc />
     public async Task AddAsync(QuarantinedDocument quarantine, CancellationToken cancellationToken = default)
     {
+        if (quarantine.TradingPartnerId == 0 && quarantine.DealerPartnerConnectionId > 0)
+        {
+            quarantine.TradingPartnerId = await _context.DealerPartnerConnections
+                .Where(c => c.Id == quarantine.DealerPartnerConnectionId)
+                .Select(c => c.TradingPartnerId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         _context.QuarantinedDocuments.Add(quarantine);
         await _context.SaveChangesAsync(cancellationToken);
     }

@@ -10,6 +10,19 @@ public class PartnerDocument
 {
     public int Id { get; set; }
     public int DealerPartnerConnectionId { get; set; }
+
+    /// <summary>
+    /// Trading partner this document belongs to (the converged key; replaces the per-dealer
+    /// connection). Set from the connection during the transition.
+    /// </summary>
+    public int TradingPartnerId { get; set; }
+
+    /// <summary>
+    /// Tenant this document is for, when known (e.g., an order correlated by PO). Null for
+    /// partner-level shared feeds (price/inventory/content).
+    /// </summary>
+    public int? TenantId { get; set; }
+
     public DocumentType DocumentType { get; set; }
     public DocumentDirection Direction { get; set; }
     public DocumentState State { get; set; } = DocumentState.Received;

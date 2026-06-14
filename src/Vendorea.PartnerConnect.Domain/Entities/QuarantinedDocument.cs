@@ -11,6 +11,13 @@ public class QuarantinedDocument
     public int Id { get; set; }
     public int PartnerDocumentId { get; set; }
     public int DealerPartnerConnectionId { get; set; }
+
+    /// <summary>Trading partner this quarantined document belongs to (converged key).</summary>
+    public int TradingPartnerId { get; set; }
+
+    /// <summary>Tenant this document is for, when known.</summary>
+    public int? TenantId { get; set; }
+
     public DocumentState QuarantinedFromState { get; set; }
     public QuarantineReason Reason { get; set; }
     public string? ErrorCode { get; set; }
