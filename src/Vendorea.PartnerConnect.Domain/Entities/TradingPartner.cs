@@ -24,6 +24,19 @@ public class TradingPartner
     /// </summary>
     public string? TenantConfirmationFieldsJson { get; set; }
 
+    /// <summary>
+    /// Partner-level shared transport configuration (PC's single connection with this partner):
+    /// SFTP host/paths, EDI/SOAP settings, etc. as JSON. Shared across all of the partner's
+    /// tenant connections. (Convergence: this replaces per-dealer transport config.)
+    /// </summary>
+    public string? TransportConfigJson { get; set; }
+
+    /// <summary>
+    /// Partner-level shared transport credentials (e.g., SFTP password/key) as JSON,
+    /// encrypted at rest via ICredentialProtector.
+    /// </summary>
+    public string? TransportCredentialsJson { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 

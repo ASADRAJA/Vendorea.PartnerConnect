@@ -22,6 +22,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
     private readonly IFileTransportClientFactory _transportFactory;
     private readonly IDocumentStorage _documentStorage;
     private readonly IDuplicateDetectionService _duplicateDetection;
+    private readonly ICredentialProtector _credentialProtector;
     private readonly SprPriceFeedParser _priceFeedParser;
     private readonly SprInventoryFeedParser _inventoryFeedParser;
 
@@ -30,14 +31,36 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         IFileTransportClientFactory transportFactory,
         IDocumentStorage documentStorage,
         IDuplicateDetectionService duplicateDetection,
+        ICredentialProtector credentialProtector,
         SprPriceFeedParser priceFeedParser,
         SprInventoryFeedParser inventoryFeedParser) : base(logger)
     {
         _transportFactory = transportFactory;
         _documentStorage = documentStorage;
         _duplicateDetection = duplicateDetection;
+        _credentialProtector = credentialProtector;
         _priceFeedParser = priceFeedParser;
         _inventoryFeedParser = inventoryFeedParser;
+    }
+
+    /// <summary>
+    /// Resolves SPR transport config + credentials, preferring the partner-level shared transport
+    /// (the converged model). Falls back to the dealer connection's own JSON when the partner has
+    /// no transport configured (transitional, pre-convergence).
+    /// </summary>
+    private (SprConfiguration Config, SprCredentials Credentials) ResolveTransport(DealerPartnerConnection connection)
+    {
+        var partner = connection.TradingPartner;
+
+        var configJson = !string.IsNullOrWhiteSpace(partner?.TransportConfigJson)
+            ? partner!.TransportConfigJson
+            : connection.ConfigurationJson;
+
+        var credsJson = !string.IsNullOrWhiteSpace(partner?.TransportCredentialsJson)
+            ? _credentialProtector.Unprotect(partner!.TransportCredentialsJson)
+            : connection.CredentialsJson;
+
+        return (SprConfiguration.FromJson(configJson), SprCredentials.FromJson(credsJson));
     }
 
     public override string PartnerCode => AdapterCode;
@@ -53,8 +76,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         DealerPartnerConnection connection,
         CancellationToken cancellationToken = default)
     {
-        var config = SprConfiguration.FromJson(connection.ConfigurationJson);
-        var credentials = SprCredentials.FromJson(connection.CredentialsJson);
+        var (config, credentials) = ResolveTransport(connection);
 
         LogInfo("Testing connection to SPR for dealer {DealerId} at {Host}",
             connection.DealerId, config.SftpHost);
@@ -85,8 +107,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         DealerPartnerConnection connection,
         CancellationToken cancellationToken = default)
     {
-        var config = SprConfiguration.FromJson(connection.ConfigurationJson);
-        var credentials = SprCredentials.FromJson(connection.CredentialsJson);
+        var (config, credentials) = ResolveTransport(connection);
 
         LogInfo("Fetching price feed from SPR for dealer {DealerId}", connection.DealerId);
 
@@ -151,8 +172,7 @@ public class SprAdapter : BasePartnerAdapter, IPriceFeedAdapter, IInventoryFeedA
         DealerPartnerConnection connection,
         CancellationToken cancellationToken = default)
     {
-        var config = SprConfiguration.FromJson(connection.ConfigurationJson);
-        var credentials = SprCredentials.FromJson(connection.CredentialsJson);
+        var (config, credentials) = ResolveTransport(connection);
 
         LogInfo("Fetching inventory feed from SPR for dealer {DealerId}", connection.DealerId);
 
