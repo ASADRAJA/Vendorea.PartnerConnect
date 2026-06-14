@@ -33,6 +33,9 @@ public class TradingPartnerDto
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>Tenant connection requirement names PC staff verify with the partner.</summary>
+    public List<string> ConnectionRequirements { get; set; } = new();
 }
 
 // Connection Models
