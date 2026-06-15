@@ -488,7 +488,8 @@ public class SupplierOrderIntakeServiceTests
                 Name = "Asad Merchant",
                 Status = TenantStatus.Active
             });
-        SetupValidPartnerResolution(request);
+        // The connection belongs to the resolved INTERNAL tenant id (2), not the external merchant id (3).
+        SetupValidPartnerResolution(request, accountTenantId: 2);
 
         Order? createdOrder = null;
         _orderRepoMock.Setup(r => r.AddAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()))
@@ -502,6 +503,21 @@ public class SupplierOrderIntakeServiceTests
         result.Accepted.Should().BeTrue();
         createdOrder.Should().NotBeNull();
         createdOrder!.TenantId.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task SubmitOrder_ConnectionBelongsToDifferentTenant_IsRejected()
+    {
+        // Effective-status chain guard: the resolved tenant is internal id 2, but the partner
+        // connection belongs to a different tenant (id 7). The order must be rejected.
+        var request = CreateValidRequest();
+        SetupValidOrgAndTenant(request); // resolved tenant.Id == request.MerchantId
+        SetupValidPartnerResolution(request, accountTenantId: 7);
+
+        var result = await _service.SubmitOrderAsync(request);
+
+        result.Accepted.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Code == "PARTNER_CONNECTION_TENANT_MISMATCH");
     }
 
     [Fact]
@@ -597,12 +613,15 @@ public class SupplierOrderIntakeServiceTests
             });
     }
 
-    private void SetupValidPartnerResolution(SubmitSupplierOrderRequest request)
+    private void SetupValidPartnerResolution(SubmitSupplierOrderRequest request, int? accountTenantId = null)
     {
         var account = new TenantPartnerAccount
         {
             Id = request.PartnerConnectionId,
-            TenantId = request.MerchantId,
+            // The connection's TenantId is the INTERNAL tenant id. In most tests the resolved tenant's
+            // internal id equals MerchantId, but it can differ (external id vs internal id) — callers
+            // pass accountTenantId explicitly in that case.
+            TenantId = accountTenantId ?? request.MerchantId,
             TradingPartnerId = 1,
             AccountNumber = "ACCT-001",
             IsActive = true

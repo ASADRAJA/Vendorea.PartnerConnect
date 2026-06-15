@@ -159,9 +159,20 @@ public class AdminConnectionsController : ControllerBase
         if (connection.OrganizationId is null)
             return BadRequest(new { error = "Connection has no organization" });
 
+        // Guard the effective-status invariant: an active connection requires an active org.
+        var org = await _organizationRepository.GetByIdAsync(connection.OrganizationId.Value, cancellationToken);
+        if (org is null)
+            return BadRequest(new { error = "Organization not found" });
+        if (!EffectiveStatus.IsOrganizationActive(org))
+            return BadRequest(new { error = "Cannot approve a connection while its organization is not active" });
+
         // Create the tenant if (org, external id) is new; otherwise link to the existing one.
         var tenant = await _tenantRepository.GetByOrgAndExternalIdAsync(
             connection.OrganizationId.Value, connection.ExternalTenantId, cancellationToken);
+
+        // An active connection requires an active tenant — don't attach one to a suspended tenant.
+        if (tenant is not null && tenant.Status != TenantStatus.Active)
+            return BadRequest(new { error = "Cannot approve a connection for a tenant that is not active; reactivate the tenant first" });
 
         if (tenant is null)
         {

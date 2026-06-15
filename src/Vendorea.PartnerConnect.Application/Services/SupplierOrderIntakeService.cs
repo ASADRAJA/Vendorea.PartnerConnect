@@ -144,6 +144,17 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             return SubmitSupplierOrderResponse.ValidationFailed(correlationId, resolutionResult.Errors);
         }
 
+        // Enforce the effective-status chain: the connection must belong to the resolved (active)
+        // tenant. Org-active (step 4) and tenant-active (step 5) are already checked; this closes
+        // the cross-tenant gap so a connection from another tenant can't be used to place orders.
+        if (resolutionResult.Account!.TenantId != tenant.Id)
+        {
+            return SubmitSupplierOrderResponse.ValidationFailed(correlationId, [
+                new ValidationError("PARTNER_CONNECTION_TENANT_MISMATCH", "PartnerConnectionId",
+                    "Partner connection does not belong to the specified merchant/tenant")
+            ]);
+        }
+
         // Step 7: Validate partner-specific requirements
         var requirementsResult = await _resolutionService.ResolvePartnerRequirementsAsync(
             request, resolutionResult.Account!, cancellationToken);

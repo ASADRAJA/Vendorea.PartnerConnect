@@ -160,6 +160,13 @@ public class AdminTenantsController : ControllerBase
         if (tenant.Status == TenantStatus.Active)
             return BadRequest(new { error = "Tenant is already active" });
 
+        // Guard the effective-status invariant: a tenant can only be active under an active org.
+        var org = await _organizationRepository.GetByIdAsync(tenant.OrganizationId, cancellationToken);
+        if (org is null)
+            return BadRequest(new { error = "Organization not found" });
+        if (!EffectiveStatus.IsOrganizationActive(org))
+            return BadRequest(new { error = "Cannot activate a tenant while its organization is not active" });
+
         tenant.Status = TenantStatus.Active;
         await _tenantRepository.UpdateAsync(tenant, cancellationToken);
 
