@@ -35,7 +35,6 @@ public static class ServiceCollectionExtensions
         // Multi-Tenant and Order Services
         services.AddScoped<ITenantManagementService, TenantManagementService>();
         services.AddScoped<IOrderService, OrderService>();
-        services.AddScoped<ITenantSyncService, TenantSyncService>();
 
         // Integration Order Intake Services
         services.AddScoped<ISupplierOrderIntakeService, SupplierOrderIntakeService>();

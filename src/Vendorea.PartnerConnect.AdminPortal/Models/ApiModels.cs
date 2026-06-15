@@ -376,76 +376,6 @@ public class ContentStatisticsDto
     public string? LastContentVersion { get; set; }
 }
 
-// Merchant Subscription Models
-public enum SubscriptionStatus
-{
-    Pending,
-    Approved,
-    Denied,
-    Suspended
-}
-
-public class MerchantSubscriptionDto
-{
-    public int Id { get; set; }
-    public int TenantId { get; set; }
-    public string? TenantName { get; set; }
-    public string? TenantCode { get; set; }
-    public int TradingPartnerId { get; set; }
-    public string? TradingPartnerCode { get; set; }
-    public string? TradingPartnerName { get; set; }
-    public string AccountNumber { get; set; } = string.Empty;
-    public string Status { get; set; } = string.Empty;
-    public DateTime RequestedAt { get; set; }
-    public DateTime? ApprovedAt { get; set; }
-    public int? ApprovedByUserId { get; set; }
-    public string? ApprovedByUserName { get; set; }
-    public string? DenialReason { get; set; }
-    public string? Notes { get; set; }
-    public DateTime? SuspendedAt { get; set; }
-    public int? SuspendedByUserId { get; set; }
-    public string? SuspendedByUserName { get; set; }
-}
-
-public class SubscriptionListResult
-{
-    public int Total { get; set; }
-    public int PendingCount { get; set; }
-    public int ApprovedCount { get; set; }
-    public int DeniedCount { get; set; }
-    public int SuspendedCount { get; set; }
-    public List<MerchantSubscriptionDto> Items { get; set; } = new();
-}
-
-public class CreateSubscriptionRequest
-{
-    public int TenantId { get; set; }
-    public int TradingPartnerId { get; set; }
-    public string AccountNumber { get; set; } = string.Empty;
-    public string? Notes { get; set; }
-}
-
-public class ApproveSubscriptionRequest
-{
-    public string? Notes { get; set; }
-}
-
-public class DenySubscriptionRequest
-{
-    public string DenialReason { get; set; } = string.Empty;
-    public string? Notes { get; set; }
-}
-
-public class SuspendSubscriptionRequest
-{
-    public string? Notes { get; set; }
-}
-
-public class UnsubscribeRequest
-{
-    public string? Notes { get; set; }
-}
-
 // Subscription-based filtering for price feeds and content
 public class MerchantWithSubscriptionsDto
 {
@@ -688,21 +618,6 @@ public class CreateTenantPartnerAccountRequest
     public int TenantId { get; set; }
     public int TradingPartnerId { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
-}
-
-public class TenantSyncResultDto
-{
-    public bool Success { get; set; }
-    public int OrganizationId { get; set; }
-    public string OrganizationCode { get; set; } = string.Empty;
-    public int TotalMerchants { get; set; }
-    public int TenantsCreated { get; set; }
-    public int TenantsUpdated { get; set; }
-    public int TenantsDeactivated { get; set; }
-    public int Errors { get; set; }
-    public List<string> ErrorMessages { get; set; } = new();
-    public DateTime SyncedAt { get; set; }
-    public int DurationMs { get; set; }
 }
 
 // Order Models

@@ -390,7 +390,7 @@ public class ApiClient
     {
         try
         {
-            return await _httpClient.GetFromJsonAsync<List<MerchantWithSubscriptionsDto>>("/api/admin/subscriptions/active-by-merchant") ?? new();
+            return await _httpClient.GetFromJsonAsync<List<MerchantWithSubscriptionsDto>>("/api/admin/tenants/active-by-merchant") ?? new();
         }
         catch (Exception ex)
         {
@@ -563,148 +563,6 @@ public class ApiClient
         {
             _logger.LogError(ex, "Failed to get M360 push progress for upload {UploadId}", uploadId);
             return null;
-        }
-    }
-
-    // Merchant Subscription endpoints (calls Merchant360 via PartnerConnect API proxy)
-    public async Task<SubscriptionListResult> GetSubscriptionsAsync(SubscriptionStatus? status = null, int? tenantId = null, int? tradingPartnerId = null)
-    {
-        try
-        {
-            var url = "/api/admin/subscriptions?";
-            var queryParams = new List<string>();
-
-            if (status.HasValue)
-                queryParams.Add($"status={status}");
-            if (tenantId.HasValue)
-                queryParams.Add($"tenantId={tenantId}");
-            if (tradingPartnerId.HasValue)
-                queryParams.Add($"tradingPartnerId={tradingPartnerId}");
-
-            url += string.Join("&", queryParams);
-
-            return await _httpClient.GetFromJsonAsync<SubscriptionListResult>(url) ?? new SubscriptionListResult();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get subscriptions");
-            return new SubscriptionListResult();
-        }
-    }
-
-    public async Task<MerchantSubscriptionDto?> GetSubscriptionAsync(int id)
-    {
-        try
-        {
-            return await _httpClient.GetFromJsonAsync<MerchantSubscriptionDto>($"/api/admin/subscriptions/{id}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get subscription {Id}", id);
-            return null;
-        }
-    }
-
-    public async Task<MerchantSubscriptionDto?> CreateSubscriptionAsync(CreateSubscriptionRequest request)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync("/api/admin/subscriptions", request);
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadFromJsonAsync<MerchantSubscriptionDto>();
-            }
-            _logger.LogWarning("Failed to create subscription: {StatusCode}", response.StatusCode);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create subscription");
-            return null;
-        }
-    }
-
-    public async Task<bool> ApproveSubscriptionAsync(int id, ApproveSubscriptionRequest request)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/approve", request);
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to approve subscription {Id}", id);
-            return false;
-        }
-    }
-
-    public async Task<bool> DenySubscriptionAsync(int id, DenySubscriptionRequest request)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/deny", request);
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to deny subscription {Id}", id);
-            return false;
-        }
-    }
-
-    public async Task<bool> SuspendSubscriptionAsync(int id, SuspendSubscriptionRequest request)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/suspend", request);
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to suspend subscription {Id}", id);
-            return false;
-        }
-    }
-
-    public async Task<bool> ReactivateSubscriptionAsync(int id)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsync($"/api/admin/subscriptions/{id}/reactivate", null);
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to reactivate subscription {Id}", id);
-            return false;
-        }
-    }
-
-    public async Task<bool> UnsubscribeAsync(int id, UnsubscribeRequest? request = null)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync($"/api/admin/subscriptions/{id}/unsubscribe", request ?? new UnsubscribeRequest());
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to unsubscribe subscription {Id}", id);
-            return false;
-        }
-    }
-
-    public async Task<bool> ResyncSubscriptionAsync(int id)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsync($"/api/admin/subscriptions/{id}/resync", null);
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to resync subscription {Id}", id);
-            return false;
         }
     }
 
@@ -1106,25 +964,6 @@ public class ApiClient
         {
             _logger.LogError(ex, "Failed to suspend tenant {Id}", id);
             return false;
-        }
-    }
-
-    public async Task<TenantSyncResultDto?> SyncTenantsFromM360Async()
-    {
-        try
-        {
-            var response = await _httpClient.PostAsync("/api/admin/tenants/sync-from-m360", null);
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadFromJsonAsync<TenantSyncResultDto>();
-            }
-            _logger.LogWarning("Failed to sync tenants from M360: {StatusCode}", response.StatusCode);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to sync tenants from M360");
-            return null;
         }
     }
 

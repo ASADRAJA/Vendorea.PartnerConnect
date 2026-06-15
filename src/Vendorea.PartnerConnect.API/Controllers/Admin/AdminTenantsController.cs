@@ -17,7 +17,6 @@ public class AdminTenantsController : ControllerBase
     private readonly IOrganizationRepository _organizationRepository;
     private readonly ITenantPartnerAccountRepository _accountRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
-    private readonly ITenantSyncService _tenantSyncService;
     private readonly ILogger<AdminTenantsController> _logger;
 
     public AdminTenantsController(
@@ -25,14 +24,12 @@ public class AdminTenantsController : ControllerBase
         IOrganizationRepository organizationRepository,
         ITenantPartnerAccountRepository accountRepository,
         ITradingPartnerRepository partnerRepository,
-        ITenantSyncService tenantSyncService,
         ILogger<AdminTenantsController> logger)
     {
         _tenantRepository = tenantRepository;
         _organizationRepository = organizationRepository;
         _accountRepository = accountRepository;
         _partnerRepository = partnerRepository;
-        _tenantSyncService = tenantSyncService;
         _logger = logger;
     }
 
@@ -197,33 +194,6 @@ public class AdminTenantsController : ControllerBase
     }
 
     /// <summary>
-    /// Synchronizes tenants from Merchant360.
-    /// Fetches merchants from M360 and creates/updates them as tenants under the M360 organization.
-    /// </summary>
-    [HttpPost("sync-from-m360")]
-    public async Task<IActionResult> SyncFromM360(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Admin triggered M360 tenant sync");
-
-        var result = await _tenantSyncService.SyncFromMerchant360Async(cancellationToken);
-
-        return Ok(new TenantSyncResultDto
-        {
-            Success = result.Success,
-            OrganizationId = result.OrganizationId,
-            OrganizationCode = result.OrganizationCode,
-            TotalMerchants = result.TotalMerchants,
-            TenantsCreated = result.TenantsCreated,
-            TenantsUpdated = result.TenantsUpdated,
-            TenantsDeactivated = result.TenantsDeactivated,
-            Errors = result.Errors,
-            ErrorMessages = result.ErrorMessages,
-            SyncedAt = result.SyncedAt,
-            DurationMs = (int)result.Duration.TotalMilliseconds
-        });
-    }
-
-    /// <summary>
     /// Gets partner accounts for a tenant.
     /// </summary>
     [HttpGet("{tenantId:int}/accounts")]
@@ -324,6 +294,43 @@ public class AdminTenantsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// Lists merchants (tenants) that have active, approved partner connections, grouped by tenant.
+    /// Replaces the legacy subscription-based endpoint; used by the price-feed and content pages to
+    /// filter their merchant/partner dropdowns. Built from TenantPartnerAccount connections.
+    /// </summary>
+    [HttpGet("active-by-merchant")]
+    public async Task<IActionResult> GetActiveByMerchant(CancellationToken cancellationToken)
+    {
+        var approved = await _accountRepository.GetConnectionsAsync(
+            organizationId: null, status: ConnectionApprovalStatus.Approved, cancellationToken);
+
+        var result = approved
+            .Where(c => c.IsActive && c.TenantId != null)
+            .GroupBy(c => c.TenantId!.Value)
+            .Select(g =>
+            {
+                var first = g.First();
+                return new MerchantWithConnectionsDto
+                {
+                    MerchantId = g.Key,
+                    MerchantName = first.Tenant?.Name ?? $"Merchant {g.Key}",
+                    MerchantCode = first.Tenant?.Code ?? $"M{g.Key}",
+                    Partners = g.Select(c => new ConnectedPartnerDto
+                    {
+                        TradingPartnerId = c.TradingPartnerId,
+                        TradingPartnerCode = c.TradingPartner?.Code ?? string.Empty,
+                        TradingPartnerName = c.TradingPartner?.Name ?? $"Partner {c.TradingPartnerId}",
+                        AccountNumber = c.AccountNumber
+                    }).ToList()
+                };
+            })
+            .OrderBy(m => m.MerchantName)
+            .ToList();
+
+        return Ok(result);
+    }
+
     private static TenantDto MapToDto(Tenant tenant, int accountCount)
     {
         return new TenantDto
@@ -340,6 +347,23 @@ public class AdminTenantsController : ControllerBase
             CreatedAt = tenant.CreatedAt
         };
     }
+}
+
+/// <summary>A merchant (tenant) with its active partner connections (replaces the subscription DTO).</summary>
+public class MerchantWithConnectionsDto
+{
+    public int MerchantId { get; set; }
+    public string MerchantName { get; set; } = string.Empty;
+    public string MerchantCode { get; set; } = string.Empty;
+    public List<ConnectedPartnerDto> Partners { get; set; } = new();
+}
+
+public class ConnectedPartnerDto
+{
+    public int TradingPartnerId { get; set; }
+    public string TradingPartnerCode { get; set; } = string.Empty;
+    public string TradingPartnerName { get; set; } = string.Empty;
+    public string AccountNumber { get; set; } = string.Empty;
 }
 
 public class TenantDto
@@ -396,19 +420,4 @@ public class CreateTenantPartnerAccountRequest
 {
     public int TradingPartnerId { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
-}
-
-public class TenantSyncResultDto
-{
-    public bool Success { get; set; }
-    public int OrganizationId { get; set; }
-    public string OrganizationCode { get; set; } = string.Empty;
-    public int TotalMerchants { get; set; }
-    public int TenantsCreated { get; set; }
-    public int TenantsUpdated { get; set; }
-    public int TenantsDeactivated { get; set; }
-    public int Errors { get; set; }
-    public List<string> ErrorMessages { get; set; } = new();
-    public DateTime SyncedAt { get; set; }
-    public int DurationMs { get; set; }
 }
