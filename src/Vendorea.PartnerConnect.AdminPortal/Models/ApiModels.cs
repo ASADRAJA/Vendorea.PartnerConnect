@@ -571,9 +571,13 @@ public class TenantDto
     public string Name { get; set; } = string.Empty;
     public string? ExternalId { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string OrganizationStatus { get; set; } = string.Empty;
     public bool IsDefault { get; set; }
     public int PartnerAccountCount { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>A tenant is only effectively active if it is Active AND its organization is Active.</summary>
+    public bool IsEffectivelyActive => Status == "Active" && OrganizationStatus == "Active";
 }
 
 public class TenantListResult
