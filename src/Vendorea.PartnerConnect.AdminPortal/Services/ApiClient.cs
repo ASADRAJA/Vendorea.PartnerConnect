@@ -57,6 +57,19 @@ public class ApiClient
         }
     }
 
+    public async Task<PartnerTransportDto?> GetPartnerTransportAsync(int id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<PartnerTransportDto>($"/api/v1/partners/{id}/transport");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get transport config for partner {Id}", id);
+            return null;
+        }
+    }
+
     public async Task<List<TradingPartnerDto>> GetTradingPartnersAsync()
     {
         try

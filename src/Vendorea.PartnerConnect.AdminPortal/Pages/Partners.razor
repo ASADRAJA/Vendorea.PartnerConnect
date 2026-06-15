@@ -78,31 +78,131 @@ else
                         <dd class="col-sm-9"><span class="badge @GetStatusBadgeClass(selectedPartner.Status)">@selectedPartner.Status</span></dd>
                     </dl>
 
-                    <hr />
-                    <h6>Connection Requirements for Tenants</h6>
-                    <p class="text-muted small">Field names a tenant must provide when requesting a connection with this partner. PC staff use these to verify with the partner before approving.</p>
-
-                    @for (int i = 0; i < requirements.Count; i++)
-                    {
-                        var index = i;
-                        <div class="input-group mb-2">
-                            <input class="form-control" placeholder="Requirement name"
-                                   value="@requirements[index]" @onchange="e => requirements[index] = e.Value?.ToString() ?? string.Empty" />
-                            <button class="btn btn-outline-danger" type="button" @onclick="() => RemoveRequirement(index)" title="Remove">
-                                <span class="oi oi-trash"></span>
+                    <ul class="nav nav-tabs mb-3">
+                        <li class="nav-item">
+                            <button class="nav-link @(activeTab == ModalTab.Requirements ? "active" : "")"
+                                    type="button" @onclick="() => activeTab = ModalTab.Requirements">
+                                Connection Requirements
                             </button>
-                        </div>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link @(activeTab == ModalTab.Transport ? "active" : "")"
+                                    type="button" @onclick="SelectTransportTab">
+                                Transport
+                            </button>
+                        </li>
+                    </ul>
+
+                    @if (activeTab == ModalTab.Requirements)
+                    {
+                        <h6>Connection Requirements for Tenants</h6>
+                        <p class="text-muted small">Field names a tenant must provide when requesting a connection with this partner. PC staff use these to verify with the partner before approving.</p>
+
+                        @for (int i = 0; i < requirements.Count; i++)
+                        {
+                            var index = i;
+                            <div class="input-group mb-2">
+                                <input class="form-control" placeholder="Requirement name"
+                                       value="@requirements[index]" @onchange="e => requirements[index] = e.Value?.ToString() ?? string.Empty" />
+                                <button class="btn btn-outline-danger" type="button" @onclick="() => RemoveRequirement(index)" title="Remove">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </div>
+                        }
+                        <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="AddRequirement">
+                            <span class="oi oi-plus me-1"></span> Add Requirement
+                        </button>
                     }
-                    <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="AddRequirement">
-                        <span class="oi oi-plus me-1"></span> Add Requirement
-                    </button>
+                    else if (activeTab == ModalTab.Transport)
+                    {
+                        @if (loadingTransport)
+                        {
+                            <p><em>Loading transport configuration...</em></p>
+                        }
+                        else if (transport == null)
+                        {
+                            <div class="alert alert-warning">Could not load transport configuration.</div>
+                        }
+                        else
+                        {
+                            <p class="text-muted small">Read-only. Transport settings (how PartnerConnect connects to the partner) are managed by PC staff. Secrets are shown only as a configured/not-set indicator.</p>
+                            @if (!transport.HasConfig)
+                            {
+                                <div class="alert alert-info">No transport configuration has been set for this partner yet — the defaults below will be used until it is configured.</div>
+                            }
+
+                            <h6 class="mt-3">SFTP Connection</h6>
+                            <dl class="row mb-2 small">
+                                <dt class="col-sm-4">Host</dt><dd class="col-sm-8">@Show(transport.SftpHost)</dd>
+                                <dt class="col-sm-4">Port</dt><dd class="col-sm-8">@transport.SftpPort</dd>
+                                <dt class="col-sm-4">Username</dt><dd class="col-sm-8">@Show(transport.SftpUsername)</dd>
+                                <dt class="col-sm-4">Password</dt><dd class="col-sm-8">@SecretBadge(transport.SftpPasswordConfigured)</dd>
+                                <dt class="col-sm-4">Private key</dt><dd class="col-sm-8">@SecretBadge(transport.PrivateKeyConfigured)</dd>
+                                <dt class="col-sm-4">Key passphrase</dt><dd class="col-sm-8">@SecretBadge(transport.PrivateKeyPassphraseConfigured)</dd>
+                                <dt class="col-sm-4">Connection timeout</dt><dd class="col-sm-8">@transport.ConnectionTimeoutSeconds s</dd>
+                            </dl>
+
+                            <h6 class="mt-3">Price &amp; Inventory Feeds</h6>
+                            <dl class="row mb-2 small">
+                                <dt class="col-sm-4">Price feed path</dt><dd class="col-sm-8">@Show(transport.PriceFeedPath)</dd>
+                                <dt class="col-sm-4">Price file pattern</dt><dd class="col-sm-8">@Show(transport.PriceFeedFilePattern)</dd>
+                                <dt class="col-sm-4">Inventory feed path</dt><dd class="col-sm-8">@Show(transport.InventoryFeedPath)</dd>
+                                <dt class="col-sm-4">Inventory file pattern</dt><dd class="col-sm-8">@Show(transport.InventoryFeedFilePattern)</dd>
+                                <dt class="col-sm-4">Archive path</dt><dd class="col-sm-8">@Show(transport.ArchivePath)</dd>
+                                <dt class="col-sm-4">Archive after processing</dt><dd class="col-sm-8">@YesNo(transport.ArchiveAfterProcessing)</dd>
+                                <dt class="col-sm-4">Delete after processing</dt><dd class="col-sm-8">@YesNo(transport.DeleteAfterProcessing)</dd>
+                                <dt class="col-sm-4">CSV delimiter</dt><dd class="col-sm-8">@Show(transport.CsvDelimiter)</dd>
+                                <dt class="col-sm-4">CSV has header</dt><dd class="col-sm-8">@YesNo(transport.CsvHasHeader)</dd>
+                                <dt class="col-sm-4">Customer number</dt><dd class="col-sm-8">@Show(transport.SprCustomerNumber)</dd>
+                                <dt class="col-sm-4">Pricing tier</dt><dd class="col-sm-8">@Show(transport.PricingTier)</dd>
+                            </dl>
+
+                            <details class="mb-2">
+                                <summary class="fw-semibold">EDI (X12)</summary>
+                                <dl class="row mt-2 mb-2 small">
+                                    <dt class="col-sm-4">Inbound path</dt><dd class="col-sm-8">@Show(transport.EdiInboundPath)</dd>
+                                    <dt class="col-sm-4">Outbound path</dt><dd class="col-sm-8">@Show(transport.EdiOutboundPath)</dd>
+                                    <dt class="col-sm-4">Archive path</dt><dd class="col-sm-8">@Show(transport.EdiArchivePath)</dd>
+                                    <dt class="col-sm-4">File pattern</dt><dd class="col-sm-8">@Show(transport.EdiFilePattern)</dd>
+                                    <dt class="col-sm-4">Auto-send 997</dt><dd class="col-sm-8">@YesNo(transport.AutoSend997)</dd>
+                                    <dt class="col-sm-4">Auto-send 855</dt><dd class="col-sm-8">@YesNo(transport.AutoSend855)</dd>
+                                    <dt class="col-sm-4">Sync interval</dt><dd class="col-sm-8">@transport.EdiSyncIntervalMinutes min</dd>
+                                    <dt class="col-sm-4">ISA sender</dt><dd class="col-sm-8">@Show(transport.IsaSenderQualifier) / @Show(transport.IsaSenderId)</dd>
+                                    <dt class="col-sm-4">ISA receiver</dt><dd class="col-sm-8">@Show(transport.IsaReceiverQualifier) / @Show(transport.IsaReceiverId)</dd>
+                                    <dt class="col-sm-4">GS sender code</dt><dd class="col-sm-8">@Show(transport.GsApplicationSenderCode)</dd>
+                                    <dt class="col-sm-4">GS receiver code</dt><dd class="col-sm-8">@Show(transport.GsApplicationReceiverCode)</dd>
+                                </dl>
+                            </details>
+
+                            <details class="mb-2">
+                                <summary class="fw-semibold">Orders (SOAP / XML)</summary>
+                                <dl class="row mt-2 mb-2 small">
+                                    <dt class="col-sm-4">Use SOAP for orders</dt><dd class="col-sm-8">@YesNo(transport.UseSoapForOrders)</dd>
+                                    <dt class="col-sm-4">SOAP endpoint</dt><dd class="col-sm-8">@Show(transport.SoapEndpointUrl)</dd>
+                                    <dt class="col-sm-4">SOAP username</dt><dd class="col-sm-8">@Show(transport.SoapUsername)</dd>
+                                    <dt class="col-sm-4">SOAP password</dt><dd class="col-sm-8">@SecretBadge(transport.SoapPasswordConfigured)</dd>
+                                    <dt class="col-sm-4">SOAP timeout</dt><dd class="col-sm-8">@transport.SoapTimeoutSeconds s</dd>
+                                    <dt class="col-sm-4">Enterprise code</dt><dd class="col-sm-8">@Show(transport.EnterpriseCode)</dd>
+                                    <dt class="col-sm-4">Buyer org code</dt><dd class="col-sm-8">@Show(transport.BuyerOrgCode)</dd>
+                                    <dt class="col-sm-4">Seller org code</dt><dd class="col-sm-8">@Show(transport.SellerOrgCode)</dd>
+                                    <dt class="col-sm-4">XML inbound path</dt><dd class="col-sm-8">@Show(transport.SprXmlInboundPath)</dd>
+                                    <dt class="col-sm-4">XML outbound path</dt><dd class="col-sm-8">@Show(transport.SprXmlOutboundPath)</dd>
+                                    <dt class="col-sm-4">XML SFTP port</dt><dd class="col-sm-8">@transport.SprXmlSftpPort</dd>
+                                    <dt class="col-sm-4">XML file pattern</dt><dd class="col-sm-8">@Show(transport.SprXmlFilePattern)</dd>
+                                </dl>
+                            </details>
+                        }
+                    }
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="SaveRequirements" disabled="@isSubmitting">
-                        @if (isSubmitting) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                        Save Requirements
-                    </button>
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
+                    @if (activeTab == ModalTab.Requirements)
+                    {
+                        <button type="button" class="btn btn-primary" @onclick="SaveRequirements" disabled="@isSubmitting">
+                            @if (isSubmitting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            Save Requirements
+                        </button>
+                    }
                 </div>
             </div>
         </div>
@@ -110,11 +210,17 @@ else
 }
 
 @code {
+    private enum ModalTab { Requirements, Transport }
+
     private List<TradingPartnerDto>? partners;
     private TradingPartnerDto? selectedPartner;
     private List<string> requirements = new();
     private bool showEditModal;
     private bool isSubmitting;
+
+    private ModalTab activeTab = ModalTab.Requirements;
+    private PartnerTransportDto? transport;
+    private bool loadingTransport;
 
     protected override async Task OnInitializedAsync() => await RefreshPartners();
 
@@ -124,14 +230,40 @@ else
     {
         selectedPartner = partner;
         requirements = new List<string>(partner.ConnectionRequirements);
+        activeTab = ModalTab.Requirements;
+        transport = null;
         showEditModal = true;
+    }
+
+    private async Task SelectTransportTab()
+    {
+        activeTab = ModalTab.Transport;
+        if (selectedPartner == null || transport != null) return;
+
+        loadingTransport = true;
+        try
+        {
+            transport = await Api.GetPartnerTransportAsync(selectedPartner.Id);
+        }
+        finally
+        {
+            loadingTransport = false;
+        }
     }
 
     private void CloseModal()
     {
         showEditModal = false;
         selectedPartner = null;
+        transport = null;
+        activeTab = ModalTab.Requirements;
     }
+
+    private static string Show(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    private static string YesNo(bool value) => value ? "Yes" : "No";
+
+    private RenderFragment SecretBadge(bool configured) =>@<span class="badge @(configured ? "bg-success" : "bg-secondary")">@(configured ? "Configured" : "Not set")</span>;
 
     private void AddRequirement() => requirements.Add(string.Empty);
     private void RemoveRequirement(int index) => requirements.RemoveAt(index);

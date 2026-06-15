@@ -38,6 +38,68 @@ public class TradingPartnerDto
     public List<string> ConnectionRequirements { get; set; } = new();
 }
 
+/// <summary>
+/// Read-only transport configuration for a partner (mirrors the API's PartnerTransportDto).
+/// Secrets are represented by *Configured flags only.
+/// </summary>
+public class PartnerTransportDto
+{
+    public bool HasConfig { get; set; }
+
+    // SFTP connection
+    public string SftpHost { get; set; } = string.Empty;
+    public int SftpPort { get; set; }
+    public string SftpUsername { get; set; } = string.Empty;
+    public int ConnectionTimeoutSeconds { get; set; }
+
+    // Price / inventory feeds
+    public string PriceFeedPath { get; set; } = string.Empty;
+    public string InventoryFeedPath { get; set; } = string.Empty;
+    public string? ArchivePath { get; set; }
+    public string PriceFeedFilePattern { get; set; } = string.Empty;
+    public string InventoryFeedFilePattern { get; set; } = string.Empty;
+    public bool DeleteAfterProcessing { get; set; }
+    public bool ArchiveAfterProcessing { get; set; }
+    public string CsvDelimiter { get; set; } = string.Empty;
+    public bool CsvHasHeader { get; set; }
+    public string? SprCustomerNumber { get; set; }
+    public string PricingTier { get; set; } = string.Empty;
+
+    // EDI (X12)
+    public string EdiInboundPath { get; set; } = string.Empty;
+    public string EdiOutboundPath { get; set; } = string.Empty;
+    public string EdiArchivePath { get; set; } = string.Empty;
+    public string EdiFilePattern { get; set; } = string.Empty;
+    public bool AutoSend997 { get; set; }
+    public bool AutoSend855 { get; set; }
+    public int EdiSyncIntervalMinutes { get; set; }
+    public string IsaSenderQualifier { get; set; } = string.Empty;
+    public string IsaSenderId { get; set; } = string.Empty;
+    public string IsaReceiverQualifier { get; set; } = string.Empty;
+    public string IsaReceiverId { get; set; } = string.Empty;
+    public string GsApplicationSenderCode { get; set; } = string.Empty;
+    public string GsApplicationReceiverCode { get; set; } = string.Empty;
+
+    // SOAP / XML order exchange
+    public string? SoapEndpointUrl { get; set; }
+    public string? SoapUsername { get; set; }
+    public string? EnterpriseCode { get; set; }
+    public string? BuyerOrgCode { get; set; }
+    public string? SellerOrgCode { get; set; }
+    public string SprXmlInboundPath { get; set; } = string.Empty;
+    public string SprXmlOutboundPath { get; set; } = string.Empty;
+    public int SprXmlSftpPort { get; set; }
+    public string SprXmlFilePattern { get; set; } = string.Empty;
+    public bool UseSoapForOrders { get; set; }
+    public int SoapTimeoutSeconds { get; set; }
+
+    // Secrets — presence flags only
+    public bool SftpPasswordConfigured { get; set; }
+    public bool PrivateKeyConfigured { get; set; }
+    public bool PrivateKeyPassphraseConfigured { get; set; }
+    public bool SoapPasswordConfigured { get; set; }
+}
+
 // Connection Models
 public class ConnectionDto
 {
