@@ -41,6 +41,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISupplierOrderIntakeService, SupplierOrderIntakeService>();
         services.AddScoped<IPartnerOrderResolutionService, PartnerOrderResolutionService>();
 
+        // Tenant-partner connection workflow + org-facing API auth
+        services.AddScoped<ITenantConnectionService, TenantConnectionService>();
+        services.AddScoped<IOrgApiKeyAuthenticator, OrgApiKeyAuthenticator>();
+
         // EDI Document Processing Services
         services.AddScoped<IEdiResponseService, EdiResponseService>();
         services.AddScoped<IEdiDocumentProcessingService, EdiDocumentProcessingService>();

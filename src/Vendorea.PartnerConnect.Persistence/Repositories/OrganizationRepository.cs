@@ -33,6 +33,12 @@ public class OrganizationRepository : IOrganizationRepository
             .FirstOrDefaultAsync(o => o.Code == code, cancellationToken);
     }
 
+    public async Task<Organization?> GetByPortalApiKeyHashAsync(string portalApiKeyHash, CancellationToken cancellationToken = default)
+    {
+        return await _context.Organizations
+            .FirstOrDefaultAsync(o => o.PortalApiKeyHash == portalApiKeyHash, cancellationToken);
+    }
+
     public async Task ReplacePartnersAsync(
         int organizationId,
         IReadOnlyCollection<int> tradingPartnerIds,

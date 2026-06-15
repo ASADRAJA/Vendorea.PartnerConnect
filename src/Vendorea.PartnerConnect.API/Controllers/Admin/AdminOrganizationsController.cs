@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Application.Security;
 using Vendorea.PartnerConnect.Billing.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 
@@ -126,6 +127,8 @@ public class AdminOrganizationsController : ControllerBase
             ExternalPortalEnabled = request.ExternalPortalEnabled,
             PortalBaseUrl = request.ExternalPortalEnabled ? request.PortalBaseUrl : null,
             PortalApiKey = request.ExternalPortalEnabled ? _credentialProtector.Protect(request.PortalApiKey) : null,
+            // Hash of the plaintext key for inbound org-facing auth (set alongside the encrypted key).
+            PortalApiKeyHash = request.ExternalPortalEnabled ? ApiKeyHasher.Hash(request.PortalApiKey) : null,
             Status = OrganizationStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
@@ -167,11 +170,13 @@ public class AdminOrganizationsController : ControllerBase
         if (!request.ExternalPortalEnabled)
         {
             org.PortalApiKey = null;
+            org.PortalApiKeyHash = null;
         }
         else if (!string.IsNullOrEmpty(request.PortalApiKey))
         {
             // Only re-encrypt when a new key is supplied; otherwise keep the stored one.
             org.PortalApiKey = _credentialProtector.Protect(request.PortalApiKey);
+            org.PortalApiKeyHash = ApiKeyHasher.Hash(request.PortalApiKey);
         }
 
         await _organizationRepository.UpdateAsync(org, cancellationToken);

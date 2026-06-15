@@ -65,10 +65,18 @@ public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
         builder.Property(e => e.PortalApiKey)
             .HasMaxLength(1000);
 
+        builder.Property(e => e.PortalApiKeyHash)
+            .HasMaxLength(64);
+
         builder.HasIndex(e => e.Code)
             .IsUnique();
 
         builder.HasIndex(e => e.Status);
+
+        // Unique lookup for inbound org API-key auth (only rows that have a key set).
+        builder.HasIndex(e => e.PortalApiKeyHash)
+            .IsUnique()
+            .HasFilter("[PortalApiKeyHash] IS NOT NULL");
 
         builder.HasMany(e => e.Tenants)
             .WithOne(e => e.Organization)
