@@ -328,77 +328,6 @@
     </div>
 }
 
-@* Sync Result Modal *@
-@if (showSyncResultModal && syncResult != null)
-{
-    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        @if (syncResult.Success)
-                        {
-                            <span class="oi oi-check text-success me-2"></span>
-                            <span>Sync Completed</span>
-                        }
-                        else
-                        {
-                            <span class="oi oi-warning text-warning me-2"></span>
-                            <span>Sync Completed with Errors</span>
-                        }
-                    </h5>
-                    <button type="button" class="btn-close" @onclick="CloseSyncResultModal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <strong>Organization:</strong> @syncResult.OrganizationCode (ID: @syncResult.OrganizationId)
-                    </div>
-                    <div class="row text-center mb-3">
-                        <div class="col-3">
-                            <div class="h4 text-primary">@syncResult.TotalMerchants</div>
-                            <small class="text-muted">Total Merchants</small>
-                        </div>
-                        <div class="col-3">
-                            <div class="h4 text-success">@syncResult.TenantsCreated</div>
-                            <small class="text-muted">Created</small>
-                        </div>
-                        <div class="col-3">
-                            <div class="h4 text-info">@syncResult.TenantsUpdated</div>
-                            <small class="text-muted">Updated</small>
-                        </div>
-                        <div class="col-3">
-                            <div class="h4 text-warning">@syncResult.TenantsDeactivated</div>
-                            <small class="text-muted">Deactivated</small>
-                        </div>
-                    </div>
-                    <div class="small text-muted">
-                        Duration: @syncResult.DurationMs ms | Synced at: @syncResult.SyncedAt.ToLocalTime().ToString("g")
-                    </div>
-                    @if (syncResult.Errors > 0)
-                    {
-                        <div class="alert alert-warning mt-3 mb-0">
-                            <strong>@syncResult.Errors error(s):</strong>
-                            <ul class="mb-0 mt-1">
-                                @foreach (var error in syncResult.ErrorMessages.Take(5))
-                                {
-                                    <li>@error</li>
-                                }
-                                @if (syncResult.ErrorMessages.Count > 5)
-                                {
-                                    <li class="text-muted">...and @(syncResult.ErrorMessages.Count - 5) more</li>
-                                }
-                            </ul>
-                        </div>
-                    }
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" @onclick="CloseSyncResultModal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
 @code {
     [SupplyParameterFromQuery]
     public int? organizationId { get; set; }
@@ -419,11 +348,6 @@
     private bool showEditModal = false;
     private bool showAccountsModal = false;
     private bool showAddAccountModal = false;
-    private bool showSyncResultModal = false;
-
-    // Sync state
-    private bool isSyncing = false;
-    private TenantSyncResultDto? syncResult = null;
 
     private TenantDto? selectedTenant;
     private CreateTenantRequest createRequest = new();
@@ -634,34 +558,6 @@
         {
             await LoadTenantAccounts();
         }
-    }
-
-    private async Task SyncFromM360()
-    {
-        isSyncing = true;
-        StateHasChanged();
-
-        try
-        {
-            syncResult = await Api.SyncTenantsFromM360Async();
-            if (syncResult != null)
-            {
-                showSyncResultModal = true;
-                // Reload tenants to show any new/updated ones
-                await LoadTenantsAsync();
-            }
-        }
-        finally
-        {
-            isSyncing = false;
-            StateHasChanged();
-        }
-    }
-
-    private void CloseSyncResultModal()
-    {
-        showSyncResultModal = false;
-        syncResult = null;
     }
 
     private static string GetStatusBadgeClass(string status) => status switch

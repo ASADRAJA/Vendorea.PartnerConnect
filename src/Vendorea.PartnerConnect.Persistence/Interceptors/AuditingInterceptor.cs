@@ -26,7 +26,6 @@ public class AuditingInterceptor : SaveChangesInterceptor
         typeof(PartnerDocument),
         typeof(WebhookSubscription),
         typeof(QuarantinedDocument),
-        typeof(MerchantSubscriptionRequest),
         typeof(PriceFeedUpload),
         typeof(SprContentUpload)
     };

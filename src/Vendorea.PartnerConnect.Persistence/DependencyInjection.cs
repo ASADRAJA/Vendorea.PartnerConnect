@@ -94,9 +94,6 @@ public static class DependencyInjection
         services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
         services.AddScoped<IInvoiceRepository, InvoiceRepository>();
 
-        // Merchant Subscription Requests (from M360)
-        services.AddScoped<IMerchantSubscriptionRequestRepository, MerchantSubscriptionRequestRepository>();
-
         // FTP Ingestion
         services.AddScoped<IFtpIngestionRunRepository, FtpIngestionRunRepository>();
         services.AddScoped<IPartnerIngestionConfigRepository, PartnerIngestionConfigRepository>();
