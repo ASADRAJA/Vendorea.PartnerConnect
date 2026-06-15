@@ -10,6 +10,12 @@ public interface IOrganizationRepository
     Task<Organization?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<Organization?> GetByIdWithPartnersAsync(int id, CancellationToken cancellationToken = default);
     Task<Organization?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves an organization by the hash of its API key (for inbound org-facing auth).
+    /// </summary>
+    Task<Organization?> GetByPortalApiKeyHashAsync(string portalApiKeyHash, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Organization>> GetAllAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

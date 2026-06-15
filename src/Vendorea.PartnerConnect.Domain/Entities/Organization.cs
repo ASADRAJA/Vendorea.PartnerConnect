@@ -53,8 +53,15 @@ public class Organization
     /// <summary>
     /// Encrypted API key PartnerConnect sends (X-Api-Key) when calling the org's portal.
     /// Stored encrypted at rest; decrypt via ICredentialProtector before use.
+    /// The SAME key authenticates the org's INBOUND calls to PartnerConnect (org-facing API).
     /// </summary>
     public string? PortalApiKey { get; set; }
+
+    /// <summary>
+    /// SHA-256 hash (hex) of the org's plaintext API key, used to resolve the org from an inbound
+    /// X-Api-Key without decrypting every org's key. Set alongside <see cref="PortalApiKey"/>.
+    /// </summary>
+    public string? PortalApiKeyHash { get; set; }
 
     /// <summary>
     /// Reason an org registration was rejected (when Status is set to a rejected/closed state).

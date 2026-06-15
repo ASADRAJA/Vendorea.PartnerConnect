@@ -19,6 +19,7 @@ public class AdminConnectionsController : ControllerBase
     private readonly IOrganizationRepository _organizationRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly ITenantRepository _tenantRepository;
+    private readonly ITenantConnectionService _connectionService;
     private readonly ILogger<AdminConnectionsController> _logger;
 
     public AdminConnectionsController(
@@ -26,12 +27,14 @@ public class AdminConnectionsController : ControllerBase
         IOrganizationRepository organizationRepository,
         ITradingPartnerRepository partnerRepository,
         ITenantRepository tenantRepository,
+        ITenantConnectionService connectionService,
         ILogger<AdminConnectionsController> logger)
     {
         _connectionRepository = connectionRepository;
         _organizationRepository = organizationRepository;
         _partnerRepository = partnerRepository;
         _tenantRepository = tenantRepository;
+        _connectionService = connectionService;
         _logger = logger;
     }
 
@@ -101,50 +104,24 @@ public class AdminConnectionsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateConnection([FromBody] CreateConnectionRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.ExternalTenantId))
-            return BadRequest(new { error = "Tenant's org id is required" });
-        if (string.IsNullOrWhiteSpace(request.AccountNumber))
-            return BadRequest(new { error = "Partner account number is required" });
+        var result = await _connectionService.RequestConnectionAsync(
+            request.OrganizationId,
+            new RequestConnectionInput(
+                request.TradingPartnerId,
+                request.ExternalTenantId,
+                request.AccountNumber,
+                request.ContactFirstName,
+                request.ContactLastName,
+                request.SpecialIdentifyingCode,
+                request.Notes,
+                request.ConfirmationFields),
+            cancellationToken);
 
-        var org = await _organizationRepository.GetByIdWithPartnersAsync(request.OrganizationId, cancellationToken);
-        if (org is null)
-            return BadRequest(new { error = "Organization not found" });
-        if (org.Status != OrganizationStatus.Active)
-            return BadRequest(new { error = "Organization is not active" });
-        if (org.Partners.All(p => p.TradingPartnerId != request.TradingPartnerId))
-            return BadRequest(new { error = "Partner is not enabled for this organization" });
+        if (!result.Success)
+            return BadRequest(new { error = result.Error });
 
-        if (await _connectionRepository.ConnectionExistsAsync(
-                request.OrganizationId, request.ExternalTenantId, request.TradingPartnerId, cancellationToken))
-        {
-            return BadRequest(new { error = "A connection already exists for this tenant and partner" });
-        }
-
-        var connection = new TenantPartnerAccount
-        {
-            OrganizationId = request.OrganizationId,
-            ExternalTenantId = request.ExternalTenantId,
-            TradingPartnerId = request.TradingPartnerId,
-            AccountNumber = request.AccountNumber,
-            ContactFirstName = request.ContactFirstName,
-            ContactLastName = request.ContactLastName,
-            SpecialIdentifyingCode = request.SpecialIdentifyingCode,
-            Notes = request.Notes,
-            ConfirmationFieldsJson = request.ConfirmationFields is { Count: > 0 }
-                ? JsonSerializer.Serialize(request.ConfirmationFields)
-                : null,
-            ApprovalStatus = ConnectionApprovalStatus.Pending,
-            IsActive = false,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        var created = await _connectionRepository.AddAsync(connection, cancellationToken);
-        _logger.LogInformation(
-            "Connection {ConnectionId} requested: org {OrgId}, partner {PartnerId}, tenant org-id {ExternalTenantId}",
-            created.Id, request.OrganizationId, request.TradingPartnerId, request.ExternalTenantId);
-
-        var detail = await _connectionRepository.GetByIdWithDetailsAsync(created.Id, cancellationToken);
-        return CreatedAtAction(nameof(GetConnection), new { id = created.Id }, MapToDto(detail!));
+        var detail = await _connectionRepository.GetByIdWithDetailsAsync(result.Connection!.Id, cancellationToken);
+        return CreatedAtAction(nameof(GetConnection), new { id = result.Connection.Id }, MapToDto(detail!));
     }
 
     /// <summary>Approves a connection: creates the tenant if new (else links) and activates.</summary>
