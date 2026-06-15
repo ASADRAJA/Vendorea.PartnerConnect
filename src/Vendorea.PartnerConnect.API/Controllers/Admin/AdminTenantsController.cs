@@ -47,16 +47,18 @@ public class AdminTenantsController : ControllerBase
         if (organizationId.HasValue)
         {
             tenants = await _tenantRepository.GetByOrganizationIdAsync(organizationId.Value, cancellationToken);
-            // Get org name for display
-            var org = await _organizationRepository.GetByIdAsync(organizationId.Value, cancellationToken);
-            foreach (var tenant in tenants)
-            {
-                tenant.Organization = org;
-            }
         }
         else
         {
             tenants = await _tenantRepository.GetAllAsync(cancellationToken);
+        }
+
+        // Attach each tenant's organization (name + status) so the DTO can report effective status.
+        var orgs = (await _organizationRepository.GetAllAsync(cancellationToken)).ToDictionary(o => o.Id);
+        foreach (var tenant in tenants)
+        {
+            if (orgs.TryGetValue(tenant.OrganizationId, out var org))
+                tenant.Organization = org;
         }
 
         var tenantDtos = new List<TenantDto>();
@@ -342,6 +344,7 @@ public class AdminTenantsController : ControllerBase
             Name = tenant.Name,
             ExternalId = tenant.ExternalId,
             Status = tenant.Status.ToString(),
+            OrganizationStatus = tenant.Organization?.Status.ToString() ?? string.Empty,
             IsDefault = tenant.IsDefault,
             PartnerAccountCount = accountCount,
             CreatedAt = tenant.CreatedAt
@@ -375,6 +378,8 @@ public class TenantDto
     public string Name { get; set; } = string.Empty;
     public string? ExternalId { get; set; }
     public string Status { get; set; } = string.Empty;
+    /// <summary>The parent organization's status — a tenant is only effectively active under an Active org.</summary>
+    public string OrganizationStatus { get; set; } = string.Empty;
     public bool IsDefault { get; set; }
     public int PartnerAccountCount { get; set; }
     public DateTime CreatedAt { get; set; }
