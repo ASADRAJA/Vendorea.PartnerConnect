@@ -60,6 +60,9 @@ builder.Services.AddHostedService<ContentSyncWorker>();
 builder.Services.AddHostedService<OutboxProcessorWorker>();
 builder.Services.AddHostedService<EdiDocumentSyncWorker>();
 
+// Generic cron-jobs framework coordinator (runs DB-configured ScheduledJobs on their cron schedules)
+builder.Services.AddHostedService<ScheduledJobsCoordinator>();
+
 // SPR Content Ingestion Worker
 builder.Services.AddWorkerProcesses(builder.Configuration);
 builder.Services.AddSprContentIngestionWorker();

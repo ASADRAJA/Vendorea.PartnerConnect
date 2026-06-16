@@ -1100,4 +1100,74 @@ public class ApiClient
             return false;
         }
     }
+
+    // Scheduled / Cron Jobs endpoints
+    public async Task<List<ScheduledJobDto>> GetScheduledJobsAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<ScheduledJobDto>>("/api/admin/scheduled-jobs") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get scheduled jobs");
+            return new();
+        }
+    }
+
+    public async Task<List<ScheduledJobRunDto>> GetScheduledJobRunsAsync(int id, int take = 20)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<ScheduledJobRunDto>>($"/api/admin/scheduled-jobs/{id}/runs?take={take}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get runs for scheduled job {Id}", id);
+            return new();
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateScheduledJobAsync(int id, UpdateScheduledJobRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PutAsJsonAsync($"/api/admin/scheduled-jobs/{id}", request);
+            if (response.IsSuccessStatusCode) return (true, null);
+            return (false, await response.Content.ReadAsStringAsync());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update scheduled job {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<CronPreviewResponse?> PreviewCronAsync(CronPreviewRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/scheduled-jobs/preview-cron", request);
+            return await response.Content.ReadFromJsonAsync<CronPreviewResponse>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to preview cron");
+            return null;
+        }
+    }
+
+    public async Task<RunJobResult?> RunScheduledJobAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/scheduled-jobs/{id}/run", null);
+            return await response.Content.ReadFromJsonAsync<RunJobResult>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to run scheduled job {Id}", id);
+            return new RunJobResult { Success = false, Error = ex.Message };
+        }
+    }
 }

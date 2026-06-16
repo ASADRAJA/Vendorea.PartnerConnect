@@ -767,3 +767,60 @@ public class OrderListResult
     public int CancelledCount { get; set; }
     public List<OrderDto> Items { get; set; } = new();
 }
+
+// Scheduled / Cron Jobs
+public class ScheduledJobDto
+{
+    public int Id { get; set; }
+    public string JobKey { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string CronExpression { get; set; } = string.Empty;
+    public string TimeZoneId { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; }
+    public string? ConfigJson { get; set; }
+    public DateTime? NextDueAt { get; set; }
+    public DateTime? LastRunAt { get; set; }
+    public string? LastRunStatus { get; set; }
+    public string? LastRunDetail { get; set; }
+}
+
+public class ScheduledJobRunDto
+{
+    public int Id { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string TriggeredBy { get; set; } = string.Empty;
+    public string? Detail { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+public class UpdateScheduledJobRequest
+{
+    public string? CronExpression { get; set; }
+    public string? TimeZoneId { get; set; }
+    public bool IsEnabled { get; set; }
+    public string? ConfigJson { get; set; }
+}
+
+public class CronPreviewRequest
+{
+    public string? CronExpression { get; set; }
+    public string? TimeZoneId { get; set; }
+    public int? Count { get; set; }
+}
+
+public class CronPreviewResponse
+{
+    public bool IsValid { get; set; }
+    public string? Error { get; set; }
+    public List<DateTime> NextRunsUtc { get; set; } = new();
+}
+
+public class RunJobResult
+{
+    public bool Success { get; set; }
+    public string? Detail { get; set; }
+    public string? Error { get; set; }
+}

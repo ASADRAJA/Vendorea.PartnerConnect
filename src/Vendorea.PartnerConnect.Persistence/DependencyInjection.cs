@@ -98,6 +98,9 @@ public static class DependencyInjection
         services.AddScoped<IFtpIngestionRunRepository, FtpIngestionRunRepository>();
         services.AddScoped<IPartnerIngestionConfigRepository, PartnerIngestionConfigRepository>();
 
+        // Scheduled jobs (cron framework)
+        services.AddScoped<IScheduledJobRepository, ScheduledJobRepository>();
+
         // Supplier Inventory (Full-Refresh Workflow)
         services.AddScoped<ISupplierInventorySnapshotRepository, SupplierInventorySnapshotRepository>();
         services.AddScoped<ISupplierInventoryItemRepository, SupplierInventoryItemRepository>();
