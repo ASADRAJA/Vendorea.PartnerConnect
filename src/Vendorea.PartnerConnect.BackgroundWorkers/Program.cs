@@ -54,7 +54,8 @@ builder.Services.Configure<OutboxWorkerOptions>(
 
 // Background workers
 builder.Services.AddHostedService<PriceFeedSyncWorker>();
-builder.Services.AddHostedService<InventoryFeedSyncWorker>();
+// InventoryFeedSyncWorker (placeholder SFTP/CSV interval worker) retired — SPR inventory is now
+// imported by the "spr-inventory" cron job (sprfull.ezoh over FTP) via ScheduledJobsCoordinator.
 builder.Services.AddHostedService<DocumentProcessingWorker>();
 builder.Services.AddHostedService<ContentSyncWorker>();
 builder.Services.AddHostedService<OutboxProcessorWorker>();

@@ -101,6 +101,9 @@ public static class DependencyInjection
         // Scheduled jobs (cron framework)
         services.AddScoped<IScheduledJobRepository, ScheduledJobRepository>();
 
+        // Partner distribution centers (reference data, e.g. SPR DC list)
+        services.AddScoped<IPartnerDistributionCenterRepository, PartnerDistributionCenterRepository>();
+
         // Supplier Inventory (Full-Refresh Workflow)
         services.AddScoped<ISupplierInventorySnapshotRepository, SupplierInventorySnapshotRepository>();
         services.AddScoped<ISupplierInventoryItemRepository, SupplierInventoryItemRepository>();
