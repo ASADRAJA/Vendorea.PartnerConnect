@@ -44,6 +44,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITenantConnectionService, TenantConnectionService>();
         services.AddScoped<IOrgApiKeyAuthenticator, OrgApiKeyAuthenticator>();
 
+        // Scheduled jobs (cron framework) + job handlers.
+        services.AddScoped<IScheduledJobService, ScheduledJobService>();
+        services.AddScoped<IScheduledJobHandler, SprInventoryImportJobHandler>();
+
         // EDI Document Processing Services
         services.AddScoped<IEdiResponseService, EdiResponseService>();
         services.AddScoped<IEdiDocumentProcessingService, EdiDocumentProcessingService>();

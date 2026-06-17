@@ -84,6 +84,8 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantPartnerAccount> TenantPartnerAccounts => Set<TenantPartnerAccount>();
     public DbSet<PartnerDistributionCenter> PartnerDistributionCenters => Set<PartnerDistributionCenter>();
+    public DbSet<ScheduledJob> ScheduledJobs => Set<ScheduledJob>();
+    public DbSet<ScheduledJobRun> ScheduledJobRuns => Set<ScheduledJobRun>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderLine> OrderLines => Set<OrderLine>();
     public DbSet<OrderStatusHistory> OrderStatusHistory => Set<OrderStatusHistory>();
