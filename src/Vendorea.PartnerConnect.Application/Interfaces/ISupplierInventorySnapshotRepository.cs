@@ -62,4 +62,10 @@ public interface ISupplierInventorySnapshotRepository
     /// Supersedes all snapshots for a trading partner except the specified one.
     /// </summary>
     Task SupersedeAllExceptAsync(int tradingPartnerId, int excludeSnapshotId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes all but the newest <paramref name="retain"/> snapshots for a trading partner
+    /// (cascades to items and per-location quantities). Returns the number of snapshots deleted.
+    /// </summary>
+    Task<int> DeleteOldSnapshotsAsync(int tradingPartnerId, int retain, CancellationToken cancellationToken = default);
 }

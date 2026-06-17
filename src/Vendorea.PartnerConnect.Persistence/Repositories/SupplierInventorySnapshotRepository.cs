@@ -114,4 +114,21 @@ public class SupplierInventorySnapshotRepository : ISupplierInventorySnapshotRep
 
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<int> DeleteOldSnapshotsAsync(int tradingPartnerId, int retain, CancellationToken cancellationToken = default)
+    {
+        retain = Math.Max(1, retain);
+
+        var keepIds = await _context.SupplierInventorySnapshots
+            .Where(s => s.TradingPartnerId == tradingPartnerId)
+            .OrderByDescending(s => s.ReceivedAt)
+            .Select(s => s.Id)
+            .Take(retain)
+            .ToListAsync(cancellationToken);
+
+        // Direct DELETE; the DB cascades to SupplierInventoryItems and their LocationQuantities.
+        return await _context.SupplierInventorySnapshots
+            .Where(s => s.TradingPartnerId == tradingPartnerId && !keepIds.Contains(s.Id))
+            .ExecuteDeleteAsync(cancellationToken);
+    }
 }
