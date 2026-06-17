@@ -113,8 +113,13 @@ public class SprInventoryImportJobHandler : IScheduledJobHandler
             await _snapshotRepository.UpdateAsync(snapshot, cancellationToken);
             await _snapshotRepository.SupersedeAllExceptAsync(partner.Id, snapshot.Id, cancellationToken);
 
+            // Prune old snapshots so per-DC rows don't accumulate run over run.
+            var pruned = await _snapshotRepository.DeleteOldSnapshotsAsync(partner.Id, config.RetainSnapshots, cancellationToken);
+
             var detail =
                 $"Imported {parsed.Items.Count:N0} items, {totalLocationRows:N0} per-DC rows across {stockedDcs.Count} stocked DCs from {config.RemoteFileName}.";
+            if (pruned > 0)
+                detail += $" Pruned {pruned} old snapshot(s).";
             if (unknownDcs.Count > 0)
                 detail += $" {unknownDcs.Count} DC number(s) not in the DC mapping had stock (stored by number — investigate, SPR expects only the mapped DCs): {string.Join(", ", unknownDcs.OrderBy(d => d))}.";
 
@@ -218,4 +223,8 @@ public class SprInventoryJobConfig
     public string FtpPassword { get; set; } = "onhand";
     public string RemoteFileName { get; set; } = "sprfull.ezoh";
     public int ConnectionTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>How many of the newest snapshots to keep after each run (older ones are deleted).
+    /// Default 1 = keep only the current snapshot (overwrite). Increase to retain history.</summary>
+    public int RetainSnapshots { get; set; } = 1;
 }
