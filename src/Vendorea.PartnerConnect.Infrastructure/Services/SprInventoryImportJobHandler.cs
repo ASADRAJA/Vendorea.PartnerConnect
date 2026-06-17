@@ -86,12 +86,13 @@ public class SprInventoryImportJobHandler : IScheduledJobHandler
                 .ToDictionary(g => g.Key, g => g.First());
 
             var unknownDcs = new HashSet<int>();
+            var stockedDcs = new HashSet<int>();
             var batch = new List<SupplierInventoryItem>(InsertBatchSize);
             var totalLocationRows = 0;
 
             foreach (var parsedItem in parsed.Items)
             {
-                var item = BuildItem(snapshot.Id, parsedItem, dcLookup, unknownDcs);
+                var item = BuildItem(snapshot.Id, parsedItem, dcLookup, unknownDcs, stockedDcs);
                 totalLocationRows += item.LocationQuantities.Count;
                 batch.Add(item);
 
@@ -113,9 +114,9 @@ public class SprInventoryImportJobHandler : IScheduledJobHandler
             await _snapshotRepository.SupersedeAllExceptAsync(partner.Id, snapshot.Id, cancellationToken);
 
             var detail =
-                $"Imported {parsed.Items.Count:N0} items, {totalLocationRows:N0} per-DC rows across {parsed.DcNumbers.Count} DCs from {config.RemoteFileName}.";
+                $"Imported {parsed.Items.Count:N0} items, {totalLocationRows:N0} per-DC rows across {stockedDcs.Count} stocked DCs from {config.RemoteFileName}.";
             if (unknownDcs.Count > 0)
-                detail += $" {unknownDcs.Count} DC number(s) not in the DC table (stored by number): {string.Join(", ", unknownDcs.OrderBy(d => d))}.";
+                detail += $" {unknownDcs.Count} DC number(s) not in the DC mapping had stock (stored by number — investigate, SPR expects only the mapped DCs): {string.Join(", ", unknownDcs.OrderBy(d => d))}.";
 
             _logger.LogInformation("SPR inventory import complete: {Detail}", detail);
             return JobExecutionResult.Ok(detail);
@@ -134,7 +135,7 @@ public class SprInventoryImportJobHandler : IScheduledJobHandler
     private static SupplierInventoryItem BuildItem(
         int snapshotId, SprEzohItem parsed,
         IReadOnlyDictionary<int, PartnerDistributionCenter> dcLookup,
-        ISet<int> unknownDcs)
+        ISet<int> unknownDcs, ISet<int> stockedDcs)
     {
         var item = new SupplierInventoryItem
         {
@@ -149,6 +150,7 @@ public class SprInventoryImportJobHandler : IScheduledJobHandler
 
         foreach (var q in parsed.Quantities)
         {
+            stockedDcs.Add(q.DcNumber);
             dcLookup.TryGetValue(q.DcNumber, out var dc);
             if (dc is null) unknownDcs.Add(q.DcNumber);
 
