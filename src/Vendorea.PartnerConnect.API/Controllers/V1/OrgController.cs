@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Contracts.Integration;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Api.Controllers.V1;
@@ -24,6 +25,7 @@ public class OrgController : ControllerBase
     private readonly IOrganizationRepository _organizationRepository;
     private readonly ITenantConnectionService _connectionService;
     private readonly ITenantPartnerAccountRepository _connectionRepository;
+    private readonly ISprStockCheckService _stockCheckService;
     private readonly ILogger<OrgController> _logger;
 
     public OrgController(
@@ -31,13 +33,37 @@ public class OrgController : ControllerBase
         IOrganizationRepository organizationRepository,
         ITenantConnectionService connectionService,
         ITenantPartnerAccountRepository connectionRepository,
+        ISprStockCheckService stockCheckService,
         ILogger<OrgController> logger)
     {
         _authenticator = authenticator;
         _organizationRepository = organizationRepository;
         _connectionService = connectionService;
         _connectionRepository = connectionRepository;
+        _stockCheckService = stockCheckService;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Live SPR stock/price check for one of the org's dealers. The dealer must have an active SPR
+    /// connection; dealer-specific pricing is included automatically. Supply up to 8 DcNumbers for a
+    /// lightweight per-DC check, or omit them for all stocking DCs.
+    /// </summary>
+    [HttpPost("stock-check")]
+    public async Task<IActionResult> StockCheck([FromBody] StockCheckRequest request, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var outcome = await _stockCheckService.StockCheckAsync(org.Id, request, cancellationToken);
+        return outcome.Status switch
+        {
+            StockCheckStatus.InvalidRequest => BadRequest(new { error = outcome.Error }),
+            StockCheckStatus.NoActiveConnection => StatusCode(403, new { error = "Tenant has no active SPR connection" }),
+            StockCheckStatus.NotConfigured => StatusCode(503, new { error = outcome.Error ?? "SPR web services are not configured" }),
+            _ => Ok(outcome.Response)
+        };
     }
 
     /// <summary>Lists the trading partners this org may connect to, with each partner's required fields.</summary>
