@@ -38,3 +38,17 @@ public class SprStockCheckQuery
     /// <summary>A = sort alphabetically (default), N = numerically.</summary>
     public char SortBy { get; set; } = 'A';
 }
+
+/// <summary>Query parameters for the freight-rate services.</summary>
+public class SprFreightQuery
+{
+    public int ShipFromDc { get; set; }
+    public string State { get; set; } = string.Empty;
+    public string PostalCode { get; set; } = string.Empty;
+    public decimal Weight { get; set; }
+    /// <summary>Carrier code (Table 5); empty = all carriers.</summary>
+    public string? Carrier { get; set; }
+    /// <summary>Service-level code (Table 4).</summary>
+    public string? ServiceLevel { get; set; }
+    public bool Residential { get; set; }
+}

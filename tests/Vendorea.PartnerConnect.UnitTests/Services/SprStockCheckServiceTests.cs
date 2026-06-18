@@ -24,8 +24,8 @@ public class SprStockCheckServiceTests
     {
         // Passthrough protector (local-style plaintext creds).
         _protector.Setup(p => p.Unprotect(It.IsAny<string?>())).Returns((string? s) => s);
-        _sut = new SprStockCheckService(_partners.Object, _connections.Object, _protector.Object,
-            _spr.Object, NullLogger<SprStockCheckService>.Instance);
+        var resolver = new SprWebServiceContextResolver(_partners.Object, _connections.Object, _protector.Object);
+        _sut = new SprStockCheckService(resolver, _spr.Object);
     }
 
     private void SprPartnerConfigured()

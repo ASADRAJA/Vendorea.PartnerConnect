@@ -26,6 +26,7 @@ public class OrgController : ControllerBase
     private readonly ITenantConnectionService _connectionService;
     private readonly ITenantPartnerAccountRepository _connectionRepository;
     private readonly ISprStockCheckService _stockCheckService;
+    private readonly ISprFreightService _freightService;
     private readonly ILogger<OrgController> _logger;
 
     public OrgController(
@@ -34,6 +35,7 @@ public class OrgController : ControllerBase
         ITenantConnectionService connectionService,
         ITenantPartnerAccountRepository connectionRepository,
         ISprStockCheckService stockCheckService,
+        ISprFreightService freightService,
         ILogger<OrgController> logger)
     {
         _authenticator = authenticator;
@@ -41,6 +43,7 @@ public class OrgController : ControllerBase
         _connectionService = connectionService;
         _connectionRepository = connectionRepository;
         _stockCheckService = stockCheckService;
+        _freightService = freightService;
         _logger = logger;
     }
 
@@ -65,6 +68,34 @@ public class OrgController : ControllerBase
             _ => Ok(outcome.Response)
         };
     }
+
+    /// <summary>Live SPR freight rates (all qualifying UPS/FedEx options) for a dealer's shipment.</summary>
+    [HttpPost("freight/rates")]
+    public async Task<IActionResult> FreightRates([FromBody] FreightRateRequest request, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+        return FreightResult(await _freightService.FindRatesAsync(org.Id, request, cancellationToken));
+    }
+
+    /// <summary>Live SPR lowest freight rate for a dealer's shipment.</summary>
+    [HttpPost("freight/lowest-rate")]
+    public async Task<IActionResult> LowestFreightRate([FromBody] FreightRateRequest request, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+        return FreightResult(await _freightService.LowestRateAsync(org.Id, request, cancellationToken));
+    }
+
+    private IActionResult FreightResult(FreightOutcome outcome) => outcome.Status switch
+    {
+        FreightStatus.InvalidRequest => BadRequest(new { error = outcome.Error }),
+        FreightStatus.NoActiveConnection => StatusCode(403, new { error = "Tenant has no active SPR connection" }),
+        FreightStatus.NotConfigured => StatusCode(503, new { error = outcome.Error ?? "SPR web services are not configured" }),
+        _ => Ok(outcome.Response)
+    };
 
     /// <summary>Lists the trading partners this org may connect to, with each partner's required fields.</summary>
     [HttpGet("partners")]

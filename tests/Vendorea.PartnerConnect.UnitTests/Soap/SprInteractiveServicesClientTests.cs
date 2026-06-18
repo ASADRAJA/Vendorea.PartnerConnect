@@ -186,4 +186,111 @@ public class SprInteractiveServicesClientTests
         handler.CapturedBody.Should().Contain("<DcNumber2>016</DcNumber2>");
         handler.CapturedBody.Should().Contain("<mes:QuickCheckPlus");
     }
+
+    private const string FindFreightResponse = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="http://test.sprws/sprws/FindFreightRate.php?wsdl">
+          <SOAP-ENV:Body>
+            <ns1:FindFreightRateResponse xmlns:ns1="http://test.sprws/sprws/FindFreightRate.php?wsdl">
+              <return xsi:type="tns:FindFreightRateResults">
+                <ErrorMessage xsi:type="xsd:string"/>
+                <RtnStatus xsi:type="xsd:string">0000</RtnStatus>
+                <RtnMessage xsi:type="xsd:string">OK</RtnMessage>
+                <ResultsRows SOAP-ENC:arrayType="tns:FindFreightRateRow[2]" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/">
+                  <item xsi:type="tns:FindFreightRateRow">
+                    <WhseOut xsi:type="xsd:string">08</WhseOut>
+                    <CarrOut xsi:type="xsd:string">UPS</CarrOut>
+                    <CarrierDesc xsi:type="xsd:string">UPS NEXT DAY AIR EARLY AM</CarrierDesc>
+                    <ShipVia xsi:type="xsd:string">UPEA</ShipVia>
+                    <Rate xsi:type="xsd:string">68.16</Rate>
+                    <DeliveryDays xsi:type="xsd:string">1</DeliveryDays>
+                    <NumberCartons xsi:type="xsd:string">1</NumberCartons>
+                    <SrvLevOut xsi:type="xsd:string">2</SrvLevOut>
+                    <ResAdrInd xsi:type="xsd:string">N</ResAdrInd>
+                  </item>
+                  <item xsi:type="tns:FindFreightRateRow">
+                    <WhseOut xsi:type="xsd:string">08</WhseOut>
+                    <CarrOut xsi:type="xsd:string">UPS</CarrOut>
+                    <CarrierDesc xsi:type="xsd:string">UPS Next Day Air Bill SPR</CarrierDesc>
+                    <ShipVia xsi:type="xsd:string">UPSN</ShipVia>
+                    <Rate xsi:type="xsd:string">34.83</Rate>
+                    <DeliveryDays xsi:type="xsd:string">1</DeliveryDays>
+                    <NumberCartons xsi:type="xsd:string">1</NumberCartons>
+                    <SrvLevOut xsi:type="xsd:string">1</SrvLevOut>
+                    <ResAdrInd xsi:type="xsd:string">N</ResAdrInd>
+                  </item>
+                </ResultsRows>
+              </return>
+            </ns1:FindFreightRateResponse>
+          </SOAP-ENV:Body>
+        </SOAP-ENV:Envelope>
+        """;
+
+    private const string LowestFreightResponse = """
+        <?xml version="1.0" encoding="ISO-8859-1"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <SOAP-ENV:Body>
+            <ns1:LowestFreightRateResponse xmlns:ns1="http://tempuri.org/lowest_freight_rate2/message">
+              <ErrorMessage xsi:type="xsd:string"/>
+              <RtnStatus xsi:type="xsd:string">0000</RtnStatus>
+              <RtnMessage xsi:type="xsd:string">OK</RtnMessage>
+              <DcNumber xsi:type="xsd:string">08</DcNumber>
+              <CarrierId xsi:type="xsd:string">UPS</CarrierId>
+              <CarrierDesc xsi:type="xsd:string">UPS NEXT DAY AIR SAVER</CarrierDesc>
+              <ShipVia xsi:type="xsd:string">UP2S</ShipVia>
+              <FrghtRate xsi:type="xsd:string">31.66</FrghtRate>
+              <DeliveryDays xsi:type="xsd:string">1</DeliveryDays>
+              <NumCartons xsi:type="xsd:string">1</NumCartons>
+              <ServiceLevel xsi:type="xsd:string">5</ServiceLevel>
+              <ResAdrInd xsi:type="xsd:string">N</ResAdrInd>
+            </ns1:LowestFreightRateResponse>
+          </SOAP-ENV:Body>
+        </SOAP-ENV:Envelope>
+        """;
+
+    private static SprFreightQuery FreightQuery() => new()
+    {
+        ShipFromDc = 8, State = "GA", PostalCode = "30341", Weight = 1.0m, ServiceLevel = "9", Residential = false
+    };
+
+    [Fact]
+    public async Task FindFreightRates_ParsesRateRows()
+    {
+        var (client, handler) = Build(FindFreightResponse);
+
+        var result = await client.FindFreightRatesAsync(Config(), FreightQuery());
+
+        result.Success.Should().BeTrue();
+        result.Rates.Should().HaveCount(2);
+        result.Rates[0].Carrier.Should().Be("UPS");
+        result.Rates[0].ShipVia.Should().Be("UPEA");
+        result.Rates[0].Rate.Should().Be(68.16m);
+        result.Rates[0].DeliveryDays.Should().Be(1);
+        result.Rates[1].Rate.Should().Be(34.83m);
+
+        // Find Freight uses the <input> style with Warehouse/State/ZipCode/Weight fields.
+        handler.CapturedUrl.Should().Be("http://test.sprws/sprws/FindFreightRate.php");
+        handler.CapturedBody.Should().Contain("<Warehouse>008</Warehouse>");
+        handler.CapturedBody.Should().Contain("<ZipCode>30341</ZipCode>");
+    }
+
+    [Fact]
+    public async Task LowestFreightRate_ParsesSingleRate()
+    {
+        var (client, handler) = Build(LowestFreightResponse);
+
+        var result = await client.LowestFreightRateAsync(Config(), FreightQuery());
+
+        result.Success.Should().BeTrue();
+        result.Rates.Should().ContainSingle();
+        result.Rates[0].CarrierDescription.Should().Be("UPS NEXT DAY AIR SAVER");
+        result.Rates[0].ShipVia.Should().Be("UP2S");
+        result.Rates[0].Rate.Should().Be(31.66m);
+        result.Rates[0].ServiceLevel.Should().Be("5");
+
+        // Lowest uses the tempuri "message" style with ShipFromDc/StateCode/PostalCode/TotWeight.
+        handler.CapturedBody.Should().Contain("<ShipFromDc>008</ShipFromDc>");
+        handler.CapturedBody.Should().Contain("<TotWeight>1.0</TotWeight>");
+        handler.CapturedBody.Should().Contain("<mes:LowestFreightRate");
+    }
 }

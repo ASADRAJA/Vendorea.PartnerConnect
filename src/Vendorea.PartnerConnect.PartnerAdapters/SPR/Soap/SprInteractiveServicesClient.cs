@@ -102,6 +102,112 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         }
     }
 
+    public async Task<SprFreightResult> FindFreightRatesAsync(SprWebServiceConfig config, SprFreightQuery query, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Find Freight Rate uses the <input>-wrapped style with its own field names.
+            var sb = new StringBuilder();
+            AppendAuthFields(sb, config, action: "F");
+            sb.Append($"<CustNumber>{Esc(config.CustNumber)}</CustNumber>");
+            sb.Append($"<Warehouse>{query.ShipFromDc:D3}</Warehouse>");
+            sb.Append($"<State>{Esc(query.State)}</State>");
+            sb.Append($"<ZipCode>{Esc(query.PostalCode)}</ZipCode>");
+            sb.Append($"<Weight>{query.Weight.ToString(CultureInfo.InvariantCulture)}</Weight>");
+            sb.Append($"<Carrier>{Esc(query.Carrier)}</Carrier>");
+            sb.Append($"<Service>{Esc(query.ServiceLevel)}</Service>");
+            sb.Append($"<Residential>{(query.Residential ? "Y" : "N")}</Residential>");
+
+            var envelope = BuildInputEnvelope("FindFreightRate", WsdlNs(config, "FindFreightRate"), sb.ToString());
+            var xml = await PostAsync(config, "FindFreightRate", $"{SoapAction(config, "FindFreightRate")}#FindFreightRate", envelope, cancellationToken);
+
+            var doc = XDocument.Parse(xml);
+            var result = NewFreightResult(doc);
+            foreach (var item in doc.Descendants().Where(e => e.Name.LocalName == "item"))
+            {
+                result.Rates.Add(new SprFreightRate
+                {
+                    ShipFromDc = Value(item, "WhseOut"),
+                    Carrier = Value(item, "CarrOut"),
+                    CarrierDescription = Value(item, "CarrierDesc"),
+                    ShipVia = Value(item, "ShipVia"),
+                    Rate = ParseDecimal(Value(item, "Rate")),
+                    DeliveryDays = ParseInt(Value(item, "DeliveryDays")),
+                    NumberOfCartons = ParseInt(Value(item, "NumberCartons")),
+                    ServiceLevel = Value(item, "SrvLevOut"),
+                    Residential = string.Equals(Value(item, "ResAdrInd"), "Y", StringComparison.OrdinalIgnoreCase)
+                });
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SPR Find Freight Rates failed (DC {Dc} -> {State} {Zip})", query.ShipFromDc, query.State, query.PostalCode);
+            return new SprFreightResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<SprFreightResult> LowestFreightRateAsync(SprWebServiceConfig config, SprFreightQuery query, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Lowest Freight Rate uses the tempuri "message" style with different field names.
+            var sb = new StringBuilder();
+            AppendAuthFields(sb, config, action: "F");
+            sb.Append($"<CustNumber>{Esc(config.CustNumber)}</CustNumber>");
+            sb.Append($"<ShipFromDc>{query.ShipFromDc:D3}</ShipFromDc>");
+            sb.Append($"<StateCode>{Esc(query.State)}</StateCode>");
+            sb.Append($"<PostalCode>{Esc(query.PostalCode)}</PostalCode>");
+            sb.Append($"<TotWeight>{query.Weight.ToString(CultureInfo.InvariantCulture)}</TotWeight>");
+            sb.Append($"<ReqCarrier>{Esc(query.Carrier)}</ReqCarrier>");
+            sb.Append($"<ReqSrvcLevel>{Esc(query.ServiceLevel)}</ReqSrvcLevel>");
+            sb.Append($"<Residential>{(query.Residential ? "Y" : "N")}</Residential>");
+
+            var envelope = BuildMessageEnvelope("LowestFreightRate", "http://tempuri.org/lowest_freight_rate2/message", sb.ToString());
+            var xml = await PostAsync(config, "LowestFreightRate", soapAction: "", envelope, cancellationToken);
+
+            var doc = XDocument.Parse(xml);
+            var result = NewFreightResult(doc);
+            if (result.Success)
+            {
+                result.Rates.Add(new SprFreightRate
+                {
+                    ShipFromDc = Value(doc.Root, "DcNumber"),
+                    Carrier = Value(doc.Root, "CarrierId"),
+                    CarrierDescription = Value(doc.Root, "CarrierDesc"),
+                    ShipVia = Value(doc.Root, "ShipVia"),
+                    Rate = ParseDecimal(Value(doc.Root, "FrghtRate")),
+                    DeliveryDays = ParseInt(Value(doc.Root, "DeliveryDays")),
+                    NumberOfCartons = ParseInt(Value(doc.Root, "NumCartons")),
+                    ServiceLevel = Value(doc.Root, "ServiceLevel"),
+                    Residential = string.Equals(Value(doc.Root, "ResAdrInd"), "Y", StringComparison.OrdinalIgnoreCase)
+                });
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SPR Lowest Freight Rate failed (DC {Dc} -> {State} {Zip})", query.ShipFromDc, query.State, query.PostalCode);
+            return new SprFreightResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    private static SprFreightResult NewFreightResult(XDocument doc)
+    {
+        var fault = FindFault(doc);
+        var rtnStatus = Value(doc.Root, "RtnStatus");
+        var rtnMessage = Value(doc.Root, "RtnMessage");
+        var errorMessage = Value(doc.Root, "ErrorMessage");
+        return new SprFreightResult
+        {
+            Success = fault is null && string.IsNullOrEmpty(errorMessage)
+                && (rtnStatus == "0000" || (rtnStatus is null && string.Equals(rtnMessage, "OK", StringComparison.OrdinalIgnoreCase))),
+            RtnStatus = rtnStatus,
+            RtnMessage = rtnMessage,
+            ErrorMessage = fault ?? errorMessage
+        };
+    }
+
     private async Task<SprStockCheckResult> ExecuteInputStyleAsync(
         SprWebServiceConfig config, string method, SprStockCheckQuery query, CancellationToken cancellationToken)
     {

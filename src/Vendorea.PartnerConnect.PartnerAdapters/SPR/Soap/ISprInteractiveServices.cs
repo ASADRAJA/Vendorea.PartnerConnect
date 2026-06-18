@@ -25,4 +25,10 @@ public interface ISprInteractiveServices
 
     /// <summary>Quick Check Plus: item + dealer price + availability at the (≤8) specified DCs.</summary>
     Task<SprStockCheckResult> QuickCheckPlusAsync(SprWebServiceConfig config, SprStockCheckQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>Find Freight Rates: all qualifying UPS/FedEx rates for a shipment.</summary>
+    Task<SprFreightResult> FindFreightRatesAsync(SprWebServiceConfig config, SprFreightQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>Lowest Freight Rate: the single cheapest qualifying rate for a shipment.</summary>
+    Task<SprFreightResult> LowestFreightRateAsync(SprWebServiceConfig config, SprFreightQuery query, CancellationToken cancellationToken = default);
 }
