@@ -226,6 +226,24 @@ public class SprConfiguration
     /// </summary>
     public int SoapTimeoutSeconds { get; set; } = 60;
 
+    // SPR Interactive Web Services (Stock Check / Dealer Stock Check / Quick Check Plus / Freight).
+    // These are SEPARATE from the XML order-exchange SOAP above: different endpoints
+    // (sprws.sprich.com/{Service}.php) and a different auth triple (GroupCode + UserID + Password,
+    // carried in the request body). The password lives in SprCredentials (encrypted).
+
+    /// <summary>Base URL for SPR interactive web services, e.g. "http://sprws.sprich.com/sprws/"
+    /// (test: "http://sprwstst.sprich.com/sprws/"). Service name + ".php" is appended per call.</summary>
+    public string? WebServicesBaseUrl { get; set; } = "http://sprws.sprich.com/sprws/";
+
+    /// <summary>Group code assigned to the dealer organization at SPR web-services registration.</summary>
+    public string? WebServicesGroupCode { get; set; }
+
+    /// <summary>SPR web-services user id (part of the GroupCode/UserID/Password auth triple).</summary>
+    public string? WebServicesUserId { get; set; }
+
+    /// <summary>Per-request timeout (seconds) for interactive web-service calls.</summary>
+    public int WebServicesTimeoutSeconds { get; set; } = 30;
+
     /// <summary>
     /// Deserializes configuration from JSON.
     /// </summary>
@@ -281,6 +299,12 @@ public class SprCredentials
     /// Passphrase for private key.
     /// </summary>
     public string? PrivateKeyPassphrase { get; set; }
+
+    /// <summary>
+    /// Password for the SPR interactive web services (Stock Check / freight). Part of the
+    /// GroupCode/UserID/Password auth triple; the other two are non-secret and live in SprConfiguration.
+    /// </summary>
+    public string? WebServicesPassword { get; set; }
 
     /// <summary>
     /// Deserializes credentials from JSON.
