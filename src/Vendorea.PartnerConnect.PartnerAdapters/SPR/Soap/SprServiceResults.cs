@@ -57,3 +57,26 @@ public class SprPingResult
     public string? Message { get; set; }
     public TimeSpan ResponseTime { get; set; }
 }
+
+/// <summary>Result of a freight-rate call (Find Freight Rates / Lowest Freight Rate).</summary>
+public class SprFreightResult
+{
+    public bool Success { get; set; }
+    public string? RtnStatus { get; set; }
+    public string? RtnMessage { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<SprFreightRate> Rates { get; set; } = new();
+}
+
+public class SprFreightRate
+{
+    public string? ShipFromDc { get; set; }
+    public string? Carrier { get; set; }
+    public string? CarrierDescription { get; set; }
+    public string? ShipVia { get; set; }
+    public decimal? Rate { get; set; }
+    public int? DeliveryDays { get; set; }
+    public int? NumberOfCartons { get; set; }
+    public string? ServiceLevel { get; set; }
+    public bool Residential { get; set; }
+}

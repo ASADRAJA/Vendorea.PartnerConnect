@@ -141,3 +141,77 @@ dealer's net price.
   "anonymous price."
 - A non-`success` `200` (e.g. unknown item) returns `success: false` with SPR's `message` — handle
   that distinctly from HTTP errors.
+
+---
+
+## Freight rates
+
+Two endpoints, same `X-Api-Key` org auth and the same active-SPR-connection gating as stock check.
+Both take the same request body; **all rates** returns every qualifying option, **lowest rate**
+returns at most one.
+
+### `POST /api/v1/org/freight/rates` &nbsp;·&nbsp; `POST /api/v1/org/freight/lowest-rate`
+
+#### Request body — `FreightRateRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `externalTenantId` | string | yes | The dealer/tenant's org-side id. |
+| `shipFromDc` | int | yes | Ship-from SPR DC number. |
+| `destinationState` | string | yes | Destination state/province code (e.g. `GA`). |
+| `destinationZip` | string | yes | Destination postal/ZIP code. |
+| `totalWeight` | decimal | yes | Total shipment weight (lbs). |
+| `serviceLevel` | string | (recommended) | Service-level code (`00`–`09`; e.g. `04`=Ground, `01`=Next Day Air). Required by SPR for lowest-rate. |
+| `carrier` | string | no | Carrier code (`UPS`, `FDX`, `PCS`, …). Omit for all carriers. |
+| `residential` | bool | no | Destination is residential. |
+
+```json
+{
+  "externalTenantId": "3",
+  "shipFromDc": 8,
+  "destinationState": "GA",
+  "destinationZip": "30341",
+  "totalWeight": 1.0,
+  "serviceLevel": "01",
+  "residential": false
+}
+```
+
+#### Response body — `FreightRateResponse`
+
+| Field | Type | Description |
+|---|---|---|
+| `success` | bool | `true` if SPR returned a result. |
+| `message` | string | Partner status/error message. |
+| `rates` | array | Rate options (below). Lowest-rate returns 0–1; rates returns 0–N. |
+
+**`rates[]` — `FreightRateOption`**
+
+| Field | Type | Description |
+|---|---|---|
+| `shipFromDc` | string | DC the rate ships from. |
+| `carrier` | string | Carrier code (e.g. `UPS`). |
+| `carrierDescription` | string | Human-readable service (e.g. `UPS NEXT DAY AIR SAVER`). |
+| `shipVia` | string | SPR ship-via code (e.g. `UP2S`, `FXGD`). |
+| `rate` | decimal | Freight rate. |
+| `deliveryDays` | int | Estimated delivery days. |
+| `numberOfCartons` | int | Estimated cartons. |
+| `serviceLevel` | string | Service-level code. |
+| `residential` | bool | Residential indicator. |
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "rates": [
+    { "shipFromDc": "08", "carrier": "UPS", "carrierDescription": "UPS NEXT DAY AIR SAVER",
+      "shipVia": "UP2S", "rate": 31.66, "deliveryDays": 1, "numberOfCartons": 1,
+      "serviceLevel": "5", "residential": false }
+  ]
+}
+```
+
+Status codes are the same as stock check (`200`/`400`/`401`/`403`/`503`).
+
+> **Not available:** Sprinter Stock Check and Zip-Code (drop-ship) Stock Check are not yet released
+> by SPR, so PC does not expose them.
