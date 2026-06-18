@@ -210,6 +210,41 @@ public class PublicTradingPartnersController : ControllerBase
         return Ok(dto);
     }
 
+    /// <summary>
+    /// Sets a partner's SPR interactive web-services credentials (base URL, GroupCode, UserId, and
+    /// the password — encrypted at rest). Merges into the existing transport config/credentials so
+    /// other settings (SFTP, EDI, SOAP order exchange) are preserved. The password is never returned.
+    /// </summary>
+    [HttpPut("{id:int}/webservice-credentials")]
+    public async Task<IActionResult> SetWebServiceCredentials(
+        int id, [FromBody] SetWebServiceCredentialsRequest request, CancellationToken cancellationToken)
+    {
+        var partner = await _partnerRepository.GetByIdAsync(id, cancellationToken);
+        if (partner is null)
+            return NotFound();
+
+        var config = SprConfiguration.FromJson(partner.TransportConfigJson);
+        config.WebServicesBaseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? config.WebServicesBaseUrl : request.BaseUrl.Trim();
+        config.WebServicesGroupCode = request.GroupCode?.Trim() ?? config.WebServicesGroupCode;
+        config.WebServicesUserId = request.UserId?.Trim() ?? config.WebServicesUserId;
+        if (request.TimeoutSeconds is > 0)
+            config.WebServicesTimeoutSeconds = request.TimeoutSeconds.Value;
+        partner.TransportConfigJson = config.ToJson();
+
+        // Only overwrite the password when a new one is supplied; encrypt the whole creds blob.
+        var credentials = SprCredentials.FromJson(_credentialProtector.Unprotect(partner.TransportCredentialsJson));
+        if (!string.IsNullOrEmpty(request.Password))
+            credentials.WebServicesPassword = request.Password;
+        partner.TransportCredentialsJson = _credentialProtector.Protect(
+            JsonSerializer.Serialize(credentials));
+
+        partner.UpdatedAt = DateTime.UtcNow;
+        await _partnerRepository.UpdateAsync(partner, cancellationToken);
+
+        _logger.LogInformation("Updated SPR web-service credentials for partner {PartnerId}", id);
+        return NoContent();
+    }
+
     private static List<string> ParseRequirements(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -239,6 +274,17 @@ public class PublicTradingPartnersController : ControllerBase
 public class UpdateConnectionRequirementsRequest
 {
     public List<string>? Requirements { get; set; }
+}
+
+/// <summary>Request to set a partner's SPR interactive web-services credentials.</summary>
+public class SetWebServiceCredentialsRequest
+{
+    public string? BaseUrl { get; set; }
+    public string? GroupCode { get; set; }
+    public string? UserId { get; set; }
+    /// <summary>Plaintext password; encrypted before storage. Omit to leave the existing one unchanged.</summary>
+    public string? Password { get; set; }
+    public int? TimeoutSeconds { get; set; }
 }
 
 /// <summary>

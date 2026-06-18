@@ -1,57 +1,28 @@
 namespace Vendorea.PartnerConnect.PartnerAdapters.SPR.Soap;
 
 /// <summary>
-/// Interface for SPR interactive SOAP services.
-/// Provides real-time queries for status, inventory, and tracking.
+/// Client for SPR's interactive (real-time, request/response) SOAP web services — live stock and
+/// price checks. Auth (GroupCode/UserID/Password) and the dealer's CustNumber come from the
+/// supplied <see cref="SprWebServiceConfig"/>. Order submission is NOT done here (that's the
+/// document pipeline); these are read-only lookups.
 ///
-/// NOTE: This is for interactive queries ONLY. Order submission and other
-/// transactional documents use the document pipeline, not SOAP.
+/// Stock-check family:
+///  - StockCheck: availability across all DCs (no pricing).
+///  - DealerStockCheck: availability across all DCs + dealer net price (needs CustNumber).
+///  - QuickCheckPlus: item + dealer price + availability at up to 8 specified DCs.
+/// Freight services (Find/Lowest Freight Rate) are added in a later phase.
 /// </summary>
 public interface ISprInteractiveServices
 {
-    /// <summary>
-    /// Gets the status of an order from SPR via real-time SOAP query.
-    /// </summary>
-    /// <param name="poNumber">The purchase order number.</param>
-    /// <param name="config">SPR SOAP configuration.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Current order status from SPR.</returns>
-    Task<SprOrderStatusResult> GetOrderStatusAsync(
-        string poNumber,
-        SprSoapConfig config,
-        CancellationToken cancellationToken = default);
+    /// <summary>Connectivity heartbeat (Action="?") — verifies endpoint + credentials.</summary>
+    Task<SprPingResult> PingAsync(SprWebServiceConfig config, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets real-time inventory availability for items via SOAP query.
-    /// </summary>
-    /// <param name="skus">List of SKUs to check.</param>
-    /// <param name="config">SPR SOAP configuration.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Inventory availability for the requested SKUs.</returns>
-    Task<SprInventoryResult> GetInventoryAsync(
-        IEnumerable<string> skus,
-        SprSoapConfig config,
-        CancellationToken cancellationToken = default);
+    /// <summary>Stock Check: availability at every stocking DC (no pricing).</summary>
+    Task<SprStockCheckResult> StockCheckAsync(SprWebServiceConfig config, SprStockCheckQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets tracking information for a shipment via SOAP query.
-    /// </summary>
-    /// <param name="trackingNumber">The tracking number to look up.</param>
-    /// <param name="config">SPR SOAP configuration.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Tracking details from SPR.</returns>
-    Task<SprTrackingResult> GetTrackingAsync(
-        string trackingNumber,
-        SprSoapConfig config,
-        CancellationToken cancellationToken = default);
+    /// <summary>Dealer Stock Check: Stock Check + dealer net price/discountable (uses CustNumber).</summary>
+    Task<SprStockCheckResult> DealerStockCheckAsync(SprWebServiceConfig config, SprStockCheckQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Tests the connection to SPR SOAP web services.
-    /// </summary>
-    /// <param name="config">SPR configuration to test.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Connection test result.</returns>
-    Task<SprConnectionTestResult> TestConnectionAsync(
-        SprSoapConfig config,
-        CancellationToken cancellationToken = default);
+    /// <summary>Quick Check Plus: item + dealer price + availability at the (≤8) specified DCs.</summary>
+    Task<SprStockCheckResult> QuickCheckPlusAsync(SprWebServiceConfig config, SprStockCheckQuery query, CancellationToken cancellationToken = default);
 }

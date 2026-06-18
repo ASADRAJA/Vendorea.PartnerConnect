@@ -48,6 +48,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduledJobService, ScheduledJobService>();
         services.AddScoped<IScheduledJobHandler, SprInventoryImportJobHandler>();
 
+        // SPR interactive web services (live stock/price check for M360 dealers)
+        services.AddScoped<ISprStockCheckService, SprStockCheckService>();
+
         // EDI Document Processing Services
         services.AddScoped<IEdiResponseService, EdiResponseService>();
         services.AddScoped<IEdiDocumentProcessingService, EdiDocumentProcessingService>();

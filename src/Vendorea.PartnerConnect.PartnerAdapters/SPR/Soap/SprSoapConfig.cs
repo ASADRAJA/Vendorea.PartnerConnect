@@ -1,43 +1,40 @@
 namespace Vendorea.PartnerConnect.PartnerAdapters.SPR.Soap;
 
 /// <summary>
-/// Configuration for SPR SOAP web service connections.
-/// Used for interactive services (status queries, inventory checks, tracking).
+/// Connection + auth for SPR's interactive web services (Stock Check / Dealer Stock Check /
+/// Quick Check Plus / freight). Auth is carried in the request body as a GroupCode/UserID/Password
+/// triple (not HTTP/SOAP-header auth). Built from the partner's transport config + decrypted creds.
 /// </summary>
-public class SprSoapConfig
+public class SprWebServiceConfig
 {
-    /// <summary>
-    /// SOAP endpoint URL for interactive services.
-    /// </summary>
-    public string EndpointUrl { get; set; } = string.Empty;
+    /// <summary>Base URL, e.g. "http://sprws.sprich.com/sprws/". Service name + ".php" is appended.</summary>
+    public string BaseUrl { get; set; } = "http://sprws.sprich.com/sprws/";
 
-    /// <summary>
-    /// Username for authentication.
-    /// </summary>
-    public string Username { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Password for authentication.
-    /// </summary>
+    public string GroupCode { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Enterprise code for SPR (buyer organization identifier).
-    /// </summary>
-    public string EnterpriseCode { get; set; } = string.Empty;
+    /// <summary>Dealer's SPR customer/account number. Required for dealer pricing; optional otherwise.</summary>
+    public string? CustNumber { get; set; }
 
-    /// <summary>
-    /// Buyer organization code.
-    /// </summary>
-    public string BuyerOrgCode { get; set; } = string.Empty;
+    public int TimeoutSeconds { get; set; } = 30;
+}
 
-    /// <summary>
-    /// Request timeout in seconds.
-    /// </summary>
-    public int TimeoutSeconds { get; set; } = 60;
+/// <summary>Query parameters for the stock-check family of services.</summary>
+public class SprStockCheckQuery
+{
+    /// <summary>SPR item number (Mfr Id + Stock Number).</summary>
+    public string ItemNumber { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Whether to use test/sandbox environment.
-    /// </summary>
-    public bool UseSandbox { get; set; }
+    /// <summary>Specific DC numbers to check (Quick Check Plus: 1–8). Empty = all DCs (Stock/Dealer).</summary>
+    public IReadOnlyList<int> DcNumbers { get; set; } = Array.Empty<int>();
+
+    /// <summary>Y: only return DCs with quantity available to sell (default). N: all DCs.</summary>
+    public bool AvailableOnly { get; set; } = true;
+
+    /// <summary>Convert minimum order qty to full packs.</summary>
+    public bool MinInFullPacks { get; set; }
+
+    /// <summary>A = sort alphabetically (default), N = numerically.</summary>
+    public char SortBy { get; set; } = 'A';
 }
