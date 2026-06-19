@@ -99,6 +99,13 @@ public record SubmitSupplierOrderRequest
     /// </summary>
     public CanonicalAddressInfo? BillTo { get; init; }
 
+    /// <summary>
+    /// Ship-from business details (the merchant/dealer business shown as the label's ship-from).
+    /// Optional - emitted as PersonInfoContact (business name + address). The dealer's logo, phone,
+    /// and website are NOT sent here; SPR pulls those from the dealer's stored label profile.
+    /// </summary>
+    public CanonicalAddressInfo? ShipFrom { get; init; }
+
     // ===== ORDER LINES =====
 
     /// <summary>
@@ -111,12 +118,31 @@ public record SubmitSupplierOrderRequest
 
     /// <summary>
     /// Order type indicating fulfillment model.
-    /// Values: "StockOrder" (default), "DropShip", "WrapAndLabel".
-    /// - StockOrder: Ship to dealer's location (standard replenishment)
-    /// - DropShip: Ship directly to end customer (no dealer branding)
-    /// - WrapAndLabel: Ship to end customer with dealer branding/packaging
+    /// Values: "WrapAndLabel" (default), "StockOrder", "DropShip".
+    /// - StockOrder: Ship to dealer's location (standard replenishment) → SPR order type 01
+    /// - WrapAndLabel: Ship with dealer branding/packaging and a customer-facing label → SPR order type 03
+    /// - DropShip: Ship directly to the end customer → SPR order type 04
+    /// When omitted, defaults to WrapAndLabel (SPR order type 03).
     /// </summary>
-    public string OrderType { get; init; } = "StockOrder";
+    public string OrderType { get; init; } = "WrapAndLabel";
+
+    /// <summary>
+    /// Ship-from distribution center code (the SPR DC the order ships from, e.g. "8").
+    /// Optional - emitted as Order/@ShipNode. When omitted, SPR selects the DC.
+    /// </summary>
+    public string? DistributionCenterCode { get; init; }
+
+    /// <summary>
+    /// Attention line for the shipping label (e.g. a contact or department name).
+    /// Optional - emitted as the SPR DealerAttn label field.
+    /// </summary>
+    public string? Attn { get; init; }
+
+    /// <summary>
+    /// Dealer-entered comment lines printed on the shipping label (up to 3 lines).
+    /// Optional - emitted as the SPR LabelCmmnts1..3 label fields (each truncated to 25 chars).
+    /// </summary>
+    public IReadOnlyList<string>? LabelComments { get; init; }
 
     /// <summary>
     /// Allow partial shipment of order (default: true).
@@ -183,6 +209,11 @@ public record CanonicalAddressInfo
     /// Secondary address line (suite, unit, etc.).
     /// </summary>
     public string? Address2 { get; init; }
+
+    /// <summary>
+    /// Third address line (rarely used; maps to SPR AddressLine3).
+    /// </summary>
+    public string? Address3 { get; init; }
 
     /// <summary>
     /// City name.

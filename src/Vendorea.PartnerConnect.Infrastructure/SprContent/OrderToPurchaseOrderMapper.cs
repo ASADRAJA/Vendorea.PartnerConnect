@@ -27,19 +27,40 @@ public static class OrderToPurchaseOrderMapper
             TradingPartnerCode = order.TradingPartner?.Code ?? string.Empty,
             PoNumber = order.PoNumber,
             CustomerAccountNumber = order.TenantPartnerAccount?.AccountNumber,
+            OrderType = string.IsNullOrWhiteSpace(order.OrderType) ? "WrapAndLabel" : order.OrderType,
+            DistributionCenterCode = order.DistributionCenterCode,
             OrderDate = order.OrderDate,
             RequestedShipDate = order.RequestedShipDate,
             RequestedDeliveryDate = order.RequestedDeliveryDate,
             ShippingMethod = order.ShippingMethod,
             Notes = order.Notes,
+            Attn = order.Attn,
+            LabelComments = MapLabelComments(order.LabelCommentsJson),
             Currency = ParseCurrency(order.Currency),
             ShipTo = MapAddress(order.ShipToJson),
+            ShipFrom = MapAddress(order.ShipFromJson),
             BillTo = MapAddress(order.BillToJson),
             Lines = order.Lines
                 .OrderBy(l => l.LineNumber)
                 .Select(MapLine)
                 .ToList()
         };
+    }
+
+    private static IReadOnlyList<string> MapLabelComments(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return Array.Empty<string>();
+
+        try
+        {
+            var comments = JsonSerializer.Deserialize<List<string>>(json, JsonOptions);
+            return comments?.Where(c => !string.IsNullOrWhiteSpace(c)).ToList() ?? (IReadOnlyList<string>)Array.Empty<string>();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
     }
 
     private static PurchaseOrderLine MapLine(OrderLine line)
@@ -54,7 +75,8 @@ public static class OrderToPurchaseOrderMapper
             Description = line.Description,
             QuantityOrdered = (int)line.Quantity,
             UnitOfMeasure = ParseUom(line.UnitOfMeasure),
-            UnitPrice = line.UnitPrice
+            UnitPrice = line.UnitPrice,
+            Notes = line.Notes
         };
     }
 
@@ -82,12 +104,15 @@ public static class OrderToPurchaseOrderMapper
             Name = !string.IsNullOrWhiteSpace(info.Company) ? info.Company : info.Name,
             AddressLine1 = info.Address1,
             AddressLine2 = info.Address2,
+            AddressLine3 = info.Address3,
             City = info.City,
             State = info.State,
             PostalCode = info.PostalCode,
             Country = info.Country,
             Phone = info.Phone,
-            Email = info.Email
+            Email = info.Email,
+            // Commercial is the inverse of residential; null when the caller didn't specify.
+            IsCommercialAddress = info.IsResidential.HasValue ? !info.IsResidential.Value : null
         };
     }
 

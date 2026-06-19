@@ -57,19 +57,35 @@ POST /api/integrations/orders
   "notes": "Deliver before noon",
   "externalReferences": "{\"departmentCode\": \"ACCT\"}",
 
-  // === SHIP-TO ADDRESS ===
+  // === LABEL FIELDS (customer-facing shipping label) ===
+  "attn": "Receiving Dept",                       // → SPR DealerAttn (max 25)
+  "labelComments": ["Handle with care", "Fragile"], // → SPR LabelCmmnts1..3 (max 25 each, up to 3)
+
+  // === SHIP-TO ADDRESS (the end customer) ===
   "shipTo": {
     "name": "John Smith",
     "company": "Acme Corp",
     "address1": "123 Main Street",
     "address2": "Suite 100",
+    "address3": "Building C",
     "city": "Chicago",
     "state": "IL",
     "postalCode": "60601",
     "country": "US",
     "phone": "312-555-1234",
     "email": "john@acme.com",
-    "isResidential": false
+    "isResidential": false                         // false → IsCommercialAddress=Y; true → N
+  },
+
+  // === SHIP-FROM ADDRESS (the merchant business shown on the label) ===
+  // Optional. Logo/phone/website are NOT sent — SPR uses the dealer's stored label profile.
+  "shipFrom": {
+    "company": "Acme Merchant LLC",
+    "address1": "500 Dealer Rd",
+    "city": "Atlanta",
+    "state": "GA",
+    "postalCode": "30339",
+    "country": "US"
   },
 
   // === BILL-TO ADDRESS (Optional) ===
@@ -93,6 +109,8 @@ POST /api/integrations/orders
   ],
 
   // === BUSINESS OPTIONS ===
+  "orderType": "WrapAndLabel",                     // "StockOrder"|"WrapAndLabel"|"DropShip"; default WrapAndLabel
+  "distributionCenterCode": "8",                   // ship-from SPR DC → Order/@ShipNode (optional)
   "allowPartialShipment": true,
   "allowBackorder": true,
   "allowSubstitutions": false,
@@ -219,6 +237,13 @@ POST /api/integrations/orders
 | `orderDate` | datetime | When the order was placed |
 | `notes` | string | Order-level notes/instructions |
 | `externalReferences` | string (JSON) | Additional external identifiers |
+| `orderType` | string | `StockOrder`\|`WrapAndLabel`\|`DropShip`. **Defaults to `WrapAndLabel`** (SPR 03) when omitted |
+| `distributionCenterCode` | string | Ship-from SPR DC code → `Order/@ShipNode` (SPR selects a DC when omitted) |
+| `attn` | string | Attention line for the label → SPR `DealerAttn` (max 25) |
+| `labelComments` | string[] | Up to 3 dealer comment lines for the label → SPR `LabelCmmnts1..3` (max 25 each) |
+| `shipFrom` | object | Merchant business shown as the label ship-from → `PersonInfoContact`. Logo/phone/website NOT sent (SPR uses the dealer profile) |
+| `shipTo.address3` | string | Third ship-to address line → `PersonInfoShipTo/@AddressLine3` |
+| `shipTo.isResidential` | bool | Residential vs commercial; maps (inverted) to `PersonInfoShipTo/@IsCommercialAddress` |
 | `billTo` | object | Bill-to address (defaults to ship-to) |
 | `requestedShipDate` | datetime | Preferred ship date |
 | `requestedDeliveryDate` | datetime | Preferred delivery date |
@@ -228,7 +253,7 @@ POST /api/integrations/orders
 | `lines[].upc` | string | UPC/EAN barcode |
 | `lines[].unitPrice` | decimal | Unit price (may use partner catalog if not provided) |
 | `lines[].description` | string | Item description |
-| `lines[].notes` | string | Line-level notes |
+| `lines[].notes` | string | Line-level notes → SPR line-level `Note/@NoteText` |
 | `lines[].externalLineReference` | string | External line identifier |
 
 ---
@@ -249,16 +274,24 @@ When an order is accepted for SPR, PartnerConnect internally:
 
 | Canonical Field | SPR XML Element/Attribute |
 |-----------------|---------------------------|
-| `poNumber` | `Order/@OrderNo` |
-| `orderDate` | `Order/@OrderDate` |
-| `shipTo.name` | `PersonInfoShipTo/@Company` |
+| `poNumber` | `Order/@CustomerPONo` (SPR assigns its own `OrderNo` on the POACK) |
+| `orderType` | `Order/@OrderType` — `StockOrder`→`01`, `WrapAndLabel`→`03`, `DropShip`→`04`; default `03` |
+| `distributionCenterCode` | `Order/@ShipNode` |
+| `shipTo.name`/`company` | `PersonInfoShipTo/@FirstName` |
 | `shipTo.address1` | `PersonInfoShipTo/@AddressLine1` |
+| `shipTo.address2` | `PersonInfoShipTo/@AddressLine2` |
+| `shipTo.address3` | `PersonInfoShipTo/@AddressLine3` |
 | `shipTo.city` | `PersonInfoShipTo/@City` |
 | `shipTo.state` | `PersonInfoShipTo/@State` |
 | `shipTo.postalCode` | `PersonInfoShipTo/@ZipCode` |
-| `lines[].vendorSku` | `OrderLine/Item/@ItemID` |
+| `shipTo.isResidential` | `PersonInfoShipTo/@IsCommercialAddress` (inverted: residential→`N`, commercial→`Y`) |
+| `shipFrom.company`/address | `PersonInfoContact/@FirstName` + address attributes |
+| `attn` | `EXTNSprOrderHeader/@DealerAttn` (+ `@AttnDesc="ATTN"`) |
+| `labelComments[0..2]` | `EXTNSprOrderHeader/@LabelCmmnts1..3` |
+| `lines[].vendorSku` | `OrderLine/Item/@CustomerItem` |
 | `lines[].quantity` | `OrderLineTranQuantity/@OrderedQty` |
 | `lines[].unitOfMeasure` | `OrderLineTranQuantity/@TransactionalUOM` |
+| `lines[].notes` | `OrderLine/Notes/Note/@NoteText` |
 
 ### Validation Before Document Generation
 
