@@ -65,12 +65,17 @@ public class Order
 
     /// <summary>
     /// Order type indicating fulfillment model.
-    /// Values: "StockOrder" (default), "DropShip", "WrapAndLabel".
-    /// - StockOrder: Ship to dealer's location (standard replenishment)
-    /// - DropShip: Ship directly to end customer (no dealer branding)
-    /// - WrapAndLabel: Ship to end customer with dealer branding/packaging
+    /// Values: "WrapAndLabel" (default), "StockOrder", "DropShip".
+    /// - StockOrder: Ship to dealer's location (standard replenishment) → SPR order type 01
+    /// - WrapAndLabel: Ship with dealer branding and a customer-facing label → SPR order type 03
+    /// - DropShip: Ship directly to the end customer → SPR order type 04
     /// </summary>
-    public string OrderType { get; set; } = "StockOrder";
+    public string OrderType { get; set; } = "WrapAndLabel";
+
+    /// <summary>
+    /// Ship-from distribution center code (SPR DC). Emitted as Order/@ShipNode.
+    /// </summary>
+    public string? DistributionCenterCode { get; set; }
 
     /// <summary>
     /// Allow partial shipment of order.
@@ -128,6 +133,22 @@ public class Order
     /// Bill-to address as JSON.
     /// </summary>
     public string? BillToJson { get; set; }
+
+    /// <summary>
+    /// Ship-from business (merchant/dealer) address as JSON. Shown as the label's ship-from
+    /// (PersonInfoContact). Logo/phone/website are not stored here — SPR uses the dealer profile.
+    /// </summary>
+    public string? ShipFromJson { get; set; }
+
+    /// <summary>
+    /// Attention line for the shipping label (SPR DealerAttn).
+    /// </summary>
+    public string? Attn { get; set; }
+
+    /// <summary>
+    /// Dealer-entered label comment lines as a JSON string array (SPR LabelCmmnts1..3).
+    /// </summary>
+    public string? LabelCommentsJson { get; set; }
 
     /// <summary>
     /// Shipping method code.

@@ -316,7 +316,8 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             ExternalReferencesJson = request.ExternalReferences,
 
             // Business options
-            OrderType = request.OrderType,
+            OrderType = string.IsNullOrWhiteSpace(request.OrderType) ? "WrapAndLabel" : request.OrderType,
+            DistributionCenterCode = request.DistributionCenterCode,
             AllowPartialShipment = request.AllowPartialShipment,
             AllowBackorder = request.AllowBackorder,
             AllowSubstitutions = request.AllowSubstitutions,
@@ -330,9 +331,16 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
             ShippingMethod = request.ShippingMethod,
             Notes = request.Notes,
 
+            // Label fields (customer-facing shipping label)
+            Attn = request.Attn,
+            LabelCommentsJson = request.LabelComments is { Count: > 0 }
+                ? JsonSerializer.Serialize(request.LabelComments)
+                : null,
+
             // Addresses as JSON
             ShipToJson = request.ShipTo != null ? JsonSerializer.Serialize(request.ShipTo) : null,
             BillToJson = request.BillTo != null ? JsonSerializer.Serialize(request.BillTo) : null,
+            ShipFromJson = request.ShipFrom != null ? JsonSerializer.Serialize(request.ShipFrom) : null,
 
             // Status
             Status = OrderStatus.Submitted,

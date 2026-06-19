@@ -63,6 +63,140 @@ public class SprEzpo4GeneratorTests
     }
 
     [Fact]
+    public void Generate_DefaultsOrderTypeTo03_WhenOrderTypeAbsent()
+    {
+        // ValidOrder() leaves OrderType at the canonical default (WrapAndLabel).
+        var result = CreateGenerator().Generate(ValidOrder(), "SPR", "9999999.99", "SPR");
+
+        result.Success.Should().BeTrue();
+        XDocument.Parse(result.XmlContent!).Root!.Attribute("OrderType")!.Value.Should().Be("03");
+    }
+
+    [Theory]
+    [InlineData("StockOrder", "01")]
+    [InlineData("WrapAndLabel", "03")]
+    [InlineData("DropShip", "04")]
+    [InlineData("something-unknown", "03")]
+    public void Generate_MapsOrderTypeToSprCode(string canonical, string expected)
+    {
+        var order = ValidOrder() with { OrderType = canonical };
+
+        var result = CreateGenerator().Generate(order, "SPR", "9999999.99", "SPR");
+
+        result.Success.Should().BeTrue();
+        XDocument.Parse(result.XmlContent!).Root!.Attribute("OrderType")!.Value.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Generate_EmitsShipNode_ShipToExtras_ShipFrom_LineNotes_AndLabelFields()
+    {
+        var order = ValidOrder() with
+        {
+            OrderType = "WrapAndLabel",
+            DistributionCenterCode = "8",
+            Attn = "Receiving Dept",
+            LabelComments = new List<string> { "Handle with care", "Fragile", "Gift" },
+            ShipTo = new Address
+            {
+                Name = "Jane Customer",
+                AddressLine1 = "1 Consumer Way",
+                AddressLine3 = "Building C",
+                City = "Reno",
+                State = "NV",
+                PostalCode = "89501",
+                IsCommercialAddress = false
+            },
+            ShipFrom = new Address
+            {
+                Name = "ACME Merchant LLC",
+                AddressLine1 = "500 Dealer Rd",
+                City = "Atlanta",
+                State = "GA",
+                PostalCode = "30339"
+            },
+            Lines = new List<PurchaseOrderLine>
+            {
+                new() { LineNumber = 1, PartnerSku = "TCO27900", QuantityOrdered = 5, UnitOfMeasure = UnitOfMeasure.Each, UnitPrice = 78.21m, Notes = "Leave at dock" }
+            }
+        };
+
+        var result = CreateGenerator().Generate(order, "SPR", "9999999.99", "SPR");
+
+        result.Success.Should().BeTrue();
+        var doc = XDocument.Parse(result.XmlContent!);
+        var root = doc.Root!;
+
+        root.Attribute("ShipNode")!.Value.Should().Be("8");
+
+        var shipTo = root.Element("PersonInfoShipTo")!;
+        shipTo.Attribute("AddressLine3")!.Value.Should().Be("Building C");
+        shipTo.Attribute("IsCommercialAddress")!.Value.Should().Be("N");
+
+        var contact = root.Element("PersonInfoContact")!;
+        contact.Attribute("FirstName")!.Value.Should().Be("ACME Merchant LLC");
+        contact.Attribute("ZipCode")!.Value.Should().Be("30339");
+
+        var lineNote = root.Element("OrderLines")!.Element("OrderLine")!
+            .Element("Notes")!.Element("Note")!;
+        lineNote.Attribute("NoteText")!.Value.Should().Be("Leave at dock");
+
+        var header = root.Element("Extn")!.Element("EXTNSprOrderHeaderList")!.Element("EXTNSprOrderHeader")!;
+        header.Attribute("DealerAttn")!.Value.Should().Be("Receiving Dept");
+        header.Attribute("LabelCmmnts1")!.Value.Should().Be("Handle with care");
+        header.Attribute("LabelCmmnts2")!.Value.Should().Be("Fragile");
+        header.Attribute("LabelCmmnts3")!.Value.Should().Be("Gift");
+        header.Attribute("DealerComp")!.Value.Should().Be("Y");
+    }
+
+    [Fact]
+    public async Task Generate_WithAllNewFields_ValidatesAgainstRealEzpo4Xsd()
+    {
+        var order = ValidOrder() with
+        {
+            OrderType = "DropShip",
+            DistributionCenterCode = "16",
+            Attn = "Front Desk",
+            LabelComments = new List<string> { "Comment one", "Comment two" },
+            ShipFrom = new Address
+            {
+                Name = "ACME Merchant LLC",
+                AddressLine1 = "500 Dealer Rd",
+                City = "Atlanta",
+                State = "GA",
+                PostalCode = "30339"
+            },
+            ShipTo = new Address
+            {
+                Name = "Jane Customer",
+                AddressLine1 = "1 Consumer Way",
+                AddressLine3 = "Apt 9",
+                City = "Reno",
+                State = "NV",
+                PostalCode = "89501",
+                IsCommercialAddress = true
+            },
+            Lines = new List<PurchaseOrderLine>
+            {
+                new() { LineNumber = 1, PartnerSku = "TCO27900", QuantityOrdered = 5, UnitOfMeasure = UnitOfMeasure.Each, UnitPrice = 78.21m, Notes = "Rush" }
+            }
+        };
+
+        var result = CreateGenerator().Generate(order, "SPR", "9999999.99", "SPR");
+        result.Success.Should().BeTrue();
+
+        var schemaProvider = new XsdSchemaProvider(
+            Options.Create(new XsdSchemaProviderOptions()),
+            NullLogger<XsdSchemaProvider>.Instance);
+        var validator = new XsdValidationService(schemaProvider, NullLogger<XsdValidationService>.Instance);
+
+        var validation = await validator.ValidateAsync(result.XmlContent!, "EZPO4", "SPR");
+
+        validation.IsValid.Should().BeTrue(
+            because: "EZPO4 with all new fields must still conform to the real SPR schema: "
+                + string.Join("; ", validation.Errors.Select(e => e.Message)));
+    }
+
+    [Fact]
     public async Task Generate_OutputValidatesAgainstRealEzpo4Xsd()
     {
         var result = CreateGenerator().Generate(ValidOrder(), "SPR", "9999999.99", "SPR");

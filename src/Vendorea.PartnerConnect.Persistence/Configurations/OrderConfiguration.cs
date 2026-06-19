@@ -34,7 +34,17 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         builder.Property(e => e.OrderType)
             .HasMaxLength(20)
-            .HasDefaultValue("StockOrder");
+            .HasDefaultValue("WrapAndLabel");
+
+        builder.Property(e => e.DistributionCenterCode)
+            .HasMaxLength(24);
+
+        builder.Property(e => e.Attn)
+            .HasMaxLength(100);
+
+        // Ship-from address and label comments are stored as serialized JSON blobs.
+        builder.Property(e => e.ShipFromJson);
+        builder.Property(e => e.LabelCommentsJson);
 
         builder.Property(e => e.Status)
             .HasConversion<string>()

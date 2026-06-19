@@ -21,8 +21,11 @@ namespace Vendorea.PartnerConnect.PartnerAdapters.SPR.Xml;
 ///   * within each OrderLine the sequence is:
 ///     OrderLineTranQuantity, Item, Instructions?, LinePriceInfo, Notes?, Extn?.
 ///
-/// This is intentionally scoped to a correct happy-path EZPO4; optional SPR routing/label
-/// attributes (and the DealerAttn correlation field) are deferred to a later pass.
+/// Order-driven fields wired from the placement API: Order/@OrderType (01/03/04, default 03),
+/// Order/@ShipNode (DC), ship-to AddressLine3 + IsCommercialAddress, ship-from PersonInfoContact
+/// (the merchant business), line-level Notes, and the EXTNSprOrderHeader label fields
+/// (DealerAttn + LabelCmmnts1..3). Other SPR routing/label attributes remain at their schema
+/// defaults — the dealer's logo, phone, and website come from the SPR label profile, not EDI.
 /// </summary>
 public class SprEzpo4Generator : ISprEzpo4Generator
 {
@@ -41,6 +44,17 @@ public class SprEzpo4Generator : ISprEzpo4Generator
     private const int MaxCustomerItem = 40;
     private const int MaxBuyerItemNo = 25;
     private const int MaxNoteText = 2000;
+    private const int MaxShipNode = 24;
+    private const int MaxContactName = 64;
+    private const int MaxDealerAttn = 25;
+    private const int MaxAttnDesc = 5;
+    private const int MaxLabelComment = 25;
+
+    // SPR Sales Order Types we support (Table 2). 05/06 (vendor drop-ship/cross-dock) and 02 (2PL)
+    // are intentionally not allowed for outbound EZPO4 generation.
+    private const string OrderTypeStock = "01";
+    private const string OrderTypeWrapAndLabel = "03";
+    private const string OrderTypeDropShip = "04";
 
     private readonly ILogger<SprEzpo4Generator> _logger;
 
@@ -135,20 +149,30 @@ public class SprEzpo4Generator : ISprEzpo4Generator
 
     private string GenerateOrderXml(PurchaseOrder order, string enterpriseCode, string buyerOrgCode)
     {
-        // Order header attributes. Optional SPR routing flags are left to their schema
-        // defaults; only what we can populate from the canonical model is emitted.
+        // Order header attributes. OrderType + ShipNode are order-driven; remaining SPR routing
+        // flags are left to their schema defaults.
         var orderElement = new XElement("Order",
             new XAttribute("EnterpriseCode", string.IsNullOrWhiteSpace(enterpriseCode) ? "SPR" : enterpriseCode),
             new XAttribute("BuyerOrganizationCode", buyerOrgCode),
+            new XAttribute("OrderType", MapSprOrderType(order.OrderType)),
             new XAttribute("CustomerPONo", Truncate(order.PoNumber, MaxCustomerPoNo)));
 
-        // 1. PersonInfoShipTo
+        // Ship-from DC (Order/@ShipNode). When absent SPR selects the DC.
+        if (!string.IsNullOrWhiteSpace(order.DistributionCenterCode))
+            orderElement.Add(new XAttribute("ShipNode", Truncate(order.DistributionCenterCode!, MaxShipNode)));
+
+        // 1. PersonInfoShipTo (the end customer)
         if (order.ShipTo != null)
         {
             orderElement.Add(CreateShipToElement(order.ShipTo));
         }
 
-        // 2. (PersonInfoContact intentionally omitted — it is the ShipFrom node and optional.)
+        // 2. PersonInfoContact (the merchant business — the label's ship-from)
+        var contactElement = CreatePersonInfoContactElement(order.ShipFrom);
+        if (contactElement != null)
+        {
+            orderElement.Add(contactElement);
+        }
 
         // 3. OrderLines (required)
         var orderLinesElement = new XElement("OrderLines");
@@ -169,9 +193,30 @@ public class SprEzpo4Generator : ISprEzpo4Generator
                     new XAttribute("NoteText", Truncate(order.Notes!, MaxNoteText)))));
         }
 
-        // 6. (Header Extn / EXTNSprOrderHeader omitted — DealerAttn correlation deferred.)
+        // 6. Header Extn / EXTNSprOrderHeader (label fields: DealerAttn + LabelCmmnts1..3)
+        var headerExtn = CreateHeaderExtnElement(order);
+        if (headerExtn != null)
+        {
+            orderElement.Add(headerExtn);
+        }
 
         return SerializeDocument(orderElement);
+    }
+
+    /// <summary>
+    /// Maps the canonical fulfillment model to an SPR Sales Order Type code. Only 01/03/04 are
+    /// allowed; anything unrecognized (or empty) defaults to 03 (wrap-and-label).
+    /// </summary>
+    private static string MapSprOrderType(string? orderType)
+    {
+        var normalized = orderType?.Trim().Replace(" ", string.Empty).ToUpperInvariant();
+        return normalized switch
+        {
+            "STOCKORDER" or "STOCK" or "01" => OrderTypeStock,
+            "DROPSHIP" or "04" => OrderTypeDropShip,
+            "WRAPANDLABEL" or "WRAPNLABEL" or "03" => OrderTypeWrapAndLabel,
+            _ => OrderTypeWrapAndLabel
+        };
     }
 
     private static XElement CreateShipToElement(Address address)
@@ -186,13 +231,94 @@ public class SprEzpo4Generator : ISprEzpo4Generator
         if (!string.IsNullOrWhiteSpace(address.AddressLine2))
             element.Add(new XAttribute("AddressLine2", Truncate(address.AddressLine2!, MaxAddressLine)));
 
+        if (!string.IsNullOrWhiteSpace(address.AddressLine3))
+            element.Add(new XAttribute("AddressLine3", Truncate(address.AddressLine3!, MaxAddressLine)));
+
         if (!string.IsNullOrWhiteSpace(address.Country))
             element.Add(new XAttribute("Country", Truncate(address.Country!, MaxCountry)));
+
+        // IsCommercialAddress: Y = commercial, N = residential (affects freight). Omitted when
+        // the order doesn't specify, letting SPR apply its schema default (N).
+        if (address.IsCommercialAddress.HasValue)
+            element.Add(new XAttribute("IsCommercialAddress", address.IsCommercialAddress.Value ? "Y" : "N"));
 
         if (!string.IsNullOrWhiteSpace(address.Email))
             element.Add(new XAttribute("EMailID", Truncate(address.Email!, MaxEmail)));
 
         return element;
+    }
+
+    /// <summary>
+    /// Builds PersonInfoContact (the ship-from / merchant business shown on the label). All
+    /// attributes are optional in the schema; returns null when there is no business address to
+    /// emit. The dealer's logo/phone/website are NOT sent here — SPR uses the dealer label profile.
+    /// </summary>
+    private static XElement? CreatePersonInfoContactElement(Address? address)
+    {
+        if (address == null)
+            return null;
+
+        var element = new XElement("PersonInfoContact");
+
+        if (!string.IsNullOrWhiteSpace(address.Name))
+            element.Add(new XAttribute("FirstName", Truncate(address.Name!, MaxContactName)));
+        if (!string.IsNullOrWhiteSpace(address.AddressLine1))
+            element.Add(new XAttribute("AddressLine1", Truncate(address.AddressLine1!, MaxAddressLine)));
+        if (!string.IsNullOrWhiteSpace(address.AddressLine2))
+            element.Add(new XAttribute("AddressLine2", Truncate(address.AddressLine2!, MaxAddressLine)));
+        if (!string.IsNullOrWhiteSpace(address.AddressLine3))
+            element.Add(new XAttribute("AddressLine3", Truncate(address.AddressLine3!, MaxAddressLine)));
+        if (!string.IsNullOrWhiteSpace(address.City))
+            element.Add(new XAttribute("City", Truncate(address.City!, MaxCity)));
+        if (!string.IsNullOrWhiteSpace(address.State))
+            element.Add(new XAttribute("State", Truncate(address.State!, MaxState)));
+        if (!string.IsNullOrWhiteSpace(address.PostalCode))
+            element.Add(new XAttribute("ZipCode", Truncate(address.PostalCode!, MaxZip)));
+        if (!string.IsNullOrWhiteSpace(address.Country))
+            element.Add(new XAttribute("Country", Truncate(address.Country!, MaxCountry)));
+        if (!string.IsNullOrWhiteSpace(address.Email))
+            element.Add(new XAttribute("EMailID", Truncate(address.Email!, MaxEmail)));
+
+        // Nothing meaningful to send → omit the element entirely.
+        return element.HasAttributes ? element : null;
+    }
+
+    /// <summary>
+    /// Builds the header extension (EXTNSprOrderHeader) carrying the customer-facing label fields:
+    /// DealerAttn (ATTN) and LabelCmmnts1..3 (dealer-entered comments). DealerComp is a 1-char flag
+    /// set to "Y" when a ship-from business is supplied (signals SPR to render the dealer company).
+    /// Returns null when there is nothing to emit.
+    /// </summary>
+    private static XElement? CreateHeaderExtnElement(PurchaseOrder order)
+    {
+        var header = new XElement("EXTNSprOrderHeader");
+
+        if (!string.IsNullOrWhiteSpace(order.Attn))
+        {
+            header.Add(new XAttribute("DealerAttn", Truncate(order.Attn!, MaxDealerAttn)));
+            header.Add(new XAttribute("AttnDesc", Truncate("ATTN", MaxAttnDesc)));
+        }
+
+        var comments = order.LabelComments?
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Take(3)
+            .ToList() ?? new List<string>();
+        for (var i = 0; i < comments.Count; i++)
+        {
+            header.Add(new XAttribute($"LabelCmmnts{i + 1}", Truncate(comments[i], MaxLabelComment)));
+        }
+
+        if (order.ShipFrom != null && !string.IsNullOrWhiteSpace(order.ShipFrom.Name))
+        {
+            // DealerComp is a 1-char flag (not the company name); "Y" = show dealer company on label.
+            header.Add(new XAttribute("DealerComp", "Y"));
+        }
+
+        if (!header.HasAttributes)
+            return null;
+
+        return new XElement("Extn",
+            new XElement("EXTNSprOrderHeaderList", header));
     }
 
     private static XElement CreateOrderLineElement(PurchaseOrderLine line)
@@ -211,6 +337,15 @@ public class SprEzpo4Generator : ISprEzpo4Generator
         // LinePriceInfo/@UnitPrice is required by the schema (xs:decimal, up to 6 fraction digits).
         lineElement.Add(new XElement("LinePriceInfo",
             new XAttribute("UnitPrice", FormatDecimal(line.UnitPrice))));
+
+        // Optional line-level Notes (from the order API), after LinePriceInfo and before Extn.
+        if (!string.IsNullOrWhiteSpace(line.Notes))
+        {
+            lineElement.Add(new XElement("Notes",
+                new XElement("Note",
+                    new XAttribute("ContactType", "C"),
+                    new XAttribute("NoteText", Truncate(line.Notes!, MaxNoteText)))));
+        }
 
         // Optional line extension: carry the dealer SKU so it survives round-trips.
         if (!string.IsNullOrWhiteSpace(line.DealerSku))
