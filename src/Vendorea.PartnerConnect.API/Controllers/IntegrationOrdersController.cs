@@ -1,28 +1,38 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vendorea.PartnerConnect.Api.Authorization;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.Integration;
+using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Api.Controllers;
 
 /// <summary>
-/// Integration API for platform-to-platform order submission.
-/// Used by Merchant360 and other authorized platforms to submit supplier orders.
-/// This is the canonical intake endpoint - no partner-specific details exposed.
+/// Integration API for platform-to-platform order submission and tracking.
+/// Used by Merchant360 and other authorized platforms. This is the canonical, partner-agnostic
+/// order surface — submit, look up, list, and cancel — and the only order API M360 should use.
+/// Requires an API key (org key for Merchant360); callers may only act within their own org.
 /// </summary>
 [ApiController]
 [Route("api/integrations/orders")]
 [Produces("application/json")]
+[Authorize]
 public class IntegrationOrdersController : ControllerBase
 {
     private readonly ISupplierOrderIntakeService _intakeService;
+    private readonly IOrderRepository _orderRepository;
+    private readonly IOrderService _orderService;
     private readonly ILogger<IntegrationOrdersController> _logger;
 
     public IntegrationOrdersController(
         ISupplierOrderIntakeService intakeService,
+        IOrderRepository orderRepository,
+        IOrderService orderService,
         ILogger<IntegrationOrdersController> logger)
     {
         _intakeService = intakeService;
+        _orderRepository = orderRepository;
+        _orderService = orderService;
         _logger = logger;
     }
 
@@ -30,32 +40,40 @@ public class IntegrationOrdersController : ControllerBase
     /// Submits a canonical supplier order for processing.
     /// </summary>
     /// <remarks>
-    /// This is the primary endpoint for platform integrations (e.g., Merchant360) to submit orders.
-    ///
-    /// The request contains:
-    /// - Routing context (organization, merchant, partner connection)
-    /// - Canonical business data (PO number, addresses, lines)
-    /// - Business options (partial shipment, backorder preferences)
-    ///
-    /// Partner-specific details (XML formats, EDI codes, SFTP paths) are NOT required.
-    /// PartnerConnect resolves these internally from partner connection configuration.
-    ///
-    /// Idempotency: Duplicate submissions with the same idempotencyKey return the existing order.
-    /// Conflict: Same idempotencyKey with different content returns 409 Conflict.
+    /// Routing context (organization, merchant, partner connection), canonical business data
+    /// (PO number, addresses, lines), and business options. Partner-specific details (XML/EDI
+    /// formats, SFTP paths) are NOT required — PartnerConnect resolves those internally.
+    /// Idempotent on <c>idempotencyKey</c>.
     /// </remarks>
-    /// <param name="request">The canonical order submission request</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Order acceptance response with tracking IDs</returns>
     [HttpPost]
-    [AllowAnonymous] // TODO: Require service-to-service authentication in production
+    [RequireScope(ApiScopes.OrdersWrite)]
     [ProducesResponseType(typeof(SubmitSupplierOrderResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(SubmitSupplierOrderResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(SubmitSupplierOrderResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(SubmitSupplierOrderResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SubmitOrder(
         [FromBody] SubmitSupplierOrderRequest request,
         CancellationToken cancellationToken)
     {
+        // Anti-impersonation: an org-authenticated caller may only submit for its own organization.
+        var callerOrgId = User.GetOrganizationId();
+        if (callerOrgId is int orgId)
+        {
+            if (request.OrganizationId > 0 && request.OrganizationId != orgId)
+                return Forbid();
+
+            var callerOrgCode = User.FindFirst("org_code")?.Value;
+            if (!string.IsNullOrWhiteSpace(request.OrganizationCode)
+                && !string.IsNullOrWhiteSpace(callerOrgCode)
+                && !string.Equals(request.OrganizationCode, callerOrgCode, StringComparison.OrdinalIgnoreCase))
+                return Forbid();
+
+            // Stamp the authenticated org so the body can't route the order elsewhere.
+            if (request.OrganizationId <= 0)
+                request = request with { OrganizationId = orgId };
+        }
+
         _logger.LogInformation(
             "Received order submission from {SourcePlatform}, ExternalOrderId={ExternalOrderId}, CorrelationId={CorrelationId}",
             request.SourcePlatform, request.ExternalOrderId, request.CorrelationId);
@@ -65,43 +83,20 @@ public class IntegrationOrdersController : ControllerBase
         if (!result.Accepted)
         {
             if (result.Status == "Conflict")
-            {
-                _logger.LogWarning(
-                    "Order submission conflict for IdempotencyKey={IdempotencyKey}",
-                    request.IdempotencyKey);
                 return Conflict(result);
-            }
 
-            _logger.LogWarning(
-                "Order submission validation failed: {Errors}",
-                string.Join(", ", result.Errors.Select(e => $"{e.Code}: {e.Message}")));
             return BadRequest(result);
         }
 
         if (result.IsDuplicate)
-        {
-            _logger.LogInformation(
-                "Returning existing order for duplicate submission, OrderId={OrderId}",
-                result.PartnerConnectOrderId);
             return Ok(result);
-        }
-
-        _logger.LogInformation(
-            "Order accepted, OrderId={OrderId}, CorrelationId={CorrelationId}",
-            result.PartnerConnectOrderId, result.CorrelationId);
 
         return Accepted(result);
     }
 
-    /// <summary>
-    /// Gets an order by external order ID from the source platform.
-    /// </summary>
-    /// <param name="sourcePlatform">The source platform identifier (e.g., "Merchant360")</param>
-    /// <param name="externalOrderId">The external order ID from the source platform</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Order details if found</returns>
+    /// <summary>Looks up an order by the source platform's external order id.</summary>
     [HttpGet]
-    [AllowAnonymous] // TODO: Require authentication in production
+    [RequireScope(ApiScopes.OrdersRead)]
     [ProducesResponseType(typeof(IntegrationOrderDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetOrderByExternalId(
@@ -109,73 +104,140 @@ public class IntegrationOrdersController : ControllerBase
         [FromQuery] string externalOrderId,
         CancellationToken cancellationToken)
     {
-        var order = await _intakeService.GetOrderByExternalIdAsync(
-            sourcePlatform, externalOrderId, cancellationToken);
-
-        if (order == null)
-        {
+        var order = await _intakeService.GetOrderByExternalIdAsync(sourcePlatform, externalOrderId, cancellationToken);
+        if (order == null || !CallerOwns(order))
             return NotFound(new { Message = "Order not found" });
-        }
+
+        // Re-load with full details (lines) for the response.
+        var detailed = await _orderRepository.GetByIdWithFullDetailsAsync(order.Id, cancellationToken) ?? order;
+        return Ok(MapToDetailDto(detailed));
+    }
+
+    /// <summary>Gets an order by its PartnerConnect order id.</summary>
+    [HttpGet("{id:int}")]
+    [RequireScope(ApiScopes.OrdersRead)]
+    [ProducesResponseType(typeof(IntegrationOrderDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetOrderById(int id, CancellationToken cancellationToken)
+    {
+        var order = await _orderRepository.GetByIdWithFullDetailsAsync(id, cancellationToken);
+        if (order == null || !CallerOwns(order))
+            return NotFound(new { Message = "Order not found" });
 
         return Ok(MapToDetailDto(order));
     }
 
-    /// <summary>
-    /// Gets an order by PartnerConnect order ID.
-    /// </summary>
-    /// <param name="id">The PartnerConnect order ID</param>
-    /// <param name="orderService">The order service (injected)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Order details if found</returns>
-    [HttpGet("{id:int}")]
-    [AllowAnonymous] // TODO: Require authentication in production
+    /// <summary>Lists the caller org's orders (most recent first), optionally filtered by status.</summary>
+    [HttpGet("list")]
+    [RequireScope(ApiScopes.OrdersRead)]
+    [ProducesResponseType(typeof(IReadOnlyList<IntegrationOrderDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ListOrders(
+        [FromQuery] string? status,
+        [FromQuery] int? organizationId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        // Org callers are pinned to their own org; admin/dealer callers must name an org.
+        var targetOrg = User.GetOrganizationId() ?? organizationId ?? 0;
+        if (targetOrg <= 0)
+            return BadRequest(new { Message = "organizationId is required" });
+
+        OrderStatus? statusFilter = null;
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<OrderStatus>(status, true, out var parsed))
+            statusFilter = parsed;
+
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        var offset = Math.Max(0, (Math.Max(1, page) - 1) * pageSize);
+
+        var orders = await _orderRepository.GetByOrganizationIdAsync(
+            targetOrg, statusFilter, pageSize, offset, cancellationToken);
+
+        return Ok(orders.Select(MapToDetailDto).ToList());
+    }
+
+    /// <summary>Cancels an order the caller owns.</summary>
+    [HttpPost("{id:int}/cancel")]
+    [RequireScope(ApiScopes.OrdersWrite)]
     [ProducesResponseType(typeof(IntegrationOrderDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetOrderById(
+    public async Task<IActionResult> CancelOrder(
         int id,
-        [FromServices] IOrderService orderService,
+        [FromBody] CancelIntegrationOrderRequest? request,
         CancellationToken cancellationToken)
     {
-        // Note: We need the tenantId for the existing service - this is a limitation
-        // For integration API, we should probably add a method that doesn't require tenantId
-        // For now, get without tenant filter
-        var order = await _intakeService.GetOrderByExternalIdAsync(
-            string.Empty, string.Empty, cancellationToken);
+        var order = await _orderRepository.GetByIdAsync(id, cancellationToken);
+        if (order == null || !CallerOwns(order))
+            return NotFound(new { Message = "Order not found" });
 
-        // Actually need to update the service to support lookup by PC order ID
-        // This is a placeholder - would need proper implementation
-        return NotFound(new { Message = "Get by PC Order ID not yet implemented" });
-    }
-
-    private static IntegrationOrderDetailDto MapToDetailDto(Domain.Entities.Order order)
-    {
-        return new IntegrationOrderDetailDto
+        var result = await _orderService.CancelOrderAsync(id, order.TenantId, request?.Reason, cancellationToken);
+        if (!result.Success)
         {
-            PartnerConnectOrderId = order.Id,
-            ExternalOrderId = order.ExternalOrderId,
-            SourcePlatform = order.SourcePlatform,
-            CorrelationId = order.CorrelationId.ToString(),
-            Status = order.Status.ToString(),
-            PoNumber = order.PoNumber,
-            TradingPartnerId = order.TradingPartnerId,
-            PartnerOrderNumber = order.PartnerOrderNumber,
-            OrderDate = order.OrderDate,
-            TotalAmount = order.TotalAmount,
-            Currency = order.Currency,
-            LineCount = order.Lines?.Count ?? 0,
-            SubmittedAt = order.SubmittedAt,
-            AcknowledgedAt = order.AcknowledgedAt,
-            ShippedAt = order.ShippedAt,
-            CompletedAt = order.CompletedAt,
-            CancelledAt = order.CancelledAt,
-            ErrorMessage = order.ErrorMessage
-        };
+            if (result.ErrorCode == "ORDER_NOT_FOUND")
+                return NotFound();
+            return BadRequest(new { code = result.ErrorCode, message = result.ErrorMessage });
+        }
+
+        var updated = await _orderRepository.GetByIdWithFullDetailsAsync(id, cancellationToken) ?? result.Order!;
+        return Ok(MapToDetailDto(updated));
     }
+
+    /// <summary>True if the caller may access this order (admin/dealer keys: yes; org keys: same org only).</summary>
+    private bool CallerOwns(Order order)
+    {
+        var callerOrgId = User.GetOrganizationId();
+        return callerOrgId == null || order.OrganizationId == callerOrgId.Value;
+    }
+
+    private static IntegrationOrderDetailDto MapToDetailDto(Order order) => new()
+    {
+        PartnerConnectOrderId = order.Id,
+        ExternalOrderId = order.ExternalOrderId,
+        SourcePlatform = order.SourcePlatform,
+        CorrelationId = order.CorrelationId.ToString(),
+        Status = order.Status.ToString(),
+        PoNumber = order.PoNumber,
+        OrderType = order.OrderType,
+        DistributionCenterCode = order.DistributionCenterCode,
+        Attn = order.Attn,
+        TradingPartnerId = order.TradingPartnerId,
+        PartnerOrderNumber = order.PartnerOrderNumber,
+        OrderDate = order.OrderDate,
+        TotalAmount = order.TotalAmount,
+        Currency = order.Currency,
+        LineCount = order.Lines?.Count ?? 0,
+        SubmittedAt = order.SubmittedAt,
+        AcknowledgedAt = order.AcknowledgedAt,
+        ShippedAt = order.ShippedAt,
+        CompletedAt = order.CompletedAt,
+        CancelledAt = order.CancelledAt,
+        ErrorMessage = order.ErrorMessage,
+        Lines = (order.Lines ?? new List<OrderLine>())
+            .OrderBy(l => l.LineNumber)
+            .Select(l => new IntegrationOrderLineDto
+            {
+                LineNumber = l.LineNumber,
+                Sku = l.Sku,
+                VendorSku = l.VendorSku,
+                Description = l.Description,
+                Quantity = l.Quantity,
+                UnitOfMeasure = l.UnitOfMeasure,
+                UnitPrice = l.UnitPrice,
+                Status = l.Status.ToString()
+            })
+            .ToList()
+    };
 }
 
-/// <summary>
-/// Order details returned to integration callers.
-/// </summary>
+/// <summary>Cancel request body for the integration order API.</summary>
+public class CancelIntegrationOrderRequest
+{
+    public string? Reason { get; set; }
+}
+
+/// <summary>Order details returned to integration callers.</summary>
 public class IntegrationOrderDetailDto
 {
     public int PartnerConnectOrderId { get; set; }
@@ -184,6 +246,9 @@ public class IntegrationOrderDetailDto
     public string CorrelationId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string PoNumber { get; set; } = string.Empty;
+    public string OrderType { get; set; } = string.Empty;
+    public string? DistributionCenterCode { get; set; }
+    public string? Attn { get; set; }
     public int TradingPartnerId { get; set; }
     public string? PartnerOrderNumber { get; set; }
     public DateTime OrderDate { get; set; }
@@ -196,4 +261,18 @@ public class IntegrationOrderDetailDto
     public DateTime? CompletedAt { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? ErrorMessage { get; set; }
+    public List<IntegrationOrderLineDto> Lines { get; set; } = new();
+}
+
+/// <summary>Order line summary returned to integration callers.</summary>
+public class IntegrationOrderLineDto
+{
+    public int LineNumber { get; set; }
+    public string Sku { get; set; } = string.Empty;
+    public string? VendorSku { get; set; }
+    public string? Description { get; set; }
+    public decimal Quantity { get; set; }
+    public string UnitOfMeasure { get; set; } = "EA";
+    public decimal UnitPrice { get; set; }
+    public string Status { get; set; } = string.Empty;
 }

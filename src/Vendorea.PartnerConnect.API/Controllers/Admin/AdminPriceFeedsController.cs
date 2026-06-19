@@ -10,7 +10,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 /// </summary>
 [ApiController]
 [Route("api/admin/pricefeeds")]
-[AllowAnonymous] // TODO: Restore [Authorize(Policy = "RequireSystemAdmin")] in production
 public class AdminPriceFeedsController : ControllerBase
 {
     private readonly IPriceFeedService _priceFeedService;

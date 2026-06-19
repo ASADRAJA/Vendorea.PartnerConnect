@@ -10,7 +10,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[AllowAnonymous] // TODO: Restore [Authorize] in production
 public class BillingController : ControllerBase
 {
     private readonly IBillingService _billingService;
@@ -28,7 +27,6 @@ public class BillingController : ControllerBase
     /// Gets available billing plans.
     /// </summary>
     [HttpGet("plans")]
-    [AllowAnonymous]
     public async Task<IActionResult> GetPlans(CancellationToken cancellationToken)
     {
         var plans = await _billingService.GetActivePlansAsync(cancellationToken);
@@ -57,7 +55,6 @@ public class BillingController : ControllerBase
     /// Gets a specific billing plan.
     /// </summary>
     [HttpGet("plans/{id:guid}")]
-    [AllowAnonymous]
     public async Task<IActionResult> GetPlan(Guid id, CancellationToken cancellationToken)
     {
         var plan = await _billingService.GetPlanAsync(id, cancellationToken);

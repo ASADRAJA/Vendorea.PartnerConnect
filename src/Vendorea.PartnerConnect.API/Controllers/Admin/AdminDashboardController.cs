@@ -11,7 +11,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 /// </summary>
 [ApiController]
 [Route("api/admin/dashboard")]
-[AllowAnonymous] // TODO: Restore [Authorize(Policy = "RequireSystemAdmin")] in production
 public class AdminDashboardController : ControllerBase
 {
     private readonly IPartnerDocumentRepository _documentRepository;

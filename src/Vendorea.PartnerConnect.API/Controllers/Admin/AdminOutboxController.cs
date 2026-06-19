@@ -10,7 +10,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 /// </summary>
 [ApiController]
 [Route("api/admin/outbox")]
-[AllowAnonymous] // TODO: Restore [Authorize(Policy = "RequireSystemAdmin")] in production
 public class AdminOutboxController : ControllerBase
 {
     private readonly IOutboxService _outboxService;

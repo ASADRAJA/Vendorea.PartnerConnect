@@ -49,6 +49,25 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1",
         Description = "API for managing trading partner integrations and data synchronization with Merchant360"
     });
+
+    // Declare API-key auth so Swagger UI and generated clients prompt for the X-API-Key header.
+    var apiKeyScheme = new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = ApiKeyAuthenticationHandler.ApiKeyHeaderName,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "API key. Send your key in the X-API-Key header.",
+        Reference = new Microsoft.OpenApi.Models.OpenApiReference
+        {
+            Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+            Id = "ApiKey"
+        }
+    };
+    options.AddSecurityDefinition("ApiKey", apiKeyScheme);
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        [apiKeyScheme] = Array.Empty<string>()
+    });
 });
 
 // PartnerConnect services
@@ -92,18 +111,51 @@ builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.AuthenticationSch
 // Authorization with permissions
 builder.Services.AddPermissionAuthorization();
 
+// API-key scope authorization: a dynamic "scope:<value>" policy provider + handler, plus a global
+// fallback policy so EVERY endpoint requires an authenticated key unless explicitly [AllowAnonymous].
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler,
+    Vendorea.PartnerConnect.Api.Authorization.ScopeAuthorizationHandler>();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider,
+    Vendorea.PartnerConnect.Api.Authorization.ScopePolicyProvider>();
+// Default-deny: any endpoint that does NOT declare its own [Authorize]/[RequireScope] (i.e. all
+// internal/admin controllers) requires an authenticated key carrying the admin scope ("*" satisfies
+// it). The M360-facing controllers opt into their own least-privilege scopes, so org keys reach only
+// those. Truly public endpoints (e.g. /health) must opt out with [AllowAnonymous].
+builder.Services.Configure<Microsoft.AspNetCore.Authorization.AuthorizationOptions>(options =>
+{
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(
+            ApiKeyAuthenticationHandler.AuthenticationScheme)
+        .RequireAuthenticatedUser()
+        .AddRequirements(new Vendorea.PartnerConnect.Api.Authorization.ScopeRequirement(
+            Vendorea.PartnerConnect.Domain.Entities.ApiScopes.Admin))
+        .Build();
+});
+
 // Health checks
 builder.Services.AddHealthChecks();
 
-// CORS
+// CORS. In production, restrict to configured origins (Cors:AllowedOrigins). When none are
+// configured (e.g. local dev), allow any origin but WITHOUT credentials — API-key auth travels in
+// a header, not a cookie, so credentialed cross-origin access is unnecessary.
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("Default", policy =>
     {
-        policy.SetIsOriginAllowed(_ => true)
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
+        if (allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins)
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials();
+        }
+        else
+        {
+            policy.SetIsOriginAllowed(_ => true)
+                .AllowAnyMethod()
+                .AllowAnyHeader();
+        }
     });
 });
 
@@ -148,14 +200,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("AllowAll");
+app.UseCors("Default");
 app.UsePartnerConnectMiddleware();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseSerilogRequestLogging();
 
 app.MapControllers();
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health").AllowAnonymous();
 
 try
 {

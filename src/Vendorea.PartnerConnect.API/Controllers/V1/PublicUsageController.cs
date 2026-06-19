@@ -11,7 +11,7 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 /// </summary>
 [ApiController]
 [Route("api/v1/usage")]
-[AllowAnonymous] // TODO: Restore [Authorize(AuthenticationSchemes = "ApiKey")] in production
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.UsageRead)]
 public class PublicUsageController : ControllerBase
 {
     private readonly IMeteringService _meteringService;

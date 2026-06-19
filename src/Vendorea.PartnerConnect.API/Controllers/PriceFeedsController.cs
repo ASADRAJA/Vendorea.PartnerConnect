@@ -8,6 +8,7 @@ namespace Vendorea.PartnerConnect.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/[controller]")]
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.FeedsRead)]
 public class PriceFeedsController : ControllerBase
 {
     private readonly IPriceFeedService _priceFeedService;
@@ -28,6 +29,7 @@ public class PriceFeedsController : ControllerBase
     /// <param name="tradingPartnerCode">The trading partner code (e.g., "SPR").</param>
     /// <param name="file">The price feed file.</param>
     [HttpPost("upload")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.Admin)]
     [ProducesResponseType(typeof(PriceFeedUploadResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -130,6 +132,7 @@ public class PriceFeedsController : ControllerBase
     /// </summary>
     /// <param name="uploadId">The upload ID to push.</param>
     [HttpPost("{uploadId:int}/push-to-merchant360")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.Admin)]
     [ProducesResponseType(typeof(PushToMerchant360Result), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -10,7 +10,7 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 /// </summary>
 [ApiController]
 [Route("api/v1/documents")]
-[AllowAnonymous] // TODO: Restore [Authorize(AuthenticationSchemes = "ApiKey")] in production
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.DocumentsRead)]
 public class PublicDocumentsController : ControllerBase
 {
     private readonly IPartnerDocumentRepository _documentRepository;
@@ -165,6 +165,7 @@ public class PublicDocumentsController : ControllerBase
     /// Requests reprocessing of a failed document.
     /// </summary>
     [HttpPost("{id:int}/reprocess")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.DocumentsWrite)]
     public async Task<IActionResult> ReprocessDocument(int id, CancellationToken cancellationToken)
     {
         var dealerId = GetDealerIdFromClaims();

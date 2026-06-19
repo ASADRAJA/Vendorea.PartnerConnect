@@ -10,6 +10,7 @@ namespace Vendorea.PartnerConnect.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/[controller]")]
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.FeedsRead)]
 public class FeedsController : ControllerBase
 {
     private readonly IFeedProcessingService _feedProcessingService;
