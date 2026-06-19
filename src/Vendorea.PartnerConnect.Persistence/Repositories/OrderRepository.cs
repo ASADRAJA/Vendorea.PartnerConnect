@@ -95,6 +95,16 @@ public class OrderRepository : IOrderRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Order>> FindByPoNumberAsync(
+        string poNumber,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Orders
+            .Where(o => o.PoNumber == poNumber)
+            .OrderByDescending(o => o.OrderDate)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Order>> GetByPoNumberWithLinesAsync(
         int tenantId,
         string poNumber,
@@ -103,6 +113,17 @@ public class OrderRepository : IOrderRepository
         return await _context.Orders
             .Include(o => o.Lines.OrderBy(l => l.LineNumber))
             .Where(o => o.TenantId == tenantId && o.PoNumber == poNumber)
+            .OrderByDescending(o => o.OrderDate)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Order>> FindByPoNumberWithLinesAsync(
+        string poNumber,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Orders
+            .Include(o => o.Lines.OrderBy(l => l.LineNumber))
+            .Where(o => o.PoNumber == poNumber)
             .OrderByDescending(o => o.OrderDate)
             .ToListAsync(cancellationToken);
     }

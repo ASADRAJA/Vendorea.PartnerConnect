@@ -84,6 +84,10 @@ builder.Services.AddTransport();
 
 builder.Services.AddPartnerAdapters();
 
+// SPR inbound-simulation toggles (default OFF; see SprSimulationOptions).
+builder.Services.Configure<Vendorea.PartnerConnect.Application.Services.SprSimulationOptions>(
+    builder.Configuration.GetSection(Vendorea.PartnerConnect.Application.Services.SprSimulationOptions.SectionName));
+
 // Merchant360 connector with API key or OAuth2 authentication
 builder.Services.AddMerchant360Connector(options =>
 {

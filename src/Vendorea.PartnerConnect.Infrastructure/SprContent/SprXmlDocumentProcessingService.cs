@@ -542,8 +542,10 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             return;
         }
 
-        var orders = await _orderRepository.GetByPoNumberAsync(dealerId, poack.PoNumber, cancellationToken);
-        var order = orders.FirstOrDefault();
+        // Inbound docs may arrive without a known dealer/tenant (dealerId == 0); fall back to a
+        // tenant-agnostic PO lookup so correlation still works.
+        var order = (await _orderRepository.GetByPoNumberAsync(dealerId, poack.PoNumber, cancellationToken)).FirstOrDefault()
+            ?? (await _orderRepository.FindByPoNumberAsync(poack.PoNumber, cancellationToken)).FirstOrDefault();
         if (order == null)
         {
             _logger.LogWarning(
@@ -684,7 +686,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return;
             }
 
-            var order = (await _orderRepository.GetByPoNumberWithLinesAsync(dealerId, shipment.PoNumber!, cancellationToken)).FirstOrDefault();
+            var order = (await _orderRepository.GetByPoNumberWithLinesAsync(dealerId, shipment.PoNumber!, cancellationToken)).FirstOrDefault()
+                ?? (await _orderRepository.FindByPoNumberWithLinesAsync(shipment.PoNumber!, cancellationToken)).FirstOrDefault();
             if (order == null)
             {
                 _logger.LogWarning("ASN for PO {PoNumber} could not be correlated to an order (dealer {DealerId})", shipment.PoNumber, dealerId);
@@ -848,7 +851,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 return;
             }
 
-            var order = (await _orderRepository.GetByPoNumberAsync(dealerId, invoice.PoNumber!, cancellationToken)).FirstOrDefault();
+            var order = (await _orderRepository.GetByPoNumberAsync(dealerId, invoice.PoNumber!, cancellationToken)).FirstOrDefault()
+                ?? (await _orderRepository.FindByPoNumberAsync(invoice.PoNumber!, cancellationToken)).FirstOrDefault();
             if (order == null)
             {
                 _logger.LogWarning("Invoice for PO {PoNumber} could not be correlated to an order (dealer {DealerId})", invoice.PoNumber, dealerId);
