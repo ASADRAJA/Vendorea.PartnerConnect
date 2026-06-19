@@ -13,7 +13,7 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 /// </summary>
 [ApiController]
 [Route("api/v1/partners")]
-[AllowAnonymous] // TODO: Restore [Authorize] in production - supports both ApiKey and OAuth2
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.PartnersRead)]
 public class PublicTradingPartnersController : ControllerBase
 {
     private readonly ITradingPartnerRepository _partnerRepository;
@@ -107,6 +107,7 @@ public class PublicTradingPartnersController : ControllerBase
     /// managed outside this app.
     /// </summary>
     [HttpPut("{id:int}/connection-requirements")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.Admin)]
     public async Task<IActionResult> UpdateConnectionRequirements(
         int id,
         [FromBody] UpdateConnectionRequirementsRequest request,
@@ -216,6 +217,7 @@ public class PublicTradingPartnersController : ControllerBase
     /// other settings (SFTP, EDI, SOAP order exchange) are preserved. The password is never returned.
     /// </summary>
     [HttpPut("{id:int}/webservice-credentials")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.Admin)]
     public async Task<IActionResult> SetWebServiceCredentials(
         int id, [FromBody] SetWebServiceCredentialsRequest request, CancellationToken cancellationToken)
     {

@@ -8,6 +8,7 @@ namespace Vendorea.PartnerConnect.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/spr/categories")]
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.ContentRead)]
 public class SprCategoriesController : ControllerBase
 {
     private readonly ISprCategoryRepository _categoryRepository;

@@ -12,7 +12,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 /// </summary>
 [ApiController]
 [Route("api/admin/spr/inbound")]
-[AllowAnonymous] // TODO: Restore [Authorize(Policy = "RequireSystemAdmin")] in production
 public class AdminSprInboundController : ControllerBase
 {
     private readonly ISprXmlDocumentProcessingService _processingService;

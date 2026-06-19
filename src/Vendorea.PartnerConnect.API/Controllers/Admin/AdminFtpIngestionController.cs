@@ -17,7 +17,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 /// </summary>
 [ApiController]
 [Route("api/admin/ftp-ingestion")]
-[AllowAnonymous] // TODO: Restore [Authorize(Policy = "RequireSystemAdmin")] in production
 public class AdminFtpIngestionController : ControllerBase
 {
     private readonly IConfiguration _configuration;

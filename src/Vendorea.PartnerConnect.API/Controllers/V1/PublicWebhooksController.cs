@@ -10,7 +10,7 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 /// </summary>
 [ApiController]
 [Route("api/v1/webhooks")]
-[AllowAnonymous] // TODO: Restore [Authorize(AuthenticationSchemes = "ApiKey")] in production
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksRead)]
 public class PublicWebhooksController : ControllerBase
 {
     private readonly IWebhookService _webhookService;
@@ -56,6 +56,7 @@ public class PublicWebhooksController : ControllerBase
     /// Creates a webhook subscription.
     /// </summary>
     [HttpPost("subscriptions")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksWrite)]
     public async Task<IActionResult> CreateSubscription(
         [FromBody] CreateWebhookRequest request,
         CancellationToken cancellationToken)
@@ -144,6 +145,7 @@ public class PublicWebhooksController : ControllerBase
     /// Updates a webhook subscription.
     /// </summary>
     [HttpPut("subscriptions/{id:int}")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksWrite)]
     public async Task<IActionResult> UpdateSubscription(
         int id,
         [FromBody] UpdateWebhookRequest request,
@@ -199,6 +201,7 @@ public class PublicWebhooksController : ControllerBase
     /// Deletes a webhook subscription.
     /// </summary>
     [HttpDelete("subscriptions/{id:int}")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksWrite)]
     public async Task<IActionResult> DeleteSubscription(int id, CancellationToken cancellationToken)
     {
         var dealerId = GetDealerIdFromClaims();
@@ -228,6 +231,7 @@ public class PublicWebhooksController : ControllerBase
     /// Enables a webhook subscription.
     /// </summary>
     [HttpPost("subscriptions/{id:int}/enable")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksWrite)]
     public async Task<IActionResult> EnableSubscription(int id, CancellationToken cancellationToken)
     {
         var dealerId = GetDealerIdFromClaims();
@@ -252,6 +256,7 @@ public class PublicWebhooksController : ControllerBase
     /// Disables a webhook subscription.
     /// </summary>
     [HttpPost("subscriptions/{id:int}/disable")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksWrite)]
     public async Task<IActionResult> DisableSubscription(int id, CancellationToken cancellationToken)
     {
         var dealerId = GetDealerIdFromClaims();
@@ -276,6 +281,7 @@ public class PublicWebhooksController : ControllerBase
     /// Tests a webhook subscription by sending a test event.
     /// </summary>
     [HttpPost("subscriptions/{id:int}/test")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksWrite)]
     public async Task<IActionResult> TestSubscription(int id, CancellationToken cancellationToken)
     {
         var dealerId = GetDealerIdFromClaims();
@@ -345,7 +351,6 @@ public class PublicWebhooksController : ControllerBase
     /// Gets available webhook event types.
     /// </summary>
     [HttpGet("event-types")]
-    [AllowAnonymous]
     public IActionResult GetEventTypes()
     {
         var eventTypes = new[]
@@ -369,6 +374,7 @@ public class PublicWebhooksController : ControllerBase
     /// Regenerates the secret for a webhook subscription.
     /// </summary>
     [HttpPost("subscriptions/{id:int}/regenerate-secret")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.WebhooksWrite)]
     public async Task<IActionResult> RegenerateSecret(int id, CancellationToken cancellationToken)
     {
         var dealerId = GetDealerIdFromClaims();

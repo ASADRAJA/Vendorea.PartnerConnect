@@ -13,7 +13,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 /// </summary>
 [ApiController]
 [Route("api/admin/organizations")]
-[AllowAnonymous] // TODO: Restore [Authorize(Policy = "RequireSystemAdmin")] in production
 public class AdminOrganizationsController : ControllerBase
 {
     private readonly IOrganizationRepository _organizationRepository;

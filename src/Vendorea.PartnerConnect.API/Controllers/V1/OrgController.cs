@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vendorea.PartnerConnect.Api.Authorization;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.Integration;
 using Vendorea.PartnerConnect.Domain.Entities;
@@ -16,7 +17,7 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 /// </summary>
 [ApiController]
 [Route("api/v1/org")]
-[AllowAnonymous] // Auth is performed per-request via the X-Api-Key header (see ResolveOrgAsync).
+[Authorize] // Requires a valid API key; the caller must be an active organization (see ResolveOrgAsync).
 public class OrgController : ControllerBase
 {
     private const string ApiKeyHeader = "X-Api-Key";
@@ -53,6 +54,7 @@ public class OrgController : ControllerBase
     /// lightweight per-DC check, or omit them for all stocking DCs.
     /// </summary>
     [HttpPost("stock-check")]
+    [RequireScope(ApiScopes.StockRead)]
     public async Task<IActionResult> StockCheck([FromBody] StockCheckRequest request, CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -71,6 +73,7 @@ public class OrgController : ControllerBase
 
     /// <summary>Live SPR freight rates (all qualifying UPS/FedEx options) for a dealer's shipment.</summary>
     [HttpPost("freight/rates")]
+    [RequireScope(ApiScopes.FreightRead)]
     public async Task<IActionResult> FreightRates([FromBody] FreightRateRequest request, CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -81,6 +84,7 @@ public class OrgController : ControllerBase
 
     /// <summary>Live SPR lowest freight rate for a dealer's shipment.</summary>
     [HttpPost("freight/lowest-rate")]
+    [RequireScope(ApiScopes.FreightRead)]
     public async Task<IActionResult> LowestFreightRate([FromBody] FreightRateRequest request, CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -99,6 +103,7 @@ public class OrgController : ControllerBase
 
     /// <summary>Lists the trading partners this org may connect to, with each partner's required fields.</summary>
     [HttpGet("partners")]
+    [RequireScope(ApiScopes.PartnersRead)]
     public async Task<IActionResult> GetPartners(CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -123,6 +128,7 @@ public class OrgController : ControllerBase
 
     /// <summary>Requests a tenant-partner connection (status Pending; tenant created on approval).</summary>
     [HttpPost("connections")]
+    [RequireScope(ApiScopes.ConnectionsWrite)]
     public async Task<IActionResult> RequestConnection([FromBody] OrgConnectionRequest request, CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -153,6 +159,7 @@ public class OrgController : ControllerBase
 
     /// <summary>Lists this org's connection requests and their statuses.</summary>
     [HttpGet("connections")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
     public async Task<IActionResult> GetConnections(CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);

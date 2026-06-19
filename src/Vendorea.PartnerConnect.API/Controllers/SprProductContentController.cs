@@ -8,6 +8,7 @@ namespace Vendorea.PartnerConnect.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/dealers/{dealerId}/spr/products")]
+[Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.ContentRead)]
 public class SprProductContentController : ControllerBase
 {
     private readonly ISprContentQueryService _queryService;

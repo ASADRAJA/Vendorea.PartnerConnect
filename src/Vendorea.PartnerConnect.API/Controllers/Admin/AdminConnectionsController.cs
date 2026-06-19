@@ -12,7 +12,6 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 /// </summary>
 [ApiController]
 [Route("api/admin/connections")]
-[AllowAnonymous] // TODO: Restore [Authorize(Policy = "RequireSystemAdmin")] in production
 public class AdminConnectionsController : ControllerBase
 {
     private readonly ITenantPartnerAccountRepository _connectionRepository;

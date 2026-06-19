@@ -143,6 +143,21 @@ public static class ApiScopes
     // Usage/billing operations
     public const string UsageRead = "usage:read";
 
+    // Order operations
+    public const string OrdersRead = "orders:read";
+    public const string OrdersWrite = "orders:write";
+
+    // Live web-service lookups
+    public const string StockRead = "stock:read";
+    public const string FreightRead = "freight:read";
+
+    // Catalog / feeds
+    public const string ContentRead = "content:read";
+    public const string FeedsRead = "feeds:read";
+
+    // Partner discovery (read-only listing of connectable partners)
+    public const string PartnersRead = "partners:read";
+
     // Admin operations
     public const string Admin = "admin";
 
@@ -154,6 +169,28 @@ public static class ApiScopes
         DocumentsRead, DocumentsWrite,
         ConnectionsRead, ConnectionsWrite,
         WebhooksRead, WebhooksWrite,
-        UsageRead, Admin, All
+        UsageRead,
+        OrdersRead, OrdersWrite,
+        StockRead, FreightRead,
+        ContentRead, FeedsRead,
+        PartnersRead,
+        Admin, All
+    };
+
+    /// <summary>
+    /// Default scope set granted to an organization (e.g. Merchant360) authenticating with its
+    /// org API key. Covers the M360-facing surface but deliberately excludes admin and
+    /// partner-write operations (those require an admin key).
+    /// </summary>
+    public static readonly IReadOnlyList<string> OrganizationDefault = new[]
+    {
+        OrdersRead, OrdersWrite,
+        StockRead, FreightRead,
+        ContentRead, FeedsRead,
+        DocumentsRead,
+        ConnectionsRead, ConnectionsWrite,
+        WebhooksRead, WebhooksWrite,
+        UsageRead,
+        PartnersRead
     };
 }

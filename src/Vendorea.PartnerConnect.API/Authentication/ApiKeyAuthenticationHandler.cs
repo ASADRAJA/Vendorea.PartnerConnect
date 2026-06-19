@@ -1,19 +1,27 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Vendorea.PartnerConnect.Api.Authorization;
+using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Application.Services;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Api.Authentication;
 
 /// <summary>
-/// Authentication handler for API key authentication.
+/// Authentication handler for API key authentication. Resolves, in order: the development-only
+/// dev-admin key, an organization key (e.g. Merchant360's portal key), then a dealer-scoped
+/// API key. Each produces a principal carrying <c>scope</c> claims used by
+/// <see cref="ScopeRequirement"/> authorization.
 /// </summary>
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthenticationOptions>
 {
     private readonly IApiKeyService _apiKeyService;
+    private readonly IOrgApiKeyAuthenticator _orgAuthenticator;
     private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _environment;
     public const string AuthenticationScheme = "ApiKey";
     public const string ApiKeyHeaderName = "X-API-Key";
 
@@ -22,11 +30,15 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         ILoggerFactory logger,
         UrlEncoder encoder,
         IApiKeyService apiKeyService,
-        IConfiguration configuration)
+        IOrgApiKeyAuthenticator orgAuthenticator,
+        IConfiguration configuration,
+        IHostEnvironment environment)
         : base(options, logger, encoder)
     {
         _apiKeyService = apiKeyService;
+        _orgAuthenticator = orgAuthenticator;
         _configuration = configuration;
+        _environment = environment;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -43,18 +55,28 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             return AuthenticateResult.NoResult();
         }
 
-        // Check for dev admin key (development only)
+        // Dev admin key — DEVELOPMENT ONLY. Never honored outside Development even if configured.
         var devAdminKey = _configuration["DevAdminKey"];
-        if (!string.IsNullOrEmpty(devAdminKey) && providedApiKey == devAdminKey)
+        if (_environment.IsDevelopment()
+            && !string.IsNullOrEmpty(devAdminKey)
+            && providedApiKey == devAdminKey)
         {
             Logger.LogDebug("Dev admin key authentication successful");
             return AuthenticateResult.Success(CreateDevAdminTicket());
         }
 
+        // Organization key (e.g. Merchant360). Returns the org only for an active organization.
+        var organization = await _orgAuthenticator.ResolveActiveOrganizationAsync(providedApiKey, Context.RequestAborted);
+        if (organization != null)
+        {
+            Context.Items["Organization"] = organization;
+            return AuthenticateResult.Success(CreateOrganizationTicket(organization));
+        }
+
         // Get client IP
         var clientIp = GetClientIpAddress();
 
-        // Validate the API key
+        // Validate as a dealer-scoped API key
         var validationResult = await _apiKeyService.ValidateAsync(providedApiKey, clientIp);
 
         if (!validationResult.IsValid)
@@ -106,6 +128,26 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         }
 
         return Context.Connection.RemoteIpAddress?.ToString();
+    }
+
+    private static AuthenticationTicket CreateOrganizationTicket(Organization organization)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, $"org:{organization.Id}"),
+            new(ClaimTypes.Name, organization.Name ?? $"Org {organization.Id}"),
+            new(ApiPrincipalExtensions.ActorTypeClaim, ApiPrincipalExtensions.OrganizationActor),
+            new(ApiPrincipalExtensions.OrgIdClaim, organization.Id.ToString())
+        };
+
+        if (!string.IsNullOrWhiteSpace(organization.Code))
+            claims.Add(new Claim("org_code", organization.Code));
+
+        foreach (var scope in ApiScopes.OrganizationDefault)
+            claims.Add(new Claim(ScopeAuthorizationHandler.ScopeClaimType, scope));
+
+        var identity = new ClaimsIdentity(claims, AuthenticationScheme);
+        return new AuthenticationTicket(new ClaimsPrincipal(identity), AuthenticationScheme);
     }
 
     private AuthenticationTicket CreateDevAdminTicket()
