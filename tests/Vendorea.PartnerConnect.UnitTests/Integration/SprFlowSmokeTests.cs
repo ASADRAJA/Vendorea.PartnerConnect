@@ -33,6 +33,7 @@ public class SprFlowSmokeTests
         public SprXmlDocumentProcessingService Service = null!;
         public Order Order = null!;
         public SprXmlDocument? AddedSprDoc;
+        public PartnerDocument? UpdatedPartnerDoc;
         public OrderStatusUpdateRequest? M360Request;
         public ShipmentUpdateRequest? M360Shipment;
         public InvoiceUpdateRequest? M360Invoice;
@@ -55,6 +56,7 @@ public class SprFlowSmokeTests
         partnerDocRepo.Setup(r => r.AddAsync(It.IsAny<PartnerDocument>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((PartnerDocument d, CancellationToken _) => { d.Id = 200; return d; });
         partnerDocRepo.Setup(r => r.UpdateAsync(It.IsAny<PartnerDocument>(), It.IsAny<CancellationToken>()))
+            .Callback<PartnerDocument, CancellationToken>((d, _) => harness.UpdatedPartnerDoc = d)
             .Returns(Task.CompletedTask);
 
         var partnerRepo = new Mock<ITradingPartnerRepository>();
@@ -243,6 +245,35 @@ public class SprFlowSmokeTests
         harness.M360Request.ErrorCode.Should().Be("SPR_ERROR_ACK");
         harness.M360Request.PartnerConnectOrderId.Should().Be(order.Id);
         harness.M360Request.EventId.Should().NotBeNullOrEmpty();
+    }
+
+    // ---- Inbound documents are stamped with the correlated dealer/tenant ----------------------
+
+    [Fact]
+    public async Task Inbound_StampsDocumentTenant_FromCorrelatedOrder()
+    {
+        var order = NewOrder("PO-DEALER-1", OrderStatus.Processing);
+        var harness = CreateHarness(order);
+
+        var xml = @"<?xml version=""1.0""?>
+<Order EnterpriseCode=""SPR"" BuyerOrganizationCode=""9999999.99"" CustomerPONo=""PO-DEALER-1"" OrderNo=""38000001"">
+  <OrderLines>
+    <OrderLine PrimeLineNo=""1"">
+      <OrderLineTranQuantity TransactionalUOM=""EA"" OrderedQty=""5"" />
+      <Extn><EXTNSprOrderLineList><EXTNSprOrderLine AckStatus=""A"" /></EXTNSprOrderLineList></Extn>
+    </OrderLine>
+  </OrderLines>
+  <Extn><EXTNSprOrderHeaderList><EXTNSprOrderHeader PoAckStatus=""A"" SprSoNum=""38000001"" /></EXTNSprOrderHeaderList></Extn>
+</Order>";
+
+        var result = await harness.Service.ProcessInboundDocumentAsync(
+            ConnectionId, xml, "poack.xml", SprXmlDocumentType.EZPOACK);
+
+        result.Success.Should().BeTrue();
+        result.ResolvedTenantId.Should().Be(DealerId);
+        // The stored partner document is stamped with the dealer, not left tenant-less ("Dealer 0").
+        harness.UpdatedPartnerDoc.Should().NotBeNull();
+        harness.UpdatedPartnerDoc!.TenantId.Should().Be(DealerId);
     }
 
     // ---- Flow 3: translation-style ERROR ack (non-well-formed + appended message) ------------

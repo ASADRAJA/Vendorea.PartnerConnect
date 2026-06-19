@@ -92,6 +92,12 @@ public class SprXmlProcessingResult
     public List<string> Errors { get; set; } = new();
     public List<string> Warnings { get; set; } = new();
     public long ProcessingDurationMs { get; set; }
+
+    /// <summary>
+    /// The internal tenant id the inbound document correlated to (via its order). Used to stamp the
+    /// stored document so it shows the right dealer; null when the document couldn't be correlated.
+    /// </summary>
+    public int? ResolvedTenantId { get; set; }
 }
 
 /// <summary>

@@ -157,9 +157,14 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             sprDocument = await _documentRepository.AddAsync(sprDocument, cancellationToken);
             result.SprXmlDocumentId = sprDocument.Id;
 
-            // Update partner document state
+            // Update partner document state. Inbound documents arrive with no tenant context, so
+            // stamp the dealer/tenant resolved during correlation (POACK/ASN/invoice → its order).
             partnerDocument.State = result.Errors.Count == 0 ? DocumentState.Completed : DocumentState.MapError;
             partnerDocument.ProcessingCompletedAt = DateTime.UtcNow;
+            if (result.ResolvedTenantId is int resolvedTenantId && resolvedTenantId > 0)
+            {
+                partnerDocument.TenantId = resolvedTenantId;
+            }
             await _partnerDocumentRepository.UpdateAsync(partnerDocument, cancellationToken);
 
             result.Success = result.Errors.Count == 0;
@@ -519,7 +524,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         // Apply the ack to the originating order and surface the normalized status to Merchant360.
         // Both the structured business-error and translation-error channels converge here so the
         // downstream result is identical: not-processed / Failed for errors, Acknowledged otherwise.
-        await ApplyAckToOrderAsync(document, poack, dealerId, cancellationToken);
+        await ApplyAckToOrderAsync(document, poack, dealerId, result, cancellationToken);
 
         result.Warnings.AddRange(parseResult.Warnings);
     }
@@ -534,6 +539,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         SprXmlDocument document,
         SprPoAck poack,
         int dealerId,
+        SprXmlProcessingResult result,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(poack.PoNumber))
@@ -553,6 +559,9 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 poack.PoNumber, dealerId);
             return;
         }
+
+        // Stamp the stored document with the correlated dealer/tenant (inbound arrives with no tenant).
+        result.ResolvedTenantId = order.TenantId;
 
         var previousStatus = order.Status;
         OrderStatusType m360StatusType;
@@ -676,7 +685,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     /// manifest is idempotent — the (order, manifest) guard prevents double-counting. Non-fatal.
     /// </summary>
     private async Task SurfaceShipmentToM360Async(
-        ShipmentNotice shipment, int dealerId, CancellationToken cancellationToken)
+        ShipmentNotice shipment, int dealerId, SprXmlProcessingResult result, CancellationToken cancellationToken)
     {
         try
         {
@@ -693,6 +702,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 _logger.LogWarning("ASN for PO {PoNumber} could not be correlated to an order (dealer {DealerId})", shipment.PoNumber, dealerId);
                 return;
             }
+
+            result.ResolvedTenantId = order.TenantId;
 
             // Idempotency guard: skip an already-applied manifest so re-ingestion doesn't double-count.
             if (await _orderRepository.HasAppliedShipmentAsync(order.Id, shipment.ShipmentId, cancellationToken))
@@ -841,7 +852,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     /// invoice callback to Merchant360 via the outbox. Non-fatal.
     /// </summary>
     private async Task SurfaceInvoiceToM360Async(
-        SupplierInvoice invoice, int dealerId, CancellationToken cancellationToken)
+        SupplierInvoice invoice, int dealerId, SprXmlProcessingResult result, CancellationToken cancellationToken)
     {
         try
         {
@@ -858,6 +869,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 _logger.LogWarning("Invoice for PO {PoNumber} could not be correlated to an order (dealer {DealerId})", invoice.PoNumber, dealerId);
                 return;
             }
+
+            result.ResolvedTenantId = order.TenantId;
 
             var merchantId = await ResolveMerchantIdAsync(order.TenantId, cancellationToken);
             if (merchantId == null)
@@ -932,7 +945,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             // One shipment callback per manifest — supports multiple shipments per order over time.
             foreach (var shipment in parseResult.Result)
             {
-                await SurfaceShipmentToM360Async(shipment, dealerId, cancellationToken);
+                await SurfaceShipmentToM360Async(shipment, dealerId, result, cancellationToken);
             }
         }
         else
@@ -974,7 +987,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             // One invoice callback per invoice/credit in the batch.
             foreach (var inv in parseResult.Result)
             {
-                await SurfaceInvoiceToM360Async(inv, dealerId, cancellationToken);
+                await SurfaceInvoiceToM360Async(inv, dealerId, result, cancellationToken);
             }
         }
         else
