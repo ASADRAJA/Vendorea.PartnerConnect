@@ -136,5 +136,11 @@ public enum ConnectionApprovalStatus
     Approved,
 
     /// <summary>Denied by PC staff.</summary>
-    Denied
+    Denied,
+
+    /// <summary>Cancelled by the merchant while still Pending (request withdrawn before approval).</summary>
+    Cancelled,
+
+    /// <summary>Unsubscribed by the merchant after approval (the connection has been disabled).</summary>
+    Unsubscribed
 }
