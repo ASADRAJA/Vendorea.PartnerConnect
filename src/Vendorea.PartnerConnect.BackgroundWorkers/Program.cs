@@ -28,6 +28,11 @@ builder.Services.AddSerilog();
 builder.Services.AddPartnerConnectServices();
 builder.Services.AddPartnerConnectInfrastructure();
 
+// SPR inbound-simulation toggles (default OFF). Controls whether Merchant360 callbacks are
+// captured (short-circuited) instead of delivered when simulating the SPR feedback loop.
+builder.Services.Configure<Vendorea.PartnerConnect.Application.Services.SprSimulationOptions>(
+    builder.Configuration.GetSection(Vendorea.PartnerConnect.Application.Services.SprSimulationOptions.SectionName));
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddPartnerConnectPersistence(connectionString);

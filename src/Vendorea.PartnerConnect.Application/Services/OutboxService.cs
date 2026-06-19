@@ -344,6 +344,7 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMerchant360Client _merchant360Client;
+    private readonly SprSimulationOptions _simulation;
     private readonly ILogger<DefaultOutboxMessageProcessor> _logger;
 
     // Deserialization mirror of OutboxService's camelCase serialization.
@@ -356,11 +357,29 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
     public DefaultOutboxMessageProcessor(
         IHttpClientFactory httpClientFactory,
         IMerchant360Client merchant360Client,
+        Microsoft.Extensions.Options.IOptions<SprSimulationOptions> simulationOptions,
         ILogger<DefaultOutboxMessageProcessor> logger)
     {
         _httpClientFactory = httpClientFactory;
         _merchant360Client = merchant360Client;
+        _simulation = simulationOptions.Value;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// In simulation capture mode, Merchant360 callbacks are not sent over HTTP — the payload stays
+    /// on the (already-persisted) outbox message for inspection. Returns true if the delivery was
+    /// short-circuited.
+    /// </summary>
+    private bool CaptureInsteadOfDeliver(OutboxMessage message)
+    {
+        if (!_simulation.CaptureCallbacks)
+            return false;
+
+        _logger.LogInformation(
+            "[SPR-SIM] Capture mode: NOT delivering {MessageType} outbox message {MessageId} to Merchant360 (payload retained for inspection)",
+            message.MessageType, message.Id);
+        return true;
     }
 
     public async Task ProcessAsync(OutboxMessage message, CancellationToken cancellationToken = default)
@@ -402,6 +421,8 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 
     private async Task DeliverMerchant360OrderStatusAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
+        if (CaptureInsteadOfDeliver(message)) return;
+
         var payload = JsonSerializer.Deserialize<Merchant360OrderStatusOutboxPayload>(message.Payload, _deserializeOptions)
             ?? throw new InvalidOperationException("Invalid Merchant360 order status payload");
 
@@ -417,6 +438,8 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 
     private async Task DeliverMerchant360ShipmentAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
+        if (CaptureInsteadOfDeliver(message)) return;
+
         var payload = JsonSerializer.Deserialize<Merchant360ShipmentOutboxPayload>(message.Payload, _deserializeOptions)
             ?? throw new InvalidOperationException("Invalid Merchant360 shipment payload");
 
@@ -431,6 +454,8 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 
     private async Task DeliverMerchant360InvoiceAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
+        if (CaptureInsteadOfDeliver(message)) return;
+
         var payload = JsonSerializer.Deserialize<Merchant360InvoiceOutboxPayload>(message.Payload, _deserializeOptions)
             ?? throw new InvalidOperationException("Invalid Merchant360 invoice payload");
 

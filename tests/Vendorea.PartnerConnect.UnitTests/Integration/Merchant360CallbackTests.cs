@@ -19,8 +19,10 @@ public class Merchant360CallbackTests
 {
     private static readonly JsonSerializerOptions CamelCase = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    private static DefaultOutboxMessageProcessor Processor(IMerchant360Client client) =>
-        new(new Mock<IHttpClientFactory>().Object, client, NullLogger<DefaultOutboxMessageProcessor>.Instance);
+    private static DefaultOutboxMessageProcessor Processor(IMerchant360Client client, SprSimulationOptions? simulation = null) =>
+        new(new Mock<IHttpClientFactory>().Object, client,
+            Microsoft.Extensions.Options.Options.Create(simulation ?? new SprSimulationOptions()),
+            NullLogger<DefaultOutboxMessageProcessor>.Instance);
 
     private static OutboxMessage Message(string type, object payload) =>
         new() { MessageType = type, Payload = JsonSerializer.Serialize(payload, CamelCase) };
@@ -54,6 +56,25 @@ public class Merchant360CallbackTests
         captured!.Status.Should().Be("Failed");
         captured.ErrorCode.Should().Be("SPR_ERROR_ACK");
         captured.EventId.Should().Be("evt-1");
+    }
+
+    [Fact]
+    public async Task OutboxProcessor_CaptureMode_DoesNotDeliverToMerchant360()
+    {
+        var client = new Mock<IMerchant360Client>();
+        var sim = new SprSimulationOptions { CaptureCallbacks = true };
+
+        // Capture mode short-circuits: the message is treated as delivered, the client is never called.
+        await Processor(client.Object, sim).ProcessAsync(Message(
+            Merchant360OutboxMessageTypes.OrderStatus,
+            new Merchant360OrderStatusOutboxPayload
+            {
+                MerchantId = 42,
+                Request = new OrderStatusUpdateRequest { EventId = "evt-cap", Status = "Acknowledged" }
+            }));
+
+        client.Verify(c => c.PushOrderStatusUpdateAsync(
+            It.IsAny<int>(), It.IsAny<OrderStatusUpdateRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

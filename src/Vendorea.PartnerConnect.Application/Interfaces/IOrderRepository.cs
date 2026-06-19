@@ -43,10 +43,26 @@ public interface IOrderRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finds orders by PO number across all tenants (most recent first). Used to correlate inbound
+    /// partner documents (POACK/ASN/invoice) when the dealer/tenant is not known from the feed.
+    /// </summary>
+    Task<IReadOnlyList<Order>> FindByPoNumberAsync(
+        string poNumber,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets orders for a PO number with their lines eagerly loaded (most recent first).
     /// </summary>
     Task<IReadOnlyList<Order>> GetByPoNumberWithLinesAsync(
         int tenantId,
+        string poNumber,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds orders by PO number across all tenants with lines eagerly loaded (most recent first).
+    /// Used to correlate inbound ASN manifests when the dealer/tenant is not known from the feed.
+    /// </summary>
+    Task<IReadOnlyList<Order>> FindByPoNumberWithLinesAsync(
         string poNumber,
         CancellationToken cancellationToken = default);
 
