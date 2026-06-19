@@ -16,6 +16,7 @@ public class AdminDocumentsController : ControllerBase
 {
     private readonly IPartnerDocumentRepository _documentRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
+    private readonly ITenantRepository _tenantRepository;
     private readonly IMerchant360Client _merchant360Client;
     private readonly IDocumentCorrelationRepository _correlationRepository;
     private readonly IDocumentStateHistoryRepository _stateHistoryRepository;
@@ -25,6 +26,7 @@ public class AdminDocumentsController : ControllerBase
     public AdminDocumentsController(
         IPartnerDocumentRepository documentRepository,
         ITradingPartnerRepository partnerRepository,
+        ITenantRepository tenantRepository,
         IMerchant360Client merchant360Client,
         IDocumentCorrelationRepository correlationRepository,
         IDocumentStateHistoryRepository stateHistoryRepository,
@@ -33,6 +35,7 @@ public class AdminDocumentsController : ControllerBase
     {
         _documentRepository = documentRepository;
         _partnerRepository = partnerRepository;
+        _tenantRepository = tenantRepository;
         _merchant360Client = merchant360Client;
         _correlationRepository = correlationRepository;
         _stateHistoryRepository = stateHistoryRepository;
@@ -96,15 +99,24 @@ public class AdminDocumentsController : ControllerBase
             .Take(take)
             .ToList();
 
+        // Resolve tenant (dealer) names for the documents on this page.
+        var tenants = await _tenantRepository.GetAllAsync(cancellationToken);
+        var tenantMap = tenants.ToDictionary(t => t.Id);
+
         // Map to response with partner info
         var mappedResults = results.Select(doc =>
         {
             partnerMap.TryGetValue(doc.TradingPartnerId, out var partner);
+            Tenant? tenant = null;
+            if (doc.TenantId.HasValue)
+                tenantMap.TryGetValue(doc.TenantId.Value, out tenant);
 
             return new AdminDocumentResponse
             {
                 Id = doc.Id,
                 TenantId = doc.TenantId,
+                DealerId = doc.TenantId ?? 0,
+                DealerName = tenant?.Name,
                 TradingPartnerId = doc.TradingPartnerId,
                 PartnerName = partner?.Name ?? $"Partner #{doc.TradingPartnerId}",
                 DocumentType = doc.DocumentType.ToString(),
@@ -173,7 +185,13 @@ public class AdminDocumentsController : ControllerBase
             return NotFound();
         }
 
-        return Ok(MapDocumentResponse(document));
+        var response = MapDocumentResponse(document);
+        if (document.TenantId.HasValue)
+        {
+            var tenant = await _tenantRepository.GetByIdAsync(document.TenantId.Value, cancellationToken);
+            response.DealerName = tenant?.Name;
+        }
+        return Ok(response);
     }
 
     /// <summary>
@@ -404,6 +422,7 @@ public class AdminDocumentsController : ControllerBase
             Id = doc.Id,
             TradingPartnerId = doc.TradingPartnerId,
             TenantId = doc.TenantId,
+            DealerId = doc.TenantId ?? 0,
             DocumentType = doc.DocumentType.ToString(),
             Direction = doc.Direction.ToString(),
             Status = doc.Status.ToString(),
@@ -426,6 +445,8 @@ public class DocumentResponse
     public int Id { get; set; }
     public int TradingPartnerId { get; set; }
     public int? TenantId { get; set; }
+    public int DealerId { get; set; }
+    public string? DealerName { get; set; }
     public string DocumentType { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -440,6 +461,8 @@ public class AdminDocumentResponse
 {
     public int Id { get; set; }
     public int? TenantId { get; set; }
+    public int DealerId { get; set; }
+    public string? DealerName { get; set; }
     public int TradingPartnerId { get; set; }
     public string? PartnerName { get; set; }
     public string DocumentType { get; set; } = string.Empty;
