@@ -81,6 +81,15 @@ Body (`OrgConnectionRequest`): `tradingPartnerId` (int ✅), `externalTenantId` 
 ### ☐ GET `/api/v1/org/connections` — list this org's connections  · scope `connections:read`
 Returns array of `OrgConnectionDto`: `id`, `tradingPartnerId`, `partnerName`, `externalTenantId`, `accountNumber`, `approvalStatus`, `isActive`, `createdAt`, `decidedAt`.
 
+### ☐ POST `/api/v1/trading-partner-subscriptions/cancel` — cancel a pending request  · scope `connections:write`
+### ☐ POST `/api/v1/trading-partner-subscriptions/unsubscribe` — unsubscribe from an approved connection  · scope `connections:write`
+Body for both: `{ "tenantId": <int>, "tradingPartnerId": <int> }`.
+- `tenantId` = the merchant's tenant id (matched to the connection's `externalTenantId`).
+- ⚠️ `tradingPartnerId` = **PartnerConnect's** trading-partner id (the `tradingPartnerId` from `GET /api/v1/org/partners`) — **not** M360's local partner id. Same convention as the connection-request call.
+
+Behavior: **cancel** requires the connection to be `Pending` → sets it `Cancelled` (inactive); **unsubscribe** requires `Approved` → sets it `Unsubscribed` (inactive), which immediately gates off orders and live web services. Both are idempotent (already cancelled/unsubscribed → 200).
+Responses: **200** `{ success, connectionId, status, isActive }`; **400** missing fields / not an org key (403); **404** no matching connection; **409** wrong state (e.g. cancel on an approved connection, or unsubscribe on a pending one).
+
 ---
 
 ## C. Live SPR web services — `api/v1/org` (gated to an active SPR connection)
