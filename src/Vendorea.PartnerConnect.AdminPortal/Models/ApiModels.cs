@@ -698,6 +698,7 @@ public class OrderDto
     public string? TradingPartnerName { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
     public string PoNumber { get; set; } = string.Empty;
+    public string? CorrelationId { get; set; }
     public string Status { get; set; } = string.Empty;
     public decimal SubTotal { get; set; }
     public decimal TaxAmount { get; set; }
@@ -823,4 +824,38 @@ public class RunJobResult
     public bool Success { get; set; }
     public string? Detail { get; set; }
     public string? Error { get; set; }
+}
+
+// ===== SPR inbound simulation =====
+
+public class SprInjectResult
+{
+    public bool Success { get; set; }
+    public string? DocumentType { get; set; }
+    public int? SprXmlDocumentId { get; set; }
+    public int? PartnerDocumentId { get; set; }
+    public string? BusinessReference { get; set; }
+    public string? CanonicalType { get; set; }
+    public List<string> Errors { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+    public string? ErrorMessage { get; set; }
+}
+
+public class SprCallbacksResult
+{
+    public bool CaptureMode { get; set; }
+    public int Count { get; set; }
+    public List<SprCallbackDto> Callbacks { get; set; } = new();
+}
+
+public class SprCallbackDto
+{
+    public Guid Id { get; set; }
+    public string MessageType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? DeliveredAt { get; set; }
+    public int RetryCount { get; set; }
+    public string? LastError { get; set; }
+    public string? Payload { get; set; }
 }
