@@ -1,0 +1,244 @@
+@page "/spr-simulation"
+@using System.Security
+@using Vendorea.PartnerConnect.AdminPortal.Models
+@inject ApiClient Api
+
+<PageTitle>SPR Simulation - PartnerConnect Admin</PageTitle>
+
+<h1>SPR Inbound Simulation</h1>
+<p class="text-muted">
+    Drive the SPR EDI feedback loop (POACK / ASN / invoice) without a live SPR connection,
+    and watch PartnerConnect order status update + the Merchant360 callbacks PC would send.
+</p>
+
+<div class="alert alert-warning py-2">
+    <span class="oi oi-warning me-1"></span>
+    Requires <code>SprSimulation</code> enabled in config. Turn it off before testing against the live SPR system.
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-8">
+        <label class="form-label">Order</label>
+        <div class="input-group">
+            <select class="form-select" @bind="selectedOrderId" @bind:after="LoadOrderAsync">
+                <option value="0">— select an order —</option>
+                @foreach (var o in orders)
+                {
+                    <option value="@o.Id">#@o.Id · PO @o.PoNumber · @o.Status · @(o.TradingPartnerName ?? ("partner " + o.TradingPartnerId))</option>
+                }
+            </select>
+            <button class="btn btn-outline-secondary" @onclick="LoadOrdersAsync"><span class="oi oi-reload"></span></button>
+        </div>
+    </div>
+</div>
+
+@if (order != null)
+{
+    <div class="row">
+        <div class="col-md-5">
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Order #@order.Id</span>
+                    <span class="badge @StatusBadge(order.Status)">@order.Status</span>
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-5">PO Number</dt><dd class="col-7">@order.PoNumber</dd>
+                        <dt class="col-5">Trading Partner</dt><dd class="col-7">@(order.TradingPartnerName ?? "") (id @order.TradingPartnerId)</dd>
+                        <dt class="col-5">Tenant</dt><dd class="col-7">@(order.TenantName ?? "") (id @order.TenantId)</dd>
+                        <dt class="col-5">Correlation</dt><dd class="col-7 text-truncate" title="@order.CorrelationId">@order.CorrelationId</dd>
+                    </dl>
+                    <hr />
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Line</th><th>SKU (vendor)</th><th class="text-end">Qty</th><th class="text-end">Shipped</th></tr></thead>
+                        <tbody>
+                            @foreach (var l in order.Lines)
+                            {
+                                <tr><td>@l.LineNumber</td><td>@(string.IsNullOrWhiteSpace(l.VendorSku) ? l.Sku : l.VendorSku)</td><td class="text-end">@l.QuantityOrdered</td><td class="text-end">@l.QuantityShipped</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Status history</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            @foreach (var h in order.StatusHistory.OrderByDescending(h => h.ChangedAt))
+                            {
+                                <tr>
+                                    <td class="small text-nowrap">@h.ChangedAt.ToLocalTime().ToString("MM/dd HH:mm:ss")</td>
+                                    <td class="small">@h.FromStatus → <strong>@h.ToStatus</strong><br /><span class="text-muted">@h.Reason</span></td>
+                                </tr>
+                            }
+                            @if (order.StatusHistory.Count == 0)
+                            {
+                                <tr><td class="text-muted small p-2">No status history yet.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-7">
+            <div class="card mb-3">
+                <div class="card-header">1 · Build an SPR response</div>
+                <div class="card-body">
+                    <div class="btn-group btn-group-sm mb-2 flex-wrap" role="group">
+                        <button class="btn btn-outline-primary" @onclick="@(() => Generate("EZPOACK", ack: true))">POACK · Acknowledge</button>
+                        <button class="btn btn-outline-danger" @onclick="@(() => Generate("EZPOACK", ack: false))">POACK · Reject</button>
+                        <button class="btn btn-outline-info" @onclick="@(() => Generate("EZASNS", ack: true))">ASN · Ship</button>
+                        <button class="btn btn-outline-secondary" @onclick="@(() => Generate("EZINV4", ack: true))">Invoice</button>
+                    </div>
+                    <div class="mb-2">
+                        <span class="text-muted small">Document type:</span> <code>@docType</code>
+                        <span class="text-muted small ms-2">→ sent as connectionId <code>@order.TradingPartnerId</code></span>
+                    </div>
+                    <textarea class="form-control font-monospace" style="height: 240px; font-size: 12px;" @bind="currentXml"></textarea>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-success btn-sm" @onclick="SendAsync" disabled="@(sending || string.IsNullOrWhiteSpace(currentXml))">
+                        <span class="oi oi-arrow-thick-right me-1"></span> @(sending ? "Sending…" : "2 · Send to PC")
+                    </button>
+                    @if (injectResult != null)
+                    {
+                        <span class="ms-2 small @(injectResult.Success ? "text-success" : "text-danger")">
+                            @(injectResult.Success
+                                ? $"Processed {injectResult.DocumentType} ({injectResult.CanonicalType})"
+                                : $"Failed: {injectResult.ErrorMessage}")
+                        </span>
+                    }
+                </div>
+            </div>
+
+            @if (injectResult is { Warnings.Count: > 0 } or { Errors.Count: > 0 })
+            {
+                <div class="alert alert-light border small">
+                    @foreach (var e in injectResult!.Errors) { <div class="text-danger">@e</div> }
+                    @foreach (var w in injectResult!.Warnings) { <div class="text-warning">@w</div> }
+                </div>
+            }
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>3 · Merchant360 callbacks for this order</span>
+                    <span>
+                        @if (callbacks != null)
+                        {
+                            <span class="badge @(callbacks.CaptureMode ? "bg-warning text-dark" : "bg-success")">
+                                @(callbacks.CaptureMode ? "capture mode (not delivered)" : "live delivery")
+                            </span>
+                        }
+                        <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="LoadCallbacksAsync"><span class="oi oi-reload"></span></button>
+                    </span>
+                </div>
+                <div class="card-body p-0">
+                    @if (callbacks == null || callbacks.Callbacks.Count == 0)
+                    {
+                        <div class="text-muted small p-3">No callbacks yet. Send a POACK/ASN/invoice above.</div>
+                    }
+                    else
+                    {
+                        @foreach (var cb in callbacks.Callbacks)
+                        {
+                            <div class="border-bottom p-2">
+                                <div class="small">
+                                    <strong>@cb.MessageType</strong>
+                                    <span class="badge bg-secondary ms-1">@cb.Status</span>
+                                    <span class="text-muted ms-1">@cb.CreatedAt.ToLocalTime().ToString("MM/dd HH:mm:ss")</span>
+                                    @if (!string.IsNullOrEmpty(cb.LastError)) { <span class="text-danger ms-1">@cb.LastError</span> }
+                                </div>
+                                <pre class="mb-0 mt-1 small bg-light p-2" style="white-space: pre-wrap; max-height: 160px; overflow:auto;">@FormatJson(cb.Payload)</pre>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<OrderDto> orders = new();
+    private int selectedOrderId;
+    private OrderDetailDto? order;
+    private string docType = "EZPOACK";
+    private string currentXml = "";
+    private bool sending;
+    private SprInjectResult? injectResult;
+    private SprCallbacksResult? callbacks;
+
+    protected override async Task OnInitializedAsync() => await LoadOrdersAsync();
+
+    private async Task LoadOrdersAsync()
+    {
+        var result = await Api.GetOrdersAsync(take: 200);
+        orders = result.Items;
+    }
+
+    private async Task LoadOrderAsync()
+    {
+        injectResult = null;
+        callbacks = null;
+        currentXml = "";
+        order = selectedOrderId > 0 ? await Api.GetOrderAsync(selectedOrderId) : null;
+        if (order != null)
+        {
+            await LoadCallbacksAsync();
+        }
+    }
+
+    private async Task LoadCallbacksAsync()
+    {
+        if (order?.CorrelationId is { Length: > 0 } corr)
+        {
+            callbacks = await Api.GetSprCallbacksAsync(corr);
+        }
+    }
+
+    private void Generate(string type, bool ack)
+    {
+        docType = type;
+        currentXml = type switch
+        {
+            "EZPOACK" => SprSampleBuilder.BuildPoack(order!, ack),
+            "EZASNS" => SprSampleBuilder.BuildAsn(order!),
+            "EZINV4" => SprSampleBuilder.BuildInvoice(order!),
+            _ => ""
+        };
+    }
+
+    private async Task SendAsync()
+    {
+        if (order == null) return;
+        sending = true;
+        injectResult = await Api.InjectSprInboundAsync(order.TradingPartnerId, docType, currentXml);
+        // Reload the order (status may have advanced) and the callbacks.
+        order = await Api.GetOrderAsync(selectedOrderId);
+        await LoadCallbacksAsync();
+        sending = false;
+    }
+
+    private static string FormatJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(doc, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return json; }
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "Acknowledged" => "bg-info",
+        "Shipped" or "Completed" => "bg-success",
+        "Failed" or "Cancelled" => "bg-danger",
+        "PartiallyShipped" or "Processing" => "bg-primary",
+        _ => "bg-secondary"
+    };
+}

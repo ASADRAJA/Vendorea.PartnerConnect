@@ -1170,4 +1170,45 @@ public class ApiClient
             return new RunJobResult { Success = false, Error = ex.Message };
         }
     }
+
+    // SPR inbound simulation endpoints
+    public async Task<SprInjectResult?> InjectSprInboundAsync(int connectionId, string documentType, string xml)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/spr/inbound", new
+            {
+                connectionId,
+                documentType,
+                xml
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<SprInjectResult>();
+            }
+
+            var error = await response.Content.ReadAsStringAsync();
+            return new SprInjectResult { Success = false, ErrorMessage = $"{(int)response.StatusCode}: {error}" };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to inject SPR inbound document");
+            return new SprInjectResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<SprCallbacksResult?> GetSprCallbacksAsync(string correlationId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<SprCallbacksResult>(
+                $"/api/admin/spr/inbound/callbacks?correlationId={Uri.EscapeDataString(correlationId)}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get SPR callbacks for {CorrelationId}", correlationId);
+            return null;
+        }
+    }
 }

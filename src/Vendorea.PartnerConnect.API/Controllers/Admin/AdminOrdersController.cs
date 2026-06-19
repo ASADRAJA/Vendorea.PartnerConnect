@@ -209,6 +209,7 @@ public class AdminOrdersController : ControllerBase
             TradingPartnerName = order.TradingPartner?.Name,
             AccountNumber = order.TenantPartnerAccount?.AccountNumber ?? "",
             PoNumber = order.PoNumber,
+            CorrelationId = order.CorrelationId.ToString(),
             Status = order.Status.ToString(),
             SubTotal = order.SubTotal,
             TaxAmount = order.TaxAmount,
@@ -234,6 +235,7 @@ public class AdminOrdersController : ControllerBase
             TradingPartnerName = order.TradingPartner?.Name,
             AccountNumber = order.TenantPartnerAccount?.AccountNumber ?? "",
             PoNumber = order.PoNumber,
+            CorrelationId = order.CorrelationId.ToString(),
             Status = order.Status.ToString(),
             SubTotal = order.SubTotal,
             TaxAmount = order.TaxAmount,
@@ -328,6 +330,7 @@ public class OrderDto
     public string? TradingPartnerName { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
     public string PoNumber { get; set; } = string.Empty;
+    public string? CorrelationId { get; set; }
     public string Status { get; set; } = string.Empty;
     public decimal SubTotal { get; set; }
     public decimal TaxAmount { get; set; }
