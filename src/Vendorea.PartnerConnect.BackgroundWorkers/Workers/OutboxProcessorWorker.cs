@@ -44,7 +44,14 @@ public class OutboxProcessorWorker : BackgroundService
                 _logger.LogError(ex, "Error in outbox processor worker");
             }
 
-            await Task.Delay(_options.PollingInterval, stoppingToken);
+            try
+            {
+                await Task.Delay(_options.PollingInterval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
 
         _logger.LogInformation("Outbox processor worker stopping...");

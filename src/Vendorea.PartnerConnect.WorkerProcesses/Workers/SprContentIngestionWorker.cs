@@ -35,7 +35,8 @@ public class SprContentIngestionWorker : BackgroundService
         if (_options.InitialDelaySeconds > 0)
         {
             _logger.LogInformation("Waiting {Delay} seconds before first run...", _options.InitialDelaySeconds);
-            await Task.Delay(TimeSpan.FromSeconds(_options.InitialDelaySeconds), stoppingToken);
+            try { await Task.Delay(TimeSpan.FromSeconds(_options.InitialDelaySeconds), stoppingToken); }
+            catch (OperationCanceledException) { return; }
         }
 
         while (!stoppingToken.IsCancellationRequested)
