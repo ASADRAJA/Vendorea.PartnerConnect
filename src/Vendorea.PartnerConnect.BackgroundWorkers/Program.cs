@@ -62,6 +62,9 @@ builder.Services.AddMerchant360Connector(options =>
 {
     var section = builder.Configuration.GetSection("Merchant360");
     options.BaseUrl = section.GetValue<string>("BaseUrl") ?? "http://localhost:5003";
+    // The Merchant360 callback endpoints authenticate via X-Api-Key (Merchant360:ApiKey). Without
+    // this the connector falls back to OAuth2 Bearer, which those endpoints reject (401).
+    options.ApiKey = section.GetValue<string>("ApiKey");
     options.TokenEndpoint = section.GetValue<string>("TokenEndpoint") ?? "http://localhost:5003/oauth2/token";
     options.ClientId = section.GetValue<string>("ClientId") ?? "";
     options.ClientSecret = section.GetValue<string>("ClientSecret") ?? "";
