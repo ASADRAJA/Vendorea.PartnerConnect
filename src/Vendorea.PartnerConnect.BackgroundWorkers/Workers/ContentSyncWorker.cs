@@ -35,8 +35,9 @@ public class ContentSyncWorker : BackgroundService
             "Content Sync Worker starting with interval: {Interval} minutes, max concurrent: {MaxConcurrent}",
             intervalMinutes, maxConcurrentJobs);
 
-        // Initial delay
-        await Task.Delay(TimeSpan.FromSeconds(initialDelaySeconds), stoppingToken);
+        // Initial delay (swallow cancellation on shutdown so it doesn't surface as a fatal error)
+        try { await Task.Delay(TimeSpan.FromSeconds(initialDelaySeconds), stoppingToken); }
+        catch (OperationCanceledException) { return; }
 
         while (!stoppingToken.IsCancellationRequested)
         {

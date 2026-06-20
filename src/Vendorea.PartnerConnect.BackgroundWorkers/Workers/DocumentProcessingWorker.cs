@@ -34,8 +34,9 @@ public class DocumentProcessingWorker : BackgroundService
             "Document Processing Worker starting with interval: {Interval} seconds, batch size: {BatchSize}",
             intervalSeconds, batchSize);
 
-        // Initial delay
-        await Task.Delay(TimeSpan.FromSeconds(initialDelaySeconds), stoppingToken);
+        // Initial delay (swallow cancellation on shutdown)
+        try { await Task.Delay(TimeSpan.FromSeconds(initialDelaySeconds), stoppingToken); }
+        catch (OperationCanceledException) { return; }
 
         while (!stoppingToken.IsCancellationRequested)
         {

@@ -33,8 +33,9 @@ public class PriceFeedSyncWorker : BackgroundService
             "Price Feed Sync Worker starting with interval: {Interval} minutes, max concurrent: {MaxConcurrent}",
             intervalMinutes, maxConcurrentConnections);
 
-        // Initial delay to allow services to fully start
-        await Task.Delay(TimeSpan.FromSeconds(initialDelaySeconds), stoppingToken);
+        // Initial delay to allow services to fully start (swallow cancellation on shutdown)
+        try { await Task.Delay(TimeSpan.FromSeconds(initialDelaySeconds), stoppingToken); }
+        catch (OperationCanceledException) { return; }
 
         while (!stoppingToken.IsCancellationRequested)
         {
