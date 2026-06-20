@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Hosting;
 using Serilog;
 using Vendorea.PartnerConnect.BackgroundWorkers;
 using Vendorea.PartnerConnect.BackgroundWorkers.Workers;
@@ -27,6 +28,11 @@ builder.Services.AddSerilog();
 // PartnerConnect services
 builder.Services.AddPartnerConnectServices();
 builder.Services.AddPartnerConnectInfrastructure();
+
+// Shared services (e.g. AuditService) depend on IHttpContextAccessor. There is no HTTP context in
+// the worker host, but the accessor must still be registered (HttpContext will be null) so the
+// container can construct those services.
+builder.Services.AddHttpContextAccessor();
 
 // SPR inbound-simulation toggles (default OFF). Controls whether Merchant360 callbacks are
 // captured (short-circuited) instead of delivered when simulating the SPR feedback loop.
@@ -56,6 +62,12 @@ builder.Services.AddMerchant360Connector(options =>
 // Configure outbox worker options
 builder.Services.Configure<OutboxWorkerOptions>(
     builder.Configuration.GetSection("OutboxWorker"));
+
+// Resilience: one worker throwing an unhandled exception must NOT stop the whole host (the default
+// StopHost behavior would also kill the outbox/EDI workers). Ignore lets the other workers keep
+// running; each worker logs and recovers within its own loop.
+builder.Services.Configure<HostOptions>(o =>
+    o.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
 
 // Background workers
 builder.Services.AddHostedService<PriceFeedSyncWorker>();
