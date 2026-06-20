@@ -18,6 +18,14 @@ using Vendorea.PartnerConnect.WorkerProcesses;
 // always-on worker app loaded.
 var builder = WebApplication.CreateBuilder(args);
 
+// The minimal web host exists only for the /health probe. Default to a port that doesn't collide
+// with the API (5010) or the Admin Portal (5000); honor ASPNETCORE_URLS / --urls when provided.
+if (string.IsNullOrWhiteSpace(builder.Configuration["ASPNETCORE_URLS"])
+    && string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
+{
+    builder.WebHost.UseSetting("urls", "http://localhost:5020");
+}
+
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
