@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 
@@ -15,6 +16,7 @@ namespace Vendorea.PartnerConnect.PartnerAdapters.SPR.Soap;
 public class SprInteractiveServicesClient : ISprInteractiveServices
 {
     private const string SoapNs = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string SoapEncodingNs = "http://schemas.xmlsoap.org/soap/encoding/";
     private const string QuickCheckPlusNs = "http://tempuri.org/quick_check_plus/message";
 
     private readonly HttpClient _httpClient;
@@ -219,22 +221,28 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
 
             var doc = XDocument.Parse(xml);
             var result = ParseItemFields(doc);
-            // Stock/Dealer return a ResultsRows array of per-DC <item> rows.
-            foreach (var item in doc.Descendants().Where(e => e.Name.LocalName == "item"))
+            // Per-DC availability is a SOAP-ENC array <ResultsRows> of per-DC rows. The row element is
+            // named per service (DealerStockCheckRow / StockCheckRow per the WSDL), so iterate the
+            // array element's children rather than matching a specific row name.
+            var resultsRows = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "ResultsRows");
+            if (resultsRows != null)
             {
-                result.Dcs.Add(new SprDcStock
+                foreach (var row in resultsRows.Elements())
                 {
-                    DcNumber = Value(item, "DcNum") ?? string.Empty,
-                    DcName = Value(item, "DcName"),
-                    Available = ParseInt(Value(item, "Available")) ?? 0,
-                    Uom = Value(item, "Uom"),
-                    OnOrder = ParseInt(Value(item, "OnOrder")),
-                    Expected = Value(item, "Expected"),
-                    Sprinter = string.Equals(Value(item, "Sprinter"), "Y", StringComparison.OrdinalIgnoreCase),
-                    CutOff = Value(item, "CutOff"),
-                    LeadTime = Value(item, "LeadTime"),
-                    DcType = Value(item, "DcType")
-                });
+                    result.Dcs.Add(new SprDcStock
+                    {
+                        DcNumber = Value(row, "DcNum") ?? string.Empty,
+                        DcName = Value(row, "DcName"),
+                        Available = ParseInt(Value(row, "Available")) ?? 0,
+                        Uom = Value(row, "Uom"),
+                        OnOrder = ParseInt(Value(row, "OnOrder")),
+                        Expected = Value(row, "Expected"),
+                        Sprinter = string.Equals(Value(row, "Sprinter"), "Y", StringComparison.OrdinalIgnoreCase),
+                        CutOff = Value(row, "CutOff"),
+                        LeadTime = Value(row, "LeadTime"),
+                        DcType = Value(row, "DcType")
+                    });
+                }
             }
             return result;
         }
@@ -304,12 +312,16 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         sb.Append($"<Action>{Esc(action)}</Action>");
     }
 
+    // SPR's services are SOAP 1.1 rpc/encoded (NuSOAP). An empty <soapenv:Header/> element MUST be
+    // OMITTED: when present, the NuSOAP server fails to decode the body parameters — every field
+    // (incl. Action) arrives null and SPR rejects with RtnStatus 0009 "Invalid Service Action
+    // Request Code." The method element also carries soapenv:encodingStyle, the correct marker for
+    // rpc/encoded. (Both verified against the sprwstst test endpoint, 2026-06-21.)
     private static string BuildInputEnvelope(string method, string methodNs, string fieldsXml) => $"""
         <?xml version="1.0" encoding="UTF-8"?>
         <soapenv:Envelope xmlns:soapenv="{SoapNs}" xmlns:svc="{methodNs}">
-          <soapenv:Header/>
           <soapenv:Body>
-            <svc:{method}><input>{fieldsXml}</input></svc:{method}>
+            <svc:{method} soapenv:encodingStyle="{SoapEncodingNs}"><input>{fieldsXml}</input></svc:{method}>
           </soapenv:Body>
         </soapenv:Envelope>
         """;
@@ -317,9 +329,8 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
     private static string BuildMessageEnvelope(string method, string methodNs, string fieldsXml) => $"""
         <?xml version="1.0" encoding="UTF-8"?>
         <soapenv:Envelope xmlns:soapenv="{SoapNs}" xmlns:mes="{methodNs}">
-          <soapenv:Header/>
           <soapenv:Body>
-            <mes:{method}>{fieldsXml}</mes:{method}>
+            <mes:{method} soapenv:encodingStyle="{SoapEncodingNs}">{fieldsXml}</mes:{method}>
           </soapenv:Body>
         </soapenv:Envelope>
         """;
@@ -333,6 +344,10 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         };
         request.Headers.TryAddWithoutValidation("SOAPAction", $"\"{soapAction}\"");
 
+        _logger.LogDebug(
+            "SPR {Service} request: POST {Url} (SOAPAction=\"{SoapAction}\")\n{Body}",
+            service, url, soapAction, MaskSecrets(envelope));
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(config.TimeoutSeconds <= 0 ? 30 : config.TimeoutSeconds));
 
@@ -340,6 +355,7 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         var content = await response.Content.ReadAsStringAsync(cts.Token);
         if (!response.IsSuccessStatusCode)
             _logger.LogWarning("SPR {Service} returned HTTP {Status}", service, (int)response.StatusCode);
+        _logger.LogDebug("SPR {Service} raw response: {Body}", service, content);
         return content;
     }
 
@@ -373,4 +389,9 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
 
     private static string Esc(string? value) =>
         string.IsNullOrEmpty(value) ? string.Empty : System.Security.SecurityElement.Escape(value);
+
+    /// <summary>Redacts the &lt;Password&gt; element contents so the envelope is safe to log.</summary>
+    private static string MaskSecrets(string envelope) =>
+        Regex.Replace(envelope, "(<Password>)(.*?)(</Password>)", "$1***$3",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
 }
