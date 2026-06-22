@@ -103,10 +103,11 @@ public class SprStockCheckServiceTests
         outcome.Response!.Success.Should().BeTrue();
         outcome.Response.PricingIncluded.Should().BeTrue();
         outcome.Response.DealerPrice.Should().Be(0.99m);
-        // GroupCode is the dealer's account number (per-tenant); UserId is the shared partner cred.
+        // GroupCode is the partner-level SPR web-services registration code (config); CustNumber is
+        // the per-tenant dealer account number; UserId is the shared partner cred.
         _spr.Verify(s => s.DealerStockCheckAsync(
             It.Is<SprWebServiceConfig>(c =>
-                c.GroupCode == "ASAD-SPR-001" && c.CustNumber == "ASAD-SPR-001" && c.UserId == "WebService"),
+                c.GroupCode == "GRP" && c.CustNumber == "ASAD-SPR-001" && c.UserId == "WebService"),
             It.IsAny<SprStockCheckQuery>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
