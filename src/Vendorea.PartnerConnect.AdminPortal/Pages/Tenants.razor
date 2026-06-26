@@ -107,18 +107,20 @@
                                             <button class="btn btn-sm btn-outline-info" @onclick="() => ShowAccountsModal(tenant)" title="Partner Accounts">
                                                 <span class="oi oi-key"></span>
                                             </button>
-                                            @if (tenant.Status == "Active")
-                                            {
-                                                <button class="btn btn-sm btn-outline-warning ms-1" @onclick="() => SuspendTenant(tenant.Id)" title="Suspend tenant">
-                                                    <span class="oi oi-ban"></span>
-                                                </button>
-                                            }
-                                            else
-                                            {
-                                                <button class="btn btn-sm btn-outline-success ms-1" @onclick="() => ActivateTenant(tenant.Id)" title="Reactivate tenant">
-                                                    <span class="oi oi-circle-check"></span>
-                                                </button>
-                                            }
+                                            <AuthorizeView Policy="RequireOperator" Context="auth">
+                                                @if (tenant.Status == "Active")
+                                                {
+                                                    <button class="btn btn-sm btn-outline-warning ms-1" @onclick="() => SuspendTenant(tenant.Id)" title="Suspend tenant">
+                                                        <span class="oi oi-ban"></span>
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-sm btn-outline-success ms-1" @onclick="() => ActivateTenant(tenant.Id)" title="Reactivate tenant">
+                                                        <span class="oi oi-circle-check"></span>
+                                                    </button>
+                                                }
+                                            </AuthorizeView>
                                         </td>
                                     </tr>
                                 }

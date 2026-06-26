@@ -1211,4 +1211,103 @@ public class ApiClient
             return null;
         }
     }
+
+    // ---- Admin Portal users (login + management) ----
+
+    /// <summary>Validates a username/password against the API. Returns the user on success, else null.</summary>
+    public async Task<PortalUserDto?> AuthenticatePortalUserAsync(string username, string password)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "/api/admin/portal-users/authenticate", new { Username = username, Password = password });
+            if (!response.IsSuccessStatusCode)
+                return null;
+            return await response.Content.ReadFromJsonAsync<PortalUserDto>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to authenticate portal user {Username}", username);
+            return null;
+        }
+    }
+
+    public async Task<List<PortalUserDto>> GetPortalUsersAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<PortalUserDto>>("/api/admin/portal-users")
+                   ?? new List<PortalUserDto>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get portal users");
+            return new List<PortalUserDto>();
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> CreatePortalUserAsync(CreatePortalUserRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/portal-users", request);
+            return await ReadResultAsync(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create portal user {Username}", request.Username);
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> UpdatePortalUserAsync(Guid id, UpdatePortalUserRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PutAsJsonAsync($"/api/admin/portal-users/{id}", request);
+            return await ReadResultAsync(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update portal user {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> ResetPortalUserPasswordAsync(Guid id, string newPassword)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"/api/admin/portal-users/{id}/password", new { NewPassword = newPassword });
+            return await ReadResultAsync(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reset password for portal user {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> DeletePortalUserAsync(Guid id)
+    {
+        try
+        {
+            var response = await _httpClient.DeleteAsync($"/api/admin/portal-users/{id}");
+            return await ReadResultAsync(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete portal user {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
+    private static async Task<(bool Success, string? Error)> ReadResultAsync(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode)
+            return (true, null);
+        var body = await response.Content.ReadAsStringAsync();
+        return (false, string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body);
+    }
 }

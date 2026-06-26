@@ -53,18 +53,20 @@
                         }
                     </div>
                     <div class="col-md-2 d-flex align-items-end">
-                        <button class="btn btn-primary w-100" @onclick="ImportContent" disabled="@(!CanImport || isImporting)">
-                            @if (isImporting)
-                            {
-                                <span class="spinner-border spinner-border-sm me-1"></span>
-                                <span>Importing...</span>
-                            }
-                            else
-                            {
-                                <span class="oi oi-cloud-upload me-1"></span>
-                                <span>Import</span>
-                            }
-                        </button>
+                        <AuthorizeView Policy="RequireOperator" Context="auth">
+                            <button class="btn btn-primary w-100" @onclick="ImportContent" disabled="@(!CanImport || isImporting)">
+                                @if (isImporting)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <span>Importing...</span>
+                                }
+                                else
+                                {
+                                    <span class="oi oi-cloud-upload me-1"></span>
+                                    <span>Import</span>
+                                }
+                            </button>
+                        </AuthorizeView>
                     </div>
                 </div>
 
@@ -181,6 +183,7 @@
                                             <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ViewStatus(upload.UploadId)" title="View Status">
                                                 <span class="oi oi-eye"></span>
                                             </button>
+                                            <AuthorizeView Policy="RequireOperator" Context="auth">
                                             @if (upload.Status == "Pending" || upload.Status == "Extracting" || upload.Status == "Parsing" || upload.Status == "Importing")
                                             {
                                                 <button class="btn btn-sm btn-outline-warning" @onclick="() => CancelImport(upload.UploadId)" title="Cancel">
@@ -229,6 +232,7 @@
                                                     <span class="oi oi-trash"></span>
                                                 </button>
                                             }
+                                            </AuthorizeView>
                                         </td>
                                     </tr>
                                 }

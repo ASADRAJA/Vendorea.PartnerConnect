@@ -1,0 +1,342 @@
+@page "/users"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@inject ApiClient Api
+
+<PageTitle>Users</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Portal Users</h1>
+    <button class="btn btn-primary btn-sm" @onclick="ShowAddModal">
+        <span class="oi oi-plus me-1"></span> Add User
+    </button>
+</div>
+
+<p class="text-muted">
+    Portal users sign in to this admin portal. <strong>Admin</strong> can do everything;
+    <strong>Support</strong> can approve/run/operate but not change configuration or manage users;
+    <strong>Read-only</strong> can view but not modify anything.
+</p>
+
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @(messageIsError ? "alert-danger" : "alert-success") alert-dismissible">
+        @message
+        <button type="button" class="btn-close" @onclick="() => message = null"></button>
+    </div>
+}
+
+@if (loading)
+{
+    <div class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span> Loading…</div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Display Name</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var u in users)
+            {
+                <tr>
+                    <td>@u.Username</td>
+                    <td>@u.DisplayName</td>
+                    <td><span class="badge @RoleBadge(u.Role)">@u.Role</span></td>
+                    <td>
+                        @if (u.IsActive)
+                        {
+                            <span class="badge bg-success">Active</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Inactive</span>
+                        }
+                    </td>
+                    <td><small class="text-muted">@(u.LastLoginAt?.ToLocalTime().ToString("g") ?? "—")</small></td>
+                    <td class="text-end text-nowrap">
+                        <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(u)" title="Edit">
+                            <span class="oi oi-pencil"></span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => ShowPasswordModal(u)" title="Reset password">
+                            <span class="oi oi-key"></span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowDeleteModal(u)" title="Delete">
+                            <span class="oi oi-trash"></span>
+                        </button>
+                    </td>
+                </tr>
+            }
+            @if (users.Count == 0)
+            {
+                <tr><td colspan="6" class="text-center text-muted">No users.</td></tr>
+            }
+        </tbody>
+    </table>
+}
+
+@* Add modal *@
+@if (showAdd)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add User</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input class="form-control" @bind="addForm.Username" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input class="form-control" @bind="addForm.DisplayName" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" @bind="addForm.Password" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" @bind="addForm.Role">
+                            @foreach (var r in PortalRoles.All)
+                            {
+                                <option value="@r">@r</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button class="btn btn-primary" @onclick="AddUser" disabled="@busy">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Edit modal *@
+@if (showEdit && selected != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit @selected.Username</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input class="form-control" @bind="editForm.DisplayName" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" @bind="editForm.Role">
+                            @foreach (var r in PortalRoles.All)
+                            {
+                                <option value="@r">@r</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="activeChk" @bind="editForm.IsActive" />
+                        <label class="form-check-label" for="activeChk">Active (can sign in)</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveEdit" disabled="@busy">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Reset password modal *@
+@if (showPassword && selected != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reset password — @selected.Username</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">New Password</label>
+                        <input type="password" class="form-control" @bind="newPassword" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button class="btn btn-primary" @onclick="ResetPassword" disabled="@busy">Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Delete modal *@
+@if (showDelete && selected != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete user</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    Delete <strong>@selected.Username</strong>? This cannot be undone.
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button class="btn btn-danger" @onclick="DeleteUser" disabled="@busy">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<PortalUserDto> users = new();
+    private bool loading = true;
+    private bool busy;
+    private string? message;
+    private bool messageIsError;
+
+    private bool showAdd, showEdit, showPassword, showDelete;
+    private PortalUserDto? selected;
+    private CreatePortalUserRequest addForm = new();
+    private UpdatePortalUserRequest editForm = new();
+    private string newPassword = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        loading = true;
+        users = await Api.GetPortalUsersAsync();
+        loading = false;
+    }
+
+    private void ShowAddModal()
+    {
+        addForm = new CreatePortalUserRequest { Role = PortalRoles.ReadOnly };
+        CloseAndShow(() => showAdd = true);
+    }
+
+    private void ShowEditModal(PortalUserDto u)
+    {
+        selected = u;
+        editForm = new UpdatePortalUserRequest { Role = u.Role, IsActive = u.IsActive, DisplayName = u.DisplayName };
+        CloseAndShow(() => showEdit = true);
+    }
+
+    private void ShowPasswordModal(PortalUserDto u)
+    {
+        selected = u;
+        newPassword = string.Empty;
+        CloseAndShow(() => showPassword = true);
+    }
+
+    private void ShowDeleteModal(PortalUserDto u)
+    {
+        selected = u;
+        CloseAndShow(() => showDelete = true);
+    }
+
+    private void CloseAndShow(Action show)
+    {
+        showAdd = showEdit = showPassword = showDelete = false;
+        show();
+    }
+
+    private void CloseModals()
+    {
+        showAdd = showEdit = showPassword = showDelete = false;
+        selected = null;
+    }
+
+    private async Task AddUser()
+    {
+        if (string.IsNullOrWhiteSpace(addForm.Username) || string.IsNullOrWhiteSpace(addForm.Password))
+        {
+            Show("Username and password are required.", true);
+            return;
+        }
+        busy = true;
+        var (ok, err) = await Api.CreatePortalUserAsync(addForm);
+        busy = false;
+        await AfterAction(ok, err, $"User '{addForm.Username}' created.");
+    }
+
+    private async Task SaveEdit()
+    {
+        if (selected == null) return;
+        busy = true;
+        var (ok, err) = await Api.UpdatePortalUserAsync(selected.Id, editForm);
+        busy = false;
+        await AfterAction(ok, err, "User updated.");
+    }
+
+    private async Task ResetPassword()
+    {
+        if (selected == null) return;
+        if (string.IsNullOrWhiteSpace(newPassword))
+        {
+            Show("Enter a new password.", true);
+            return;
+        }
+        busy = true;
+        var (ok, err) = await Api.ResetPortalUserPasswordAsync(selected.Id, newPassword);
+        busy = false;
+        await AfterAction(ok, err, "Password reset.");
+    }
+
+    private async Task DeleteUser()
+    {
+        if (selected == null) return;
+        busy = true;
+        var (ok, err) = await Api.DeletePortalUserAsync(selected.Id);
+        busy = false;
+        await AfterAction(ok, err, "User deleted.");
+    }
+
+    private async Task AfterAction(bool ok, string? err, string successMessage)
+    {
+        if (ok)
+        {
+            CloseModals();
+            Show(successMessage, false);
+            await Load();
+        }
+        else
+        {
+            Show(err ?? "Operation failed.", true);
+        }
+    }
+
+    private void Show(string msg, bool isError)
+    {
+        message = msg;
+        messageIsError = isError;
+    }
+
+    private static string RoleBadge(string role) => role switch
+    {
+        "Admin" => "bg-danger",
+        "Support" => "bg-primary",
+        _ => "bg-secondary"
+    };
+}

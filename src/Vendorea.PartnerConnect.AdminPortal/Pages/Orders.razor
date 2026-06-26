@@ -119,18 +119,20 @@
                                             <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ShowDetailsModal(order)" title="View Details">
                                                 <span class="oi oi-eye"></span>
                                             </button>
-                                            @if (order.Status == "Submitted")
-                                            {
-                                                <button class="btn btn-sm btn-success me-1" @onclick="() => AcknowledgeOrder(order.Id)" title="Acknowledge">
-                                                    <span class="oi oi-check"></span>
-                                                </button>
-                                            }
-                                            @if (CanCancel(order.Status))
-                                            {
-                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowCancelModal(order)" title="Cancel">
-                                                    <span class="oi oi-x"></span>
-                                                </button>
-                                            }
+                                            <AuthorizeView Policy="RequireOperator" Context="auth">
+                                                @if (order.Status == "Submitted")
+                                                {
+                                                    <button class="btn btn-sm btn-success me-1" @onclick="() => AcknowledgeOrder(order.Id)" title="Acknowledge">
+                                                        <span class="oi oi-check"></span>
+                                                    </button>
+                                                }
+                                                @if (CanCancel(order.Status))
+                                                {
+                                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowCancelModal(order)" title="Cancel">
+                                                        <span class="oi oi-x"></span>
+                                                    </button>
+                                                }
+                                            </AuthorizeView>
                                         </td>
                                     </tr>
                                 }

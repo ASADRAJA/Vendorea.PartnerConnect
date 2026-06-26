@@ -115,9 +115,11 @@ else
                             </button>
                             @if (doc.Status == "Failed")
                             {
-                                <button class="btn btn-sm btn-outline-warning" @onclick="() => RetryDocument(doc.Id)">
-                                    Retry
-                                </button>
+                                <AuthorizeView Policy="RequireOperator" Context="auth">
+                                    <button class="btn btn-sm btn-outline-warning" @onclick="() => RetryDocument(doc.Id)">
+                                        Retry
+                                    </button>
+                                </AuthorizeView>
                             }
                         </td>
                     </tr>
@@ -183,9 +185,11 @@ else
                 <div class="modal-footer">
                     @if (selectedDocument.Status == "Failed")
                     {
-                        <button type="button" class="btn btn-warning" @onclick="() => RetryDocument(selectedDocument.Id)">
-                            Retry Processing
-                        </button>
+                        <AuthorizeView Policy="RequireOperator" Context="auth">
+                            <button type="button" class="btn btn-warning" @onclick="() => RetryDocument(selectedDocument.Id)">
+                                Retry Processing
+                            </button>
+                        </AuthorizeView>
                     }
                     <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
                 </div>

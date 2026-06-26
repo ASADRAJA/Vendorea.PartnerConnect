@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Vendorea.PartnerConnect.AdminPortal.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -5,6 +7,30 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddCascadingAuthenticationState();
+
+// Cookie authentication. Login/logout happen via the /Account/Login Razor Page + /account/logout
+// endpoint (cookies can't be issued from inside a live Blazor circuit).
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.LogoutPath = "/account/logout";
+        options.AccessDeniedPath = "/Account/Login";
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+        options.Cookie.Name = "PartnerConnectAdmin.Auth";
+    });
+
+// Portal authorization policies (role claim = "Admin" | "Support" | "ReadOnly").
+builder.Services.AddAuthorization(options =>
+{
+    // Config edits, power tools, user management.
+    options.AddPolicy("RequireAdmin", p => p.RequireRole("Admin"));
+    // Approvals / runs / retries / activate-suspend (Admin or Support).
+    options.AddPolicy("RequireOperator", p => p.RequireRole("Admin", "Support"));
+});
 
 // Configure HttpClient for API calls
 builder.Services.AddHttpClient<ApiClient>(client =>
@@ -32,7 +58,20 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.UseRouting();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapBlazorHub();
-app.MapFallbackToPage("/_Host");
+app.MapRazorPages();
+
+// Logout: clear the auth cookie and return to the login page.
+app.MapGet("/account/logout", async (HttpContext ctx) =>
+{
+    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Redirect("/Account/Login");
+});
+
+// Everything else renders the Blazor host, which requires an authenticated user.
+app.MapFallbackToPage("/_Host").RequireAuthorization();
 
 app.Run();
