@@ -96,6 +96,9 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Permission> Permissions => Set<Permission>();
 
+    // Admin Portal login users (username/password + portal role)
+    public DbSet<AdminPortalUser> AdminPortalUsers => Set<AdminPortalUser>();
+
     // Billing
     public DbSet<BillingPlan> BillingPlans => Set<BillingPlan>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();

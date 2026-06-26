@@ -34,6 +34,7 @@ else if (selectedPartner == "SPR")
 {
     <!-- SPR (Etilize) Content Ingestion Configuration -->
     <div class="row mb-4">
+        <AuthorizeView Policy="RequireAdmin">
         <div class="col-md-8">
             <div class="card">
                 <div class="card-header bg-primary text-white">
@@ -183,6 +184,7 @@ else if (selectedPartner == "SPR")
                 </div>
             </div>
         </div>
+        </AuthorizeView>
 
         <div class="col-md-4">
             <div class="card">
@@ -192,18 +194,20 @@ else if (selectedPartner == "SPR")
                 <div class="card-body">
                     <p class="text-muted small">Run the ingestion pipeline manually without waiting for the scheduled time.</p>
 
-                    <button class="btn btn-success w-100" @onclick="RunImportNowWithPolling" disabled="@isRunning">
-                        @if (isRunning)
-                        {
-                            <span class="spinner-border spinner-border-sm me-1"></span>
-                            <span>Running...</span>
-                        }
-                        else
-                        {
-                            <span class="oi oi-cloud-download me-1"></span>
-                            <span>Run Import Now</span>
-                        }
-                    </button>
+                    <AuthorizeView Policy="RequireOperator" Context="auth">
+                        <button class="btn btn-success w-100" @onclick="RunImportNowWithPolling" disabled="@isRunning">
+                            @if (isRunning)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                <span>Running...</span>
+                            }
+                            else
+                            {
+                                <span class="oi oi-cloud-download me-1"></span>
+                                <span>Run Import Now</span>
+                            }
+                        </button>
+                    </AuthorizeView>
 
                     @if (runResult != null)
                     {

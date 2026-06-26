@@ -18,9 +18,11 @@
                         </li>
                     }
                 </ul>
-                <button class="btn btn-primary btn-sm" @onclick="ShowRequestModal">
-                    <span class="oi oi-plus me-1"></span> Request Connection
-                </button>
+                <AuthorizeView Policy="RequireOperator" Context="auth">
+                    <button class="btn btn-primary btn-sm" @onclick="ShowRequestModal">
+                        <span class="oi oi-plus me-1"></span> Request Connection
+                    </button>
+                </AuthorizeView>
             </div>
             <div class="card-body">
                 <div class="row mb-3">
@@ -79,8 +81,10 @@
                                         <td>
                                             @if (c.ApprovalStatus == "Pending")
                                             {
-                                                <button class="btn btn-sm btn-success me-1" @onclick="() => Approve(c.Id)" title="Approve"><span class="oi oi-check"></span></button>
-                                                <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => ShowDenyModal(c)" title="Deny"><span class="oi oi-x"></span></button>
+                                                <AuthorizeView Policy="RequireOperator" Context="auth">
+                                                    <button class="btn btn-sm btn-success me-1" @onclick="() => Approve(c.Id)" title="Approve"><span class="oi oi-check"></span></button>
+                                                    <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => ShowDenyModal(c)" title="Deny"><span class="oi oi-x"></span></button>
+                                                </AuthorizeView>
                                             }
                                             <button class="btn btn-sm btn-outline-info" @onclick="() => ShowDetails(c)" title="Details"><span class="oi oi-eye"></span></button>
                                         </td>

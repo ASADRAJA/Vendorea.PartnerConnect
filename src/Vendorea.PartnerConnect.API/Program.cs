@@ -135,6 +135,11 @@ builder.Services.Configure<Microsoft.AspNetCore.Authorization.AuthorizationOptio
         .Build();
 });
 
+// Resilience: a single hosted-service (e.g. WebhookDeliveryWorker) throwing must not stop the whole
+// API host. The default StopHost would take the API down with it.
+builder.Services.Configure<Microsoft.Extensions.Hosting.HostOptions>(o =>
+    o.BackgroundServiceExceptionBehavior = Microsoft.Extensions.Hosting.BackgroundServiceExceptionBehavior.Ignore);
+
 // Health checks
 builder.Services.AddHealthChecks();
 
@@ -190,6 +195,34 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         Log.Warning(ex, "Could not cleanup orphaned ingestion runs");
+    }
+}
+
+// Seed the default Admin Portal user (pcadmin) when no active Admin exists.
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<Vendorea.PartnerConnect.Persistence.PartnerConnectDbContext>();
+        var hasAdmin = dbContext.AdminPortalUsers.Any(u =>
+            u.Role == Vendorea.PartnerConnect.Domain.Entities.AdminPortalRole.Admin && u.IsActive);
+        if (!hasAdmin)
+        {
+            dbContext.AdminPortalUsers.Add(new Vendorea.PartnerConnect.Domain.Entities.AdminPortalUser
+            {
+                Username = "pcadmin",
+                DisplayName = "Portal Administrator",
+                Role = Vendorea.PartnerConnect.Domain.Entities.AdminPortalRole.Admin,
+                IsActive = true,
+                PasswordHash = Vendorea.PartnerConnect.Infrastructure.Security.PortalPasswordHasher.Hash("12345678")
+            });
+            dbContext.SaveChanges();
+            Log.Information("Seeded default Admin Portal user 'pcadmin'");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Could not seed default Admin Portal user");
     }
 }
 

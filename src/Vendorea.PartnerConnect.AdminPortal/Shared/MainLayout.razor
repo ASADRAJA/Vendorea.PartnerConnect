@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
 <div class="page">
     <div class="sidebar">
@@ -7,7 +7,15 @@
 
     <div class="main">
         <div class="top-row px-4">
-            <a href="https://docs.microsoft.com/aspnet/" target="_blank">About</a>
+            <AuthorizeView>
+                <Authorized>
+                    <span class="me-3 text-muted">
+                        <span class="oi oi-person" aria-hidden="true"></span>
+                        @GetDisplayName(context) <span class="badge bg-secondary ms-1">@GetRole(context)</span>
+                    </span>
+                    <a href="/account/logout">Sign out</a>
+                </Authorized>
+            </AuthorizeView>
         </div>
 
         <div class="content px-4">
@@ -15,3 +23,14 @@
         </div>
     </div>
 </div>
+
+@code {
+    private static string GetDisplayName(AuthenticationState context)
+    {
+        var display = context.User.FindFirst("displayName")?.Value;
+        return string.IsNullOrWhiteSpace(display) ? (context.User.Identity?.Name ?? "User") : display;
+    }
+
+    private static string GetRole(AuthenticationState context) =>
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "ReadOnly";
+}

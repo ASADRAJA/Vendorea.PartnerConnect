@@ -75,12 +75,16 @@ else
                             <span class="small">@(job.IsEnabled ? job.NextDueAt?.ToString("g") ?? "—" : "—")</span>
                         </td>
                         <td class="text-nowrap">
-                            <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowEditModal(job)" title="Edit schedule">
-                                <span class="oi oi-pencil"></span>
-                            </button>
-                            <button class="btn btn-sm btn-outline-success" @onclick="() => RunNow(job)" disabled="@(runningJobId == job.Id)" title="Run now">
-                                @if (runningJobId == job.Id) { <span class="spinner-border spinner-border-sm"></span> } else { <span class="oi oi-media-play"></span> }
-                            </button>
+                            <AuthorizeView Policy="RequireAdmin" Context="auth">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowEditModal(job)" title="Edit schedule">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                            </AuthorizeView>
+                            <AuthorizeView Policy="RequireOperator" Context="auth">
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => RunNow(job)" disabled="@(runningJobId == job.Id)" title="Run now">
+                                    @if (runningJobId == job.Id) { <span class="spinner-border spinner-border-sm"></span> } else { <span class="oi oi-media-play"></span> }
+                                </button>
+                            </AuthorizeView>
                             <button class="btn btn-sm btn-outline-info" @onclick="() => ShowHistory(job)" title="Run history">
                                 <span class="oi oi-clock"></span>
                             </button>

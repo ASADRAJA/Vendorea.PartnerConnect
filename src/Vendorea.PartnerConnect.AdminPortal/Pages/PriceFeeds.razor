@@ -43,18 +43,20 @@
                         }
                     </div>
                     <div class="col-md-2 d-flex align-items-end">
-                        <button class="btn btn-primary w-100" @onclick="UploadFile" disabled="@(!CanUpload || isUploading)">
-                            @if (isUploading)
-                            {
-                                <span class="spinner-border spinner-border-sm me-1"></span>
-                                <span>Uploading...</span>
-                            }
-                            else
-                            {
-                                <span class="oi oi-cloud-upload me-1"></span>
-                                <span>Upload</span>
-                            }
-                        </button>
+                        <AuthorizeView Policy="RequireOperator" Context="auth">
+                            <button class="btn btn-primary w-100" @onclick="UploadFile" disabled="@(!CanUpload || isUploading)">
+                                @if (isUploading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <span>Uploading...</span>
+                                }
+                                else
+                                {
+                                    <span class="oi oi-cloud-upload me-1"></span>
+                                    <span>Upload</span>
+                                }
+                            </button>
+                        </AuthorizeView>
                     </div>
                 </div>
 
@@ -186,34 +188,36 @@
                                             <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ViewDetails(upload.Id)" title="View Details">
                                                 <span class="oi oi-eye"></span>
                                             </button>
-                                            @if (upload.Status == "Completed" && !upload.PushedToMerchant360At.HasValue)
-                                            {
-                                                <button class="btn btn-sm btn-outline-success" @onclick="() => PushToMerchant360(upload.Id)"
-                                                        disabled="@(pushingUploadId == upload.Id)" title="Push to Merchant360">
-                                                    @if (pushingUploadId == upload.Id)
-                                                    {
-                                                        <span class="spinner-border spinner-border-sm"></span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="oi oi-share-boxed"></span>
-                                                    }
-                                                </button>
-                                            }
-                                            @if (upload.Status == "PushedToMerchant360" && upload.PushedToMerchant360At.HasValue)
-                                            {
-                                                <button class="btn btn-sm btn-outline-success" @onclick="() => PushToMerchant360(upload.Id)"
-                                                        disabled="@(pushingUploadId == upload.Id)" title="Re-push to Merchant360">
-                                                    @if (pushingUploadId == upload.Id)
-                                                    {
-                                                        <span class="spinner-border spinner-border-sm"></span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="oi oi-loop-circular"></span>
-                                                    }
-                                                </button>
-                                            }
+                                            <AuthorizeView Policy="RequireOperator" Context="auth">
+                                                @if (upload.Status == "Completed" && !upload.PushedToMerchant360At.HasValue)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-success" @onclick="() => PushToMerchant360(upload.Id)"
+                                                            disabled="@(pushingUploadId == upload.Id)" title="Push to Merchant360">
+                                                        @if (pushingUploadId == upload.Id)
+                                                        {
+                                                            <span class="spinner-border spinner-border-sm"></span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="oi oi-share-boxed"></span>
+                                                        }
+                                                    </button>
+                                                }
+                                                @if (upload.Status == "PushedToMerchant360" && upload.PushedToMerchant360At.HasValue)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-success" @onclick="() => PushToMerchant360(upload.Id)"
+                                                            disabled="@(pushingUploadId == upload.Id)" title="Re-push to Merchant360">
+                                                        @if (pushingUploadId == upload.Id)
+                                                        {
+                                                            <span class="spinner-border spinner-border-sm"></span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="oi oi-loop-circular"></span>
+                                                        }
+                                                    </button>
+                                                }
+                                            </AuthorizeView>
                                         </td>
                                     </tr>
                                 }
@@ -303,9 +307,11 @@
                 <div class="modal-footer">
                     @if (selectedUploadDetail.Status == "Completed" && !selectedUploadDetail.PushedToMerchant360At.HasValue)
                     {
-                        <button class="btn btn-success" @onclick="() => PushToMerchant360(selectedUploadDetail.Id)">
-                            <span class="oi oi-share-boxed me-1"></span> Push to Merchant360
-                        </button>
+                        <AuthorizeView Policy="RequireOperator" Context="auth">
+                            <button class="btn btn-success" @onclick="() => PushToMerchant360(selectedUploadDetail.Id)">
+                                <span class="oi oi-share-boxed me-1"></span> Push to Merchant360
+                            </button>
+                        </AuthorizeView>
                     }
                     <button type="button" class="btn btn-secondary" @onclick="CloseDetails">Close</button>
                 </div>

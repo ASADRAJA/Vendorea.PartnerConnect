@@ -33,9 +33,11 @@
                         </button>
                     </li>
                 </ul>
-                <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
-                    <span class="oi oi-plus me-1"></span> Register Organization
-                </button>
+                <AuthorizeView Policy="RequireAdmin" Context="auth">
+                    <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
+                        <span class="oi oi-plus me-1"></span> Register Organization
+                    </button>
+                </AuthorizeView>
             </div>
             <div class="card-body">
                 <div class="row mb-3">
@@ -96,30 +98,34 @@
                                         <td>@org.TradingPartnerIds.Count</td>
                                         <td>@org.CreatedAt.ToLocalTime().ToString("d")</td>
                                         <td>
-                                            @if (org.Status == "Pending")
-                                            {
-                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ApproveOrganization(org.Id)" title="Approve">
-                                                    <span class="oi oi-check"></span>
+                                            <AuthorizeView Policy="RequireOperator" Context="auth">
+                                                @if (org.Status == "Pending")
+                                                {
+                                                    <button class="btn btn-sm btn-success me-1" @onclick="() => ApproveOrganization(org.Id)" title="Approve">
+                                                        <span class="oi oi-check"></span>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => ShowRejectModal(org)" title="Reject">
+                                                        <span class="oi oi-x"></span>
+                                                    </button>
+                                                }
+                                                else if (org.Status == "Active")
+                                                {
+                                                    <button class="btn btn-sm btn-warning me-1" @onclick="() => SuspendOrganization(org.Id)" title="Suspend">
+                                                        <span class="oi oi-ban"></span>
+                                                    </button>
+                                                }
+                                                else if (org.Status == "Suspended")
+                                                {
+                                                    <button class="btn btn-sm btn-success me-1" @onclick="() => ApproveOrganization(org.Id)" title="Reactivate">
+                                                        <span class="oi oi-action-redo"></span>
+                                                    </button>
+                                                }
+                                            </AuthorizeView>
+                                            <AuthorizeView Policy="RequireAdmin" Context="auth">
+                                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(org)" title="Edit">
+                                                    <span class="oi oi-pencil"></span>
                                                 </button>
-                                                <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => ShowRejectModal(org)" title="Reject">
-                                                    <span class="oi oi-x"></span>
-                                                </button>
-                                            }
-                                            else if (org.Status == "Active")
-                                            {
-                                                <button class="btn btn-sm btn-warning me-1" @onclick="() => SuspendOrganization(org.Id)" title="Suspend">
-                                                    <span class="oi oi-ban"></span>
-                                                </button>
-                                            }
-                                            else if (org.Status == "Suspended")
-                                            {
-                                                <button class="btn btn-sm btn-success me-1" @onclick="() => ApproveOrganization(org.Id)" title="Reactivate">
-                                                    <span class="oi oi-action-redo"></span>
-                                                </button>
-                                            }
-                                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(org)" title="Edit">
-                                                <span class="oi oi-pencil"></span>
-                                            </button>
+                                            </AuthorizeView>
                                             <a href="/tenants?organizationId=@org.Id" class="btn btn-sm btn-outline-info" title="View Tenants">
                                                 <span class="oi oi-people"></span>
                                             </a>

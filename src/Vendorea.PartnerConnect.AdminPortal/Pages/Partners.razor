@@ -1,4 +1,5 @@
 @page "/partners"
+@attribute [Authorize(Policy = "RequireAdmin")]
 @inject ApiClient Api
 
 <PageTitle>Trading Partners - PartnerConnect Admin</PageTitle>
@@ -46,9 +47,11 @@ else
                         <td><span class="badge @GetStatusBadgeClass(partner.Status)">@partner.Status</span></td>
                         <td>@partner.ConnectionRequirements.Count</td>
                         <td>
-                            <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowEditModal(partner)">
-                                <span class="oi oi-pencil"></span> Edit
-                            </button>
+                            <AuthorizeView Policy="RequireAdmin" Context="auth">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowEditModal(partner)">
+                                    <span class="oi oi-pencil"></span> Edit
+                                </button>
+                            </AuthorizeView>
                         </td>
                     </tr>
                 }
