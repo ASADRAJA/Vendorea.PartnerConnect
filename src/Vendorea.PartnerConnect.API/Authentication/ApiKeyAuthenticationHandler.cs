@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Hosting;
@@ -55,14 +57,24 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             return AuthenticateResult.NoResult();
         }
 
+        // Admin API key — honored in ALL environments. An opt-in secret (set via the AdminApiKey
+        // configuration / app setting) used by the Admin Portal to call the API in test and prod.
+        // Distinct from the Development-only DevAdminKey below.
+        var adminApiKey = _configuration["AdminApiKey"];
+        if (!string.IsNullOrEmpty(adminApiKey) && FixedTimeEquals(providedApiKey, adminApiKey))
+        {
+            Logger.LogDebug("Admin API key authentication successful");
+            return AuthenticateResult.Success(CreateAdminTicket("AdminApiKey", "admin-api"));
+        }
+
         // Dev admin key — DEVELOPMENT ONLY. Never honored outside Development even if configured.
         var devAdminKey = _configuration["DevAdminKey"];
         if (_environment.IsDevelopment()
             && !string.IsNullOrEmpty(devAdminKey)
-            && providedApiKey == devAdminKey)
+            && FixedTimeEquals(providedApiKey, devAdminKey))
         {
             Logger.LogDebug("Dev admin key authentication successful");
-            return AuthenticateResult.Success(CreateDevAdminTicket());
+            return AuthenticateResult.Success(CreateAdminTicket("DevAdmin", "dev-admin"));
         }
 
         // Organization key (e.g. Merchant360). Returns the org only for an active organization.
@@ -150,16 +162,16 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         return new AuthenticationTicket(new ClaimsPrincipal(identity), AuthenticationScheme);
     }
 
-    private AuthenticationTicket CreateDevAdminTicket()
+    private AuthenticationTicket CreateAdminTicket(string name, string keyPrefix)
     {
-        // Create a dev admin principal with full permissions
+        // Create a full-permission admin principal (scope = all).
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, "0"),
-            new(ClaimTypes.Name, "DevAdmin"),
+            new(ClaimTypes.Name, name),
             new("ApiKeyId", Guid.Empty.ToString()),
             new("DealerId", "0"),
-            new("KeyPrefix", "dev-admin"),
+            new("KeyPrefix", keyPrefix),
             new("scope", ApiScopes.All)
         };
 
@@ -167,6 +179,10 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         var principal = new ClaimsPrincipal(identity);
         return new AuthenticationTicket(principal, AuthenticationScheme);
     }
+
+    /// <summary>Constant-time string comparison to avoid leaking key length/contents via timing.</summary>
+    private static bool FixedTimeEquals(string a, string b) =>
+        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
 }
 
 /// <summary>
