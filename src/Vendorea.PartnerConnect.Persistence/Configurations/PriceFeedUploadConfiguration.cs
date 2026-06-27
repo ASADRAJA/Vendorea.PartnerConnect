@@ -54,9 +54,12 @@ public class PriceFeedUploadConfiguration : IEntityTypeConfiguration<PriceFeedUp
         // Composite index for dealer + partner queries
         builder.HasIndex(e => new { e.DealerId, e.TradingPartnerId, e.UploadedAt });
 
-        // Unique constraint to prevent duplicate uploads
+        // Prevent the same file content from being imported *successfully* more than once
+        // per dealer/partner. Filtered so that failed/empty attempts (any other status) do
+        // not occupy the unique slot and can therefore be retried.
         builder.HasIndex(e => new { e.DealerId, e.TradingPartnerId, e.FileHash })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("[Status] IN ('Completed', 'PushedToMerchant360')");
 
         // Relationship to TradingPartner
         builder.HasOne(e => e.TradingPartner)

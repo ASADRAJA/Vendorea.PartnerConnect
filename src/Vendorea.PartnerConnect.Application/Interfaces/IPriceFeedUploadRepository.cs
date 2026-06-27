@@ -38,9 +38,11 @@ public interface IPriceFeedUploadRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Checks if a file with the same hash already exists for this dealer/partner.
+    /// Returns a prior <em>successful</em> upload (Completed or pushed, with at least one record)
+    /// of the same file content for this dealer/partner, or null if none. Failed or empty
+    /// attempts are ignored so the same file can be retried after a failure.
     /// </summary>
-    Task<bool> ExistsByHashAsync(
+    Task<PriceFeedUpload?> GetSuccessfulUploadByHashAsync(
         int dealerId,
         int tradingPartnerId,
         string fileHash,
