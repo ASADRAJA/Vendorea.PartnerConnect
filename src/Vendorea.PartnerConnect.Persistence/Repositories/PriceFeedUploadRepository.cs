@@ -71,17 +71,23 @@ public class PriceFeedUploadRepository : IPriceFeedUploadRepository
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<bool> ExistsByHashAsync(
+    public async Task<PriceFeedUpload?> GetSuccessfulUploadByHashAsync(
         int dealerId,
         int tradingPartnerId,
         string fileHash,
         CancellationToken cancellationToken = default)
     {
+        // Only a previously *successful* import blocks a re-upload of the same content.
+        // Failed or zero-record attempts are intentionally ignored so the file can be retried.
         return await _context.PriceFeedUploads
-            .AnyAsync(u => u.DealerId == dealerId &&
-                          u.TradingPartnerId == tradingPartnerId &&
-                          u.FileHash == fileHash,
-                cancellationToken);
+            .Where(u => u.DealerId == dealerId &&
+                        u.TradingPartnerId == tradingPartnerId &&
+                        u.FileHash == fileHash &&
+                        u.RecordCount > 0 &&
+                        (u.Status == PriceFeedUploadStatus.Completed ||
+                         u.Status == PriceFeedUploadStatus.PushedToMerchant360))
+            .OrderByDescending(u => u.UploadedAt)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<PriceFeedUpload> AddAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default)

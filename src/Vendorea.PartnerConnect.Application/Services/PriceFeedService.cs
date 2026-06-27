@@ -72,22 +72,26 @@ public class PriceFeedService : IPriceFeedService
         var fileBytes = memoryStream.ToArray();
         var fileHash = ComputeHash(fileBytes);
 
-        // Check for duplicate
-        var isDuplicate = await _uploadRepository.ExistsByHashAsync(
+        // Reject only if this exact file content was already imported *successfully*.
+        // A prior failed/empty attempt does not block a retry.
+        var existingSuccess = await _uploadRepository.GetSuccessfulUploadByHashAsync(
             dealerId, tradingPartner.Id, fileHash, cancellationToken);
 
-        if (isDuplicate)
+        if (existingSuccess != null)
         {
             _logger.LogWarning(
-                "Duplicate file detected for dealer {DealerId}, partner {PartnerCode}, hash {Hash}",
-                dealerId, tradingPartnerCode, fileHash);
+                "Duplicate file detected for dealer {DealerId}, partner {PartnerCode}, hash {Hash} " +
+                "(already imported as upload {ExistingUploadId} on {UploadedAt:u})",
+                dealerId, tradingPartnerCode, fileHash, existingSuccess.Id, existingSuccess.UploadedAt);
 
             return new PriceFeedUploadResult(
                 Success: false,
-                UploadId: 0,
+                UploadId: existingSuccess.Id,
                 RecordCount: 0,
                 ErrorCount: 0,
-                ErrorMessage: "This file has already been uploaded",
+                ErrorMessage:
+                    $"This file was already imported successfully on " +
+                    $"{existingSuccess.UploadedAt:yyyy-MM-dd HH:mm} UTC ({existingSuccess.RecordCount:N0} records).",
                 IsDuplicate: true);
         }
 
@@ -139,11 +143,34 @@ public class PriceFeedService : IPriceFeedService
                 throw new NotSupportedException($"Partner '{tradingPartnerCode}' is not yet supported");
             }
 
-            // Update upload status
+            // Update upload status. An import that produced zero usable records is a failure,
+            // not a success — otherwise it would falsely block future re-imports of the same file.
             upload.RecordCount = recordCount;
             upload.ErrorCount = errorCount;
-            upload.Status = PriceFeedUploadStatus.Completed;
             upload.ProcessedAt = DateTime.UtcNow;
+
+            if (recordCount == 0)
+            {
+                upload.Status = PriceFeedUploadStatus.Failed;
+                upload.ErrorMessage = errorCount > 0
+                    ? $"No valid records imported; {errorCount} line(s) failed to parse."
+                    : "No valid records found in the file.";
+
+                await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+                _logger.LogWarning(
+                    "Price feed upload {UploadId} produced no records ({ErrorCount} parse errors)",
+                    upload.Id, errorCount);
+
+                return new PriceFeedUploadResult(
+                    Success: false,
+                    UploadId: upload.Id,
+                    RecordCount: 0,
+                    ErrorCount: errorCount,
+                    ErrorMessage: upload.ErrorMessage);
+            }
+
+            upload.Status = PriceFeedUploadStatus.Completed;
 
             await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
