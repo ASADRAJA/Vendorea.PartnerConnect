@@ -30,7 +30,7 @@ public class PriceFeedsController : ControllerBase
     /// <param name="file">The price feed file.</param>
     [HttpPost("upload")]
     [Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.Admin)]
-    [ProducesResponseType(typeof(PriceFeedUploadResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PriceFeedUploadResult), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [RequestSizeLimit(100_000_000)] // 100MB limit
@@ -78,7 +78,9 @@ public class PriceFeedsController : ControllerBase
             return BadRequest(new { message = result.ErrorMessage });
         }
 
-        return Ok(result);
+        // The file is stored and queued; a background worker parses and inserts it. The client
+        // polls upload status (GET history / {id}) to watch it move Pending -> Completed/Failed.
+        return Accepted(result);
     }
 
     /// <summary>

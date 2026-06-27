@@ -255,6 +255,9 @@ public class PriceFeedUploadResult
     public bool IsDuplicate { get; set; }
     public TimeSpan ParseDuration { get; set; }
     public string? CorrelationId { get; set; }
+
+    /// <summary>Upload status at the time of the response (e.g. "Pending" when queued).</summary>
+    public string? Status { get; set; }
 }
 
 public class PriceFeedUploadDto

@@ -95,7 +95,9 @@ public class PriceFeedService : IPriceFeedService
                 IsDuplicate: true);
         }
 
-        // Create upload record
+        // Create the upload record as Pending and store the raw file. Parsing and inserting happen
+        // later in a background worker so the HTTP request returns immediately — a full price file
+        // takes far longer than the Azure App Service 230s request limit allows.
         var upload = new PriceFeedUpload
         {
             DealerId = dealerId,
@@ -103,7 +105,7 @@ public class PriceFeedService : IPriceFeedService
             FileName = fileName,
             FileHash = fileHash,
             FileSizeBytes = fileBytes.Length,
-            Status = PriceFeedUploadStatus.Processing,
+            Status = PriceFeedUploadStatus.Pending,
             UploadedAt = DateTime.UtcNow,
             UploadedByUserId = uploadedByUserId
         };
@@ -112,7 +114,6 @@ public class PriceFeedService : IPriceFeedService
 
         try
         {
-            // Store raw file
             var storagePath = $"{tradingPartnerCode.ToLower()}/{dealerId}/prices/{DateTime.UtcNow:yyyy/MM/dd}/{upload.Id}_{fileName}";
             var metadata = new StorageMetadata
             {
@@ -128,23 +129,92 @@ public class PriceFeedService : IPriceFeedService
 
             await _documentStorage.StoreAsync(fileBytes, storagePath, metadata, cancellationToken);
             upload.StoragePath = storagePath;
+            await _uploadRepository.UpdateAsync(upload, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error storing price feed upload {UploadId}", upload.Id);
 
-            // Parse and store records based on partner type
-            int recordCount = 0;
-            int errorCount = 0;
+            upload.Status = PriceFeedUploadStatus.Failed;
+            upload.ErrorMessage = $"Failed to store the uploaded file: {ex.Message}";
+            upload.ProcessedAt = DateTime.UtcNow;
+            await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
-            if (tradingPartnerCode.Equals("SPR", StringComparison.OrdinalIgnoreCase))
+            return new PriceFeedUploadResult(
+                Success: false,
+                UploadId: upload.Id,
+                RecordCount: 0,
+                ErrorCount: 0,
+                ErrorMessage: upload.ErrorMessage,
+                Status: PriceFeedUploadStatus.Failed.ToString());
+        }
+
+        _logger.LogInformation(
+            "Price feed upload {UploadId} queued for processing (dealer {DealerId}, partner {PartnerCode}, {Size} bytes)",
+            upload.Id, dealerId, tradingPartnerCode, fileBytes.Length);
+
+        return new PriceFeedUploadResult(
+            Success: true,
+            UploadId: upload.Id,
+            RecordCount: 0,
+            ErrorCount: 0,
+            ErrorMessage: null,
+            IsDuplicate: false,
+            Status: PriceFeedUploadStatus.Pending.ToString());
+    }
+
+    public async Task<PriceFeedUploadResult> ProcessPendingUploadAsync(
+        int uploadId,
+        CancellationToken cancellationToken = default)
+    {
+        // Atomically claim the upload so only one worker processes it.
+        var claimed = await _uploadRepository.TryClaimForProcessingAsync(uploadId, cancellationToken);
+        if (!claimed)
+        {
+            return new PriceFeedUploadResult(
+                Success: false,
+                UploadId: uploadId,
+                RecordCount: 0,
+                ErrorCount: 0,
+                ErrorMessage: "Upload was not in a claimable (Pending) state.");
+        }
+
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+        {
+            return new PriceFeedUploadResult(
+                Success: false,
+                UploadId: uploadId,
+                RecordCount: 0,
+                ErrorCount: 0,
+                ErrorMessage: "Upload not found.");
+        }
+
+        var partnerCode = upload.TradingPartner?.Code ?? string.Empty;
+
+        try
+        {
+            if (string.IsNullOrEmpty(upload.StoragePath))
             {
-                (recordCount, errorCount) = await ProcessSprUploadAsync(
-                    upload, fileBytes, cancellationToken);
+                throw new InvalidOperationException("Upload has no stored file to process.");
+            }
+
+            var fileBytes = await _documentStorage.RetrieveBytesAsync(upload.StoragePath, cancellationToken);
+
+            int recordCount;
+            int errorCount;
+
+            if (partnerCode.Equals("SPR", StringComparison.OrdinalIgnoreCase))
+            {
+                (recordCount, errorCount) = await ProcessSprUploadAsync(upload, fileBytes, cancellationToken);
             }
             else
             {
-                throw new NotSupportedException($"Partner '{tradingPartnerCode}' is not yet supported");
+                throw new NotSupportedException($"Partner '{partnerCode}' is not yet supported");
             }
 
-            // Update upload status. An import that produced zero usable records is a failure,
-            // not a success — otherwise it would falsely block future re-imports of the same file.
+            // An import that produced zero usable records is a failure, not a success — otherwise it
+            // would falsely block future re-imports of the same file.
             upload.RecordCount = recordCount;
             upload.ErrorCount = errorCount;
             upload.ProcessedAt = DateTime.UtcNow;
@@ -167,22 +237,23 @@ public class PriceFeedService : IPriceFeedService
                     UploadId: upload.Id,
                     RecordCount: 0,
                     ErrorCount: errorCount,
-                    ErrorMessage: upload.ErrorMessage);
+                    ErrorMessage: upload.ErrorMessage,
+                    Status: PriceFeedUploadStatus.Failed.ToString());
             }
 
             upload.Status = PriceFeedUploadStatus.Completed;
-
             await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
             _logger.LogInformation(
-                "Price feed upload completed: {RecordCount} records, {ErrorCount} errors",
-                recordCount, errorCount);
+                "Price feed upload {UploadId} completed: {RecordCount} records, {ErrorCount} errors",
+                upload.Id, recordCount, errorCount);
 
             return new PriceFeedUploadResult(
                 Success: true,
                 UploadId: upload.Id,
                 RecordCount: recordCount,
-                ErrorCount: errorCount);
+                ErrorCount: errorCount,
+                Status: PriceFeedUploadStatus.Completed.ToString());
         }
         catch (Exception ex)
         {
@@ -198,7 +269,8 @@ public class PriceFeedService : IPriceFeedService
                 UploadId: upload.Id,
                 RecordCount: 0,
                 ErrorCount: 0,
-                ErrorMessage: ex.Message);
+                ErrorMessage: ex.Message,
+                Status: PriceFeedUploadStatus.Failed.ToString());
         }
     }
 
