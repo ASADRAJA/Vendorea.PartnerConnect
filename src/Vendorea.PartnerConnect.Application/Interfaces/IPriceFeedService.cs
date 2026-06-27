@@ -105,7 +105,11 @@ public record PriceFeedUploadResult(
 public record PushToMerchant360Result(
     bool Success,
     int RecordsPushed,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    int RecordsReceived = 0,
+    int RecordsCreated = 0,
+    int RecordsUpdated = 0,
+    int RecordsSkipped = 0);
 
 /// <summary>
 /// DTO for price feed upload summary.

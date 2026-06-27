@@ -1,8 +1,10 @@
+using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 using Vendorea.PartnerConnect.BackgroundWorkers;
 using Vendorea.PartnerConnect.BackgroundWorkers.Workers;
 using Vendorea.PartnerConnect.Infrastructure.DependencyInjection;
@@ -26,10 +28,22 @@ if (string.IsNullOrWhiteSpace(builder.Configuration["ASPNETCORE_URLS"])
     builder.WebHost.UseSetting("urls", "http://localhost:5020");
 }
 
-// Configure Serilog
-Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(builder.Configuration)
-    .CreateLogger();
+// Configure Serilog. When an Application Insights connection string is present (Azure App Service
+// sets APPLICATIONINSIGHTS_CONNECTION_STRING), also ship logs there so they're queryable — the
+// console-only sink does not reliably surface in the App Service log stream.
+var loggerConfiguration = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration);
+
+var appInsightsConnectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
+{
+    var telemetryConfiguration = TelemetryConfiguration.CreateDefault();
+    telemetryConfiguration.ConnectionString = appInsightsConnectionString;
+    loggerConfiguration = loggerConfiguration.WriteTo.ApplicationInsights(
+        telemetryConfiguration, TelemetryConverter.Traces);
+}
+
+Log.Logger = loggerConfiguration.CreateLogger();
 
 builder.Services.AddSerilog();
 
