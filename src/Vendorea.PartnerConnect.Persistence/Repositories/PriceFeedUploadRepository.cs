@@ -90,6 +90,19 @@ public class PriceFeedUploadRepository : IPriceFeedUploadRepository
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<bool> TryClaimForProcessingAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        // Atomic Pending -> Processing transition. ExecuteUpdate issues a single UPDATE ... WHERE
+        // Status = 'Pending', so only one worker can win even if several poll the same row.
+        var rowsAffected = await _context.PriceFeedUploads
+            .Where(u => u.Id == uploadId && u.Status == PriceFeedUploadStatus.Pending)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(u => u.Status, PriceFeedUploadStatus.Processing),
+                cancellationToken);
+
+        return rowsAffected == 1;
+    }
+
     public async Task<PriceFeedUpload> AddAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default)
     {
         _context.PriceFeedUploads.Add(upload);

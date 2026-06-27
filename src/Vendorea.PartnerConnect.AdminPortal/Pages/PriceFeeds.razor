@@ -1,4 +1,5 @@
 @page "/pricefeeds"
+@implements IDisposable
 @inject ApiClient Api
 @inject IJSRuntime JS
 
@@ -65,14 +66,12 @@
                     <div class="mt-3">
                         @if (uploadResult.Success)
                         {
-                            <div class="alert alert-success">
-                                <strong>Upload Successful!</strong>
-                                <ul class="mb-0 mt-2">
-                                    <li>Records processed: @uploadResult.RecordCount</li>
-                                    <li>Errors: @uploadResult.ErrorCount</li>
-                                    <li>Parse time: @uploadResult.ParseDuration.TotalSeconds.ToString("F2")s</li>
-                                    <li>Upload ID: @uploadResult.UploadId</li>
-                                </ul>
+                            <div class="alert alert-info">
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                <strong>File queued for processing.</strong>
+                                Upload #@uploadResult.UploadId has been accepted and is being processed
+                                in the background. Watch the <strong>Status</strong> column below — it
+                                will move from <em>Pending</em> to <em>Completed</em> (or <em>Failed</em>).
                             </div>
                         }
                         else if (uploadResult.IsDuplicate)
@@ -415,9 +414,14 @@
         }
     }
 
-    private async Task LoadHistory()
+    private async Task LoadHistory() => await LoadHistory(showSpinner: true);
+
+    private async Task LoadHistory(bool showSpinner)
     {
-        isLoadingHistory = true;
+        if (showSpinner)
+        {
+            isLoadingHistory = true;
+        }
         try
         {
             int? dealerId = filterMerchantId > 0 ? filterMerchantId : null;
@@ -426,8 +430,66 @@
         }
         finally
         {
-            isLoadingHistory = false;
+            if (showSpinner)
+            {
+                isLoadingHistory = false;
+            }
         }
+
+        EnsureAutoRefresh();
+    }
+
+    // While any upload is still Pending/Processing, silently refresh the history every few seconds
+    // so the user sees it move to Completed/Failed without clicking Refresh.
+    private CancellationTokenSource? _pollCts;
+
+    private bool HasInFlightUploads =>
+        uploadHistory.Any(u => u.Status is "Pending" or "Processing");
+
+    private void EnsureAutoRefresh()
+    {
+        if (HasInFlightUploads && _pollCts == null)
+        {
+            _pollCts = new CancellationTokenSource();
+            _ = PollUntilSettledAsync(_pollCts.Token);
+        }
+    }
+
+    private async Task PollUntilSettledAsync(CancellationToken token)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadHistory(showSpinner: false);
+                    StateHasChanged();
+                });
+
+                if (!HasInFlightUploads)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // page disposed or refresh superseded
+        }
+        finally
+        {
+            _pollCts?.Dispose();
+            _pollCts = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
     }
 
     private async Task ViewDetails(int uploadId)

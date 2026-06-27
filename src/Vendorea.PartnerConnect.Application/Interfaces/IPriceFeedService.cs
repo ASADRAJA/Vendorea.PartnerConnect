@@ -26,6 +26,15 @@ public interface IPriceFeedService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Processes a previously queued (Pending) upload: claims it, loads the stored file, parses
+    /// and inserts the records, and sets the final status. Invoked by the background worker.
+    /// No-op (returns a result with Success=false) if the upload was already claimed or is gone.
+    /// </summary>
+    Task<PriceFeedUploadResult> ProcessPendingUploadAsync(
+        int uploadId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets upload history for a dealer.
     /// </summary>
     Task<IReadOnlyList<PriceFeedUploadDto>> GetUploadHistoryAsync(
@@ -87,7 +96,8 @@ public record PriceFeedUploadResult(
     int RecordCount,
     int ErrorCount,
     string? ErrorMessage = null,
-    bool IsDuplicate = false);
+    bool IsDuplicate = false,
+    string? Status = null);
 
 /// <summary>
 /// Result of pushing to Merchant360.

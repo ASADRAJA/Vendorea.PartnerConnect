@@ -49,6 +49,12 @@ public interface IPriceFeedUploadRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically transitions an upload from Pending to Processing so that exactly one worker
+    /// claims it. Returns true if this caller won the claim, false if it was already taken.
+    /// </summary>
+    Task<bool> TryClaimForProcessingAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a new upload.
     /// </summary>
     Task<PriceFeedUpload> AddAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default);

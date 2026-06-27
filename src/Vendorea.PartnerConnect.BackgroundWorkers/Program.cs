@@ -82,6 +82,8 @@ builder.Services.Configure<HostOptions>(o =>
 
 // Background workers
 builder.Services.AddHostedService<PriceFeedSyncWorker>();
+// Drains queued (Pending) manual price feed uploads off the API request thread.
+builder.Services.AddHostedService<PriceFeedUploadProcessingWorker>();
 // InventoryFeedSyncWorker (placeholder SFTP/CSV interval worker) retired — SPR inventory is now
 // imported by the "spr-inventory" cron job (sprfull.ezoh over FTP) via ScheduledJobsCoordinator.
 builder.Services.AddHostedService<DocumentProcessingWorker>();
