@@ -316,6 +316,10 @@ public class PushToMerchant360Result
     public int RecordsPushed { get; set; }
     public string? ErrorMessage { get; set; }
     public DateTime? PushedAt { get; set; }
+    public int RecordsReceived { get; set; }
+    public int RecordsCreated { get; set; }
+    public int RecordsUpdated { get; set; }
+    public int RecordsSkipped { get; set; }
 }
 
 public class MerchantDto

@@ -119,6 +119,39 @@
                 </div>
             </div>
             <div class="card-body">
+                @if (lastPushResult != null)
+                {
+                    <div class="mb-3">
+                        @if (!lastPushResult.Success)
+                        {
+                            <div class="alert alert-danger mb-0">
+                                <strong>Push failed (Upload #@lastPushUploadId).</strong> @lastPushResult.ErrorMessage
+                            </div>
+                        }
+                        else if (lastPushResult.RecordsCreated + lastPushResult.RecordsUpdated == 0)
+                        {
+                            <div class="alert alert-warning mb-0">
+                                <strong>Pushed, but Merchant360 stored nothing (Upload #@lastPushUploadId).</strong>
+                                Received @lastPushResult.RecordsReceived.ToString("N0"),
+                                created 0, updated 0, skipped @lastPushResult.RecordsSkipped.ToString("N0").
+                                @if (!string.IsNullOrEmpty(lastPushResult.ErrorMessage))
+                                {
+                                    <span>@lastPushResult.ErrorMessage</span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-success mb-0">
+                                <strong>Pushed to Merchant360 (Upload #@lastPushUploadId).</strong>
+                                Received @lastPushResult.RecordsReceived.ToString("N0"),
+                                created @lastPushResult.RecordsCreated.ToString("N0"),
+                                updated @lastPushResult.RecordsUpdated.ToString("N0"),
+                                skipped @lastPushResult.RecordsSkipped.ToString("N0").
+                            </div>
+                        }
+                    </div>
+                }
                 @if (isLoadingHistory)
                 {
                     <div class="text-center py-4">
@@ -505,9 +538,13 @@
     private async Task PushToMerchant360(int uploadId)
     {
         pushingUploadId = uploadId;
+        lastPushResult = null;
         try
         {
             var result = await Api.PushToMerchant360Async(uploadId);
+            lastPushResult = result;
+            lastPushUploadId = uploadId;
+
             if (result?.Success == true)
             {
                 await LoadHistory();
@@ -522,6 +559,9 @@
             pushingUploadId = null;
         }
     }
+
+    private PushToMerchant360Result? lastPushResult;
+    private int lastPushUploadId;
 
     private string GetStatusBadgeClass(string status) => status?.ToLower() switch
     {

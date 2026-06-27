@@ -537,9 +537,23 @@ public class PriceFeedService : IPriceFeedService
                 IsActive = r.ProductStatus != "D" // 'D' typically means discontinued
             }).ToList();
 
+            // Nothing to push: surface this explicitly instead of silently reporting success.
+            if (allItems.Count == 0)
+            {
+                _logger.LogWarning(
+                    "Push aborted for upload {UploadId}: no price records found to push",
+                    upload.Id);
+
+                return new PushToMerchant360Result(
+                    false, 0,
+                    "No price records were found for this upload to push. Re-import the file and try again.");
+            }
+
             // Push in batches
+            int totalReceived = 0;
             int totalCreated = 0;
             int totalUpdated = 0;
+            int totalSkipped = 0;
             int batchNumber = 0;
             int totalBatches = (int)Math.Ceiling((double)allItems.Count / BatchSize);
 
@@ -571,26 +585,49 @@ public class PriceFeedService : IPriceFeedService
                     upload.ErrorMessage = $"Batch {batchNumber}/{totalBatches} failed: {string.Join(", ", pushResult.Errors ?? new List<string>())}";
                     await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
-                    return new PushToMerchant360Result(false, totalCreated + totalUpdated, upload.ErrorMessage);
+                    return new PushToMerchant360Result(
+                        false, totalCreated + totalUpdated, upload.ErrorMessage,
+                        totalReceived, totalCreated, totalUpdated, totalSkipped);
                 }
 
+                totalReceived += pushResult.RecordsReceived;
                 totalCreated += pushResult.RecordsCreated;
                 totalUpdated += pushResult.RecordsUpdated;
+                totalSkipped += pushResult.RecordsSkipped;
 
                 _logger.LogInformation(
-                    "Batch {BatchNumber} completed: created={Created}, updated={Updated}",
-                    batchNumber, pushResult.RecordsCreated, pushResult.RecordsUpdated);
+                    "Batch {BatchNumber} completed: received={Received}, created={Created}, updated={Updated}, skipped={Skipped}",
+                    batchNumber, pushResult.RecordsReceived, pushResult.RecordsCreated,
+                    pushResult.RecordsUpdated, pushResult.RecordsSkipped);
             }
 
             upload.Status = PriceFeedUploadStatus.PushedToMerchant360;
             upload.PushedToMerchant360At = DateTime.UtcNow;
+
+            // Merchant360 accepted the batches but persisted nothing — almost always means the
+            // merchant↔partner connection isn't provisioned on the Merchant360 side. Record it on
+            // the upload so it's visible in history, but keep Success=true (transport succeeded);
+            // the caller/UI flags the zero-persist case from the counts.
+            if (totalCreated + totalUpdated == 0)
+            {
+                upload.ErrorMessage =
+                    $"Merchant360 received {totalReceived:N0} record(s) but created/updated 0 " +
+                    $"(skipped {totalSkipped:N0}). Verify the merchant's SPR connection is active on Merchant360.";
+
+                _logger.LogWarning(
+                    "Push to Merchant360 for upload {UploadId} persisted nothing: received={Received}, skipped={Skipped}",
+                    upload.Id, totalReceived, totalSkipped);
+            }
+
             await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
             _logger.LogInformation(
-                "All batches completed. Total: created={TotalCreated}, updated={TotalUpdated}",
-                totalCreated, totalUpdated);
+                "All batches completed for upload {UploadId}. Totals: received={Received}, created={Created}, updated={Updated}, skipped={Skipped}",
+                upload.Id, totalReceived, totalCreated, totalUpdated, totalSkipped);
 
-            return new PushToMerchant360Result(true, totalCreated + totalUpdated);
+            return new PushToMerchant360Result(
+                true, totalCreated + totalUpdated, upload.ErrorMessage,
+                totalReceived, totalCreated, totalUpdated, totalSkipped);
         }
         catch (Exception ex)
         {
