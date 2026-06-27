@@ -1,3 +1,5 @@
+using System.Data;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
@@ -135,15 +137,76 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
         IEnumerable<SprPriceRecord> records,
         CancellationToken cancellationToken = default)
     {
-        // For large datasets, batch the inserts
-        const int batchSize = 1000;
-        var recordList = records.ToList();
-
-        for (int i = 0; i < recordList.Count; i += batchSize)
+        var recordList = records as IReadOnlyList<SprPriceRecord> ?? records.ToList();
+        if (recordList.Count == 0)
         {
-            var batch = recordList.Skip(i).Take(batchSize);
-            await _context.SprPriceRecords.AddRangeAsync(batch, cancellationToken);
-            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        // Use SqlBulkCopy rather than EF AddRange/SaveChanges. EF tracks every entity and
+        // re-runs change detection over the whole (growing) set on each batch, which is
+        // O(n^2) and far too slow over Azure SQL's network latency for full price files —
+        // it blows past the App Service 230s request limit. SqlBulkCopy streams the rows
+        // directly and finishes in seconds.
+        var entityType = _context.Model.FindEntityType(typeof(SprPriceRecord))
+            ?? throw new InvalidOperationException("SprPriceRecord is not mapped.");
+
+        // All mapped scalar columns except the store-generated identity key (Id).
+        var properties = entityType.GetProperties()
+            .Where(p => !p.IsPrimaryKey() && p.PropertyInfo != null)
+            .ToList();
+
+        var table = new DataTable();
+        foreach (var p in properties)
+        {
+            var columnType = Nullable.GetUnderlyingType(p.ClrType) ?? p.ClrType;
+            table.Columns.Add(p.GetColumnName(), columnType);
+        }
+
+        foreach (var record in recordList)
+        {
+            var row = table.NewRow();
+            for (int c = 0; c < properties.Count; c++)
+            {
+                row[c] = properties[c].PropertyInfo!.GetValue(record) ?? DBNull.Value;
+            }
+            table.Rows.Add(row);
+        }
+
+        var schema = entityType.GetSchema();
+        var tableName = entityType.GetTableName()!;
+        var destination = schema != null ? $"[{schema}].[{tableName}]" : $"[{tableName}]";
+
+        var connection = (SqlConnection)_context.Database.GetDbConnection();
+        var wasOpen = connection.State == ConnectionState.Open;
+        if (!wasOpen)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            using var bulkCopy = new SqlBulkCopy(connection)
+            {
+                DestinationTableName = destination,
+                BatchSize = 5000,
+                BulkCopyTimeout = 300
+            };
+
+            // Map by name so column order in the DataTable doesn't matter.
+            foreach (DataColumn column in table.Columns)
+            {
+                bulkCopy.ColumnMappings.Add(column.ColumnName, column.ColumnName);
+            }
+
+            await bulkCopy.WriteToServerAsync(table, cancellationToken);
+        }
+        finally
+        {
+            if (!wasOpen)
+            {
+                await connection.CloseAsync();
+            }
         }
     }
 
