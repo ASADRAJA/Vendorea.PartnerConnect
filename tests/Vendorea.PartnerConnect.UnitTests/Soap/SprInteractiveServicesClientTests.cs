@@ -155,12 +155,30 @@ public class SprInteractiveServicesClientTests
 
         await client.StockCheckAsync(Config(), new SprStockCheckQuery { ItemNumber = "SPRW1011" });
 
+        // Endpoint URL still comes from BaseUrl (test host)...
         handler.CapturedUrl.Should().Be("http://test.sprws/sprws/StockCheck.php");
-        handler.CapturedBody.Should().Contain("<GroupCode>GRP</GroupCode>");
-        handler.CapturedBody.Should().Contain("<UserID>WebService</UserID>");
-        handler.CapturedBody.Should().Contain("<Password>secret</Password>");
-        handler.CapturedBody.Should().Contain("<Action>F</Action>");
-        handler.CapturedBody.Should().Contain("<ItemNumber>SPRW1011</ItemNumber>");
+        // ...but the rpc/encoded struct must match SPR's verified request: canonical prod-host
+        // method namespace, empty header, a typed <input> struct, and typed string members.
+        handler.CapturedBody.Should().Contain("<soapenv:Header/>");
+        handler.CapturedBody.Should().Contain("xmlns:svc=\"http://sprws.sprich.com/sprws/StockCheck.php?wsdl\"");
+        handler.CapturedBody.Should().Contain("<input xsi:type=\"svc:StockCheckInputs\">");
+        handler.CapturedBody.Should().Contain("<GroupCode xsi:type=\"xsd:string\">GRP</GroupCode>");
+        handler.CapturedBody.Should().Contain("<UserID xsi:type=\"xsd:string\">WebService</UserID>");
+        handler.CapturedBody.Should().Contain("<Password xsi:type=\"xsd:string\">secret</Password>");
+        handler.CapturedBody.Should().Contain("<Action xsi:type=\"xsd:string\">F</Action>");
+        handler.CapturedBody.Should().Contain("<ItemNumber xsi:type=\"xsd:string\">SPRW1011</ItemNumber>");
+    }
+
+    [Fact]
+    public async Task DealerStockCheck_RequestEnvelope_UsesDealerInputsType()
+    {
+        var (client, handler) = Build(StockCheckResponse);
+
+        await client.DealerStockCheckAsync(Config(), new SprStockCheckQuery { ItemNumber = "SPRW1011" });
+
+        handler.CapturedUrl.Should().Be("http://test.sprws/sprws/DealerStockCheck.php");
+        handler.CapturedBody.Should().Contain("<input xsi:type=\"svc:DealerStockCheckInputs\">");
+        handler.CapturedBody.Should().Contain("xmlns:svc=\"http://sprws.sprich.com/sprws/DealerStockCheck.php?wsdl\"");
     }
 
     [Fact]
@@ -268,10 +286,11 @@ public class SprInteractiveServicesClientTests
         result.Rates[0].DeliveryDays.Should().Be(1);
         result.Rates[1].Rate.Should().Be(34.83m);
 
-        // Find Freight uses the <input> style with Warehouse/State/ZipCode/Weight fields.
+        // Find Freight uses the <input> (rpc/encoded struct) style with typed Warehouse/State/ZipCode/Weight fields.
         handler.CapturedUrl.Should().Be("http://test.sprws/sprws/FindFreightRate.php");
-        handler.CapturedBody.Should().Contain("<Warehouse>008</Warehouse>");
-        handler.CapturedBody.Should().Contain("<ZipCode>30341</ZipCode>");
+        handler.CapturedBody.Should().Contain("<input xsi:type=\"svc:FindFreightRateInputs\">");
+        handler.CapturedBody.Should().Contain("<Warehouse xsi:type=\"xsd:string\">008</Warehouse>");
+        handler.CapturedBody.Should().Contain("<ZipCode xsi:type=\"xsd:string\">30341</ZipCode>");
     }
 
     [Fact]
