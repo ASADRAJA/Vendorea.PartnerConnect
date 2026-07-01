@@ -17,7 +17,13 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
 {
     private const string SoapNs = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string SoapEncodingNs = "http://schemas.xmlsoap.org/soap/encoding/";
+    private const string XsiNs = "http://www.w3.org/2001/XMLSchema-instance";
+    private const string XsdNs = "http://www.w3.org/2001/XMLSchema";
     private const string QuickCheckPlusNs = "http://tempuri.org/quick_check_plus/message";
+
+    // SPR's rpc/encoded operations are namespaced to the *production* host in the WSDL, even when
+    // posting to the test endpoint — confirmed by SPR's verified working request (2026-06-30).
+    private const string SprCanonicalNsBase = "http://sprws.sprich.com/sprws";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<SprInteractiveServicesClient> _logger;
@@ -35,8 +41,8 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         {
             // Heartbeat = StockCheck with Action="?" (generic heartbeat response per the guide).
             var fields = BuildStockCheckInputFields(config, new SprStockCheckQuery(), action: "?");
-            var envelope = BuildInputEnvelope("StockCheck", WsdlNs(config, "StockCheck"), fields);
-            var xml = await PostAsync(config, "StockCheck", SoapAction(config, "StockCheck"), envelope, cancellationToken);
+            var envelope = BuildInputEnvelope("StockCheck", MethodNs("StockCheck"), fields);
+            var xml = await PostAsync(config, "StockCheck", SoapAction("StockCheck"), envelope, cancellationToken);
             sw.Stop();
 
             var doc = XDocument.Parse(xml);
@@ -108,20 +114,20 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
     {
         try
         {
-            // Find Freight Rate uses the <input>-wrapped style with its own field names.
+            // Find Freight Rate uses the <input>-wrapped (rpc/encoded struct) style with its own field names.
             var sb = new StringBuilder();
-            AppendAuthFields(sb, config, action: "F");
-            sb.Append($"<CustNumber>{Esc(config.CustNumber)}</CustNumber>");
-            sb.Append($"<Warehouse>{query.ShipFromDc:D3}</Warehouse>");
-            sb.Append($"<State>{Esc(query.State)}</State>");
-            sb.Append($"<ZipCode>{Esc(query.PostalCode)}</ZipCode>");
-            sb.Append($"<Weight>{query.Weight.ToString(CultureInfo.InvariantCulture)}</Weight>");
-            sb.Append($"<Carrier>{Esc(query.Carrier)}</Carrier>");
-            sb.Append($"<Service>{Esc(query.ServiceLevel)}</Service>");
-            sb.Append($"<Residential>{(query.Residential ? "Y" : "N")}</Residential>");
+            AppendTypedAuthFields(sb, config, action: "F");
+            sb.Append(TypedField("CustNumber", config.CustNumber));
+            sb.Append(TypedField("Warehouse", query.ShipFromDc.ToString("D3")));
+            sb.Append(TypedField("State", query.State));
+            sb.Append(TypedField("ZipCode", query.PostalCode));
+            sb.Append(TypedField("Weight", query.Weight.ToString(CultureInfo.InvariantCulture)));
+            sb.Append(TypedField("Carrier", query.Carrier));
+            sb.Append(TypedField("Service", query.ServiceLevel));
+            sb.Append(TypedField("Residential", query.Residential ? "Y" : "N"));
 
-            var envelope = BuildInputEnvelope("FindFreightRate", WsdlNs(config, "FindFreightRate"), sb.ToString());
-            var xml = await PostAsync(config, "FindFreightRate", $"{SoapAction(config, "FindFreightRate")}#FindFreightRate", envelope, cancellationToken);
+            var envelope = BuildInputEnvelope("FindFreightRate", MethodNs("FindFreightRate"), sb.ToString());
+            var xml = await PostAsync(config, "FindFreightRate", $"{SoapAction("FindFreightRate")}#FindFreightRate", envelope, cancellationToken);
 
             var doc = XDocument.Parse(xml);
             var result = NewFreightResult(doc);
@@ -216,8 +222,8 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         try
         {
             var fields = BuildStockCheckInputFields(config, query, action: "F");
-            var envelope = BuildInputEnvelope(method, WsdlNs(config, method), fields);
-            var xml = await PostAsync(config, method, SoapAction(config, method), envelope, cancellationToken);
+            var envelope = BuildInputEnvelope(method, MethodNs(method), fields);
+            var xml = await PostAsync(config, method, SoapAction(method), envelope, cancellationToken);
 
             var doc = XDocument.Parse(xml);
             var result = ParseItemFields(doc);
@@ -292,18 +298,19 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
     private static string BuildStockCheckInputFields(SprWebServiceConfig config, SprStockCheckQuery query, string action)
     {
         var sb = new StringBuilder();
-        AppendAuthFields(sb, config, action);
-        sb.Append($"<CustNumber>{Esc(config.CustNumber)}</CustNumber>");
+        AppendTypedAuthFields(sb, config, action);
+        sb.Append(TypedField("CustNumber", config.CustNumber));
         // Single optional DC filter; empty = all DCs.
         var dc = query.DcNumbers.Count == 1 ? query.DcNumbers[0].ToString("D3") : "";
-        sb.Append($"<DcNumber>{dc}</DcNumber>");
-        sb.Append($"<ItemNumber>{Esc(query.ItemNumber)}</ItemNumber>");
-        sb.Append($"<SortBy>{(query.SortBy == 'N' ? 'N' : 'A')}</SortBy>");
-        sb.Append($"<MinInFullPacks>{(query.MinInFullPacks ? "Y" : "")}</MinInFullPacks>");
-        sb.Append($"<AvailableOnly>{(query.AvailableOnly ? "Y" : "N")}</AvailableOnly>");
+        sb.Append(TypedField("DcNumber", dc));
+        sb.Append(TypedField("ItemNumber", query.ItemNumber));
+        sb.Append(TypedField("SortBy", query.SortBy == 'N' ? "N" : "A"));
+        sb.Append(TypedField("MinInFullPacks", query.MinInFullPacks ? "Y" : ""));
+        sb.Append(TypedField("AvailableOnly", query.AvailableOnly ? "Y" : "N"));
         return sb.ToString();
     }
 
+    /// <summary>Flat (untyped) auth fields for the message-style services (Quick Check Plus, Lowest Freight Rate).</summary>
     private static void AppendAuthFields(StringBuilder sb, SprWebServiceConfig config, string action)
     {
         sb.Append($"<GroupCode>{Esc(config.GroupCode)}</GroupCode>");
@@ -312,20 +319,39 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         sb.Append($"<Action>{Esc(action)}</Action>");
     }
 
-    // SPR's services are SOAP 1.1 rpc/encoded (NuSOAP). An empty <soapenv:Header/> element MUST be
-    // OMITTED: when present, the NuSOAP server fails to decode the body parameters — every field
-    // (incl. Action) arrives null and SPR rejects with RtnStatus 0009 "Invalid Service Action
-    // Request Code." The method element also carries soapenv:encodingStyle, the correct marker for
-    // rpc/encoded. (Both verified against the sprwstst test endpoint, 2026-06-21.)
+    /// <summary>xsi:type="xsd:string" auth fields for the input-struct services.</summary>
+    private static void AppendTypedAuthFields(StringBuilder sb, SprWebServiceConfig config, string action)
+    {
+        sb.Append(TypedField("GroupCode", config.GroupCode));
+        sb.Append(TypedField("UserID", config.UserId));
+        sb.Append(TypedField("Password", config.Password));
+        sb.Append(TypedField("Action", action));
+    }
+
+    /// <summary>A rpc/encoded struct member: &lt;Name xsi:type="xsd:string"&gt;value&lt;/Name&gt; (value XML-escaped).</summary>
+    private static string TypedField(string name, string? value) =>
+        $"<{name} xsi:type=\"xsd:string\">{Esc(value)}</{name}>";
+
+    // Input-struct services (Stock Check / Dealer Stock Check / Find Freight Rate) are SOAP 1.1
+    // rpc/encoded (NuSOAP). The single <input> parameter is a struct, so it MUST carry
+    // xsi:type="svc:{Method}Inputs" and each member MUST carry xsi:type="xsd:string" — otherwise
+    // NuSOAP cannot decode the struct, every field (incl. Action) arrives null, and SPR rejects
+    // with RtnStatus 0009 "Invalid Service Action Request Code." This exactly reproduces SPR's
+    // verified working request (2026-06-30), including the empty <soapenv:Header/> and the method
+    // element's soapenv:encodingStyle marker.
     private static string BuildInputEnvelope(string method, string methodNs, string fieldsXml) => $"""
         <?xml version="1.0" encoding="UTF-8"?>
-        <soapenv:Envelope xmlns:soapenv="{SoapNs}" xmlns:svc="{methodNs}">
+        <soapenv:Envelope xmlns:soapenv="{SoapNs}" xmlns:xsi="{XsiNs}" xmlns:xsd="{XsdNs}" xmlns:svc="{methodNs}">
+          <soapenv:Header/>
           <soapenv:Body>
-            <svc:{method} soapenv:encodingStyle="{SoapEncodingNs}"><input>{fieldsXml}</input></svc:{method}>
+            <svc:{method} soapenv:encodingStyle="{SoapEncodingNs}"><input xsi:type="svc:{method}Inputs">{fieldsXml}</input></svc:{method}>
           </soapenv:Body>
         </soapenv:Envelope>
         """;
 
+    // Message-style services (Quick Check Plus / Lowest Freight Rate) take flat scalar params, not a
+    // struct, so they need no xsi:type. For these the empty <soapenv:Header/> must be OMITTED —
+    // when present, this NuSOAP handler fails to decode the params (verified for Quick Check Plus).
     private static string BuildMessageEnvelope(string method, string methodNs, string fieldsXml) => $"""
         <?xml version="1.0" encoding="UTF-8"?>
         <soapenv:Envelope xmlns:soapenv="{SoapNs}" xmlns:mes="{methodNs}">
@@ -359,10 +385,11 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         return content;
     }
 
-    private static string WsdlNs(SprWebServiceConfig config, string service) =>
-        $"{config.BaseUrl.TrimEnd('/')}/{service}.php?wsdl";
+    // The rpc/encoded operation namespace (and SOAPAction) is the canonical prod-host WSDL target
+    // namespace, independent of which endpoint (test/prod) we actually POST to — see SprCanonicalNsBase.
+    private static string MethodNs(string service) => $"{SprCanonicalNsBase}/{service}.php?wsdl";
 
-    private static string SoapAction(SprWebServiceConfig config, string service) => WsdlNs(config, service);
+    private static string SoapAction(string service) => MethodNs(service);
 
     private static string? FindFault(XDocument doc)
     {
@@ -392,6 +419,6 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
 
     /// <summary>Redacts the &lt;Password&gt; element contents so the envelope is safe to log.</summary>
     private static string MaskSecrets(string envelope) =>
-        Regex.Replace(envelope, "(<Password>)(.*?)(</Password>)", "$1***$3",
+        Regex.Replace(envelope, "(<Password[^>]*>)(.*?)(</Password>)", "$1***$3",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
 }
