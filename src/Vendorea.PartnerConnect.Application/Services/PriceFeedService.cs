@@ -17,6 +17,7 @@ public class PriceFeedService : IPriceFeedService
     private readonly ISprPriceRecordRepository _sprPriceRecordRepository;
     private readonly ISprProductContentRepository _sprProductContentRepository;
     private readonly ITradingPartnerRepository _tradingPartnerRepository;
+    private readonly ITenantRepository _tenantRepository;
     private readonly IDocumentStorage _documentStorage;
     private readonly ISprPriceFeedParser _sprParser;
     private readonly IMerchant360Client _merchant360Client;
@@ -27,6 +28,7 @@ public class PriceFeedService : IPriceFeedService
         ISprPriceRecordRepository sprPriceRecordRepository,
         ISprProductContentRepository sprProductContentRepository,
         ITradingPartnerRepository tradingPartnerRepository,
+        ITenantRepository tenantRepository,
         IDocumentStorage documentStorage,
         ISprPriceFeedParser sprParser,
         IMerchant360Client merchant360Client,
@@ -36,6 +38,7 @@ public class PriceFeedService : IPriceFeedService
         _sprPriceRecordRepository = sprPriceRecordRepository;
         _sprProductContentRepository = sprProductContentRepository;
         _tradingPartnerRepository = tradingPartnerRepository;
+        _tenantRepository = tenantRepository;
         _documentStorage = documentStorage;
         _sprParser = sprParser;
         _merchant360Client = merchant360Client;
@@ -522,6 +525,20 @@ public class PriceFeedService : IPriceFeedService
 
         try
         {
+            // Merchant360 identifies the merchant by the tenant's ExternalId (M360's own id, supplied
+            // when M360 originated the connection) — NOT PartnerConnect's internal DealerId/Tenant.Id.
+            // Sending the internal id makes M360 respond "Tenant not found". (Mirrors InventoryFullRefreshService.)
+            var tenant = await _tenantRepository.GetByIdAsync(upload.DealerId, cancellationToken);
+            if (tenant?.ExternalId == null || !int.TryParse(tenant.ExternalId, out var merchantId))
+            {
+                upload.Status = PriceFeedUploadStatus.PushFailed;
+                upload.ErrorMessage =
+                    $"Cannot push: dealer {upload.DealerId} has no numeric Merchant360 ExternalId " +
+                    "(the tenant isn't linked to a Merchant360 merchant).";
+                await _uploadRepository.UpdateAsync(upload, cancellationToken);
+                return new PushToMerchant360Result(false, 0, upload.ErrorMessage);
+            }
+
             // Get records for this upload
             var records = await _sprPriceRecordRepository.GetByUploadIdAsync(uploadId, cancellationToken);
 
@@ -594,7 +611,7 @@ public class PriceFeedService : IPriceFeedService
                 };
 
                 var pushResult = await _merchant360Client.PushPriceBatchAsync(
-                    upload.DealerId, batchRequest, cancellationToken);
+                    merchantId, batchRequest, cancellationToken);
 
                 if (!pushResult.Success)
                 {
