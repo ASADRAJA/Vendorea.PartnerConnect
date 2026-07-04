@@ -133,5 +133,15 @@ public enum PriceFeedUploadStatus
     /// <summary>
     /// Cancelled by an operator before processing completed.
     /// </summary>
-    Cancelled = 6
+    Cancelled = 6,
+
+    /// <summary>
+    /// Queued for an asynchronous push to Merchant360 (waiting for the worker).
+    /// </summary>
+    PushQueued = 7,
+
+    /// <summary>
+    /// A worker is currently pushing this upload to Merchant360.
+    /// </summary>
+    Pushing = 8
 }

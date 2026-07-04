@@ -67,6 +67,19 @@ public interface IPriceFeedUploadRepository
     Task<int> ReclaimStaleProcessingAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically queues an already-processed upload for an async push to Merchant360
+    /// (Completed / PushedToMerchant360 / PushFailed → PushQueued). Returns false if it wasn't in a
+    /// pushable state.
+    /// </summary>
+    Task<bool> TryQueuePushAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>Atomically claims a queued push (PushQueued → Pushing). Returns false if already taken.</summary>
+    Task<bool> TryClaimPushAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns pushes stuck in Pushing (claimed before the cutoff) back to PushQueued. Returns the count reclaimed.</summary>
+    Task<int> ReclaimStalePushingAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a new upload.
     /// </summary>
     Task<PriceFeedUpload> AddAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default);

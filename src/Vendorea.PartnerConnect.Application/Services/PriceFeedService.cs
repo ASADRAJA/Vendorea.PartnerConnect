@@ -485,22 +485,39 @@ public class PriceFeedService : IPriceFeedService
         );
     }
 
-    public async Task<PushToMerchant360Result> PushToMerchant360Async(
+    public async Task<PriceFeedActionResult> RequestPushAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+            return new PriceFeedActionResult(PriceFeedActionStatus.NotFound, "Upload not found.");
+
+        // Atomically queue for the worker; loses the race only if it's not in a pushable state.
+        var queued = await _uploadRepository.TryQueuePushAsync(uploadId, cancellationToken);
+        if (!queued)
+            return new PriceFeedActionResult(PriceFeedActionStatus.Conflict,
+                $"Upload must be processed before it can be pushed (current status: {upload.Status}).");
+
+        _logger.LogInformation("Queued upload {UploadId} for push to Merchant360", uploadId);
+        return new PriceFeedActionResult(PriceFeedActionStatus.Ok);
+    }
+
+    public async Task<PushToMerchant360Result> ProcessQueuedPushAsync(
         int uploadId,
         CancellationToken cancellationToken = default)
     {
         const int BatchSize = 10000; // M360 limit
 
+        // Claim the queued push (PushQueued -> Pushing) so only one worker runs it.
+        var claimed = await _uploadRepository.TryClaimPushAsync(uploadId, cancellationToken);
+        if (!claimed)
+        {
+            return new PushToMerchant360Result(false, 0, "Push was not in a claimable (PushQueued) state.");
+        }
+
         var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
         if (upload == null)
         {
             return new PushToMerchant360Result(false, 0, "Upload not found");
-        }
-
-        if (upload.Status != PriceFeedUploadStatus.Completed &&
-            upload.Status != PriceFeedUploadStatus.PushedToMerchant360)
-        {
-            return new PushToMerchant360Result(false, 0, "Upload has not been processed yet");
         }
 
         try
@@ -665,9 +682,9 @@ public class PriceFeedService : IPriceFeedService
         if (upload == null)
             return new PriceFeedActionResult(PriceFeedActionStatus.NotFound, "Upload not found.");
 
-        if (upload.Status == PriceFeedUploadStatus.Processing)
+        if (upload.Status == PriceFeedUploadStatus.Processing || upload.Status == PriceFeedUploadStatus.Pushing)
             return new PriceFeedActionResult(PriceFeedActionStatus.Conflict,
-                "Cannot delete an upload while it is processing.");
+                "Cannot delete an upload while it is processing or pushing.");
 
         // Remove child price records, then the stored raw file, then the upload row.
         await _sprPriceRecordRepository.DeleteByUploadIdAsync(uploadId, cancellationToken);

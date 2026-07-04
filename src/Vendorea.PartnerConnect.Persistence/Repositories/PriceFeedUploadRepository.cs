@@ -145,6 +145,52 @@ public class PriceFeedUploadRepository : IPriceFeedUploadRepository
         await _context.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<bool> TryQueuePushAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        // Only an already-processed upload can be queued for push.
+        var rowsAffected = await _context.PriceFeedUploads
+            .Where(u => u.Id == uploadId &&
+                        (u.Status == PriceFeedUploadStatus.Completed ||
+                         u.Status == PriceFeedUploadStatus.PushedToMerchant360 ||
+                         u.Status == PriceFeedUploadStatus.PushFailed))
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.Status, PriceFeedUploadStatus.PushQueued)
+                    .SetProperty(u => u.ProcessingStartedAt, (DateTime?)null),
+                cancellationToken);
+
+        return rowsAffected == 1;
+    }
+
+    public async Task<bool> TryClaimPushAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        // Atomic PushQueued -> Pushing so only one worker pushes each upload. Stamp ProcessingStartedAt
+        // (shared with import) so a crashed push can be detected and reclaimed.
+        var now = DateTime.UtcNow;
+        var rowsAffected = await _context.PriceFeedUploads
+            .Where(u => u.Id == uploadId && u.Status == PriceFeedUploadStatus.PushQueued)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.Status, PriceFeedUploadStatus.Pushing)
+                    .SetProperty(u => u.ProcessingStartedAt, now),
+                cancellationToken);
+
+        return rowsAffected == 1;
+    }
+
+    public async Task<int> ReclaimStalePushingAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default)
+    {
+        return await _context.PriceFeedUploads
+            .Where(u => u.Status == PriceFeedUploadStatus.Pushing
+                        && u.ProcessingStartedAt != null
+                        && u.ProcessingStartedAt < olderThanUtc)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.Status, PriceFeedUploadStatus.PushQueued)
+                    .SetProperty(u => u.ProcessingStartedAt, (DateTime?)null),
+                cancellationToken);
+    }
+
     public async Task<PriceFeedUpload> AddAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default)
     {
         _context.PriceFeedUploads.Add(upload);
