@@ -173,6 +173,20 @@ public class SprProductContentRepository : ISprProductContentRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<SprProductContent>> GetPageByUploadIdAsync(
+        int uploadId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.SprProductContent
+            .Where(p => p.ContentUploadId == uploadId)
+            .OrderBy(p => p.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<SprProductRelationship>> GetRelationshipsAsync(
         long productContentId,
         ProductRelationshipType? relationshipType = null,
