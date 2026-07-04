@@ -484,7 +484,27 @@
             }
         }
 
+        DismissSettledBanners();
         EnsureAutoRefresh();
+    }
+
+    // Clear the transient "queued" banners (and their spinners) once the upload they refer to has
+    // left its in-flight state — otherwise they spin forever until a manual page refresh.
+    private void DismissSettledBanners()
+    {
+        if (uploadResult?.Success == true)
+        {
+            var row = uploadHistory.FirstOrDefault(u => u.Id == uploadResult.UploadId);
+            if (row == null || (row.Status != "Pending" && row.Status != "Processing"))
+                uploadResult = null;
+        }
+
+        if (pushQueuedUploadId != null)
+        {
+            var row = uploadHistory.FirstOrDefault(u => u.Id == pushQueuedUploadId);
+            if (row == null || (row.Status != "PushQueued" && row.Status != "Pushing"))
+                pushQueuedUploadId = null;
+        }
     }
 
     // While any upload is still Pending/Processing, silently refresh the history every few seconds

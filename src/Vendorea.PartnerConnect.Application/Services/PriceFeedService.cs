@@ -652,6 +652,11 @@ public class PriceFeedService : IPriceFeedService
                     "Push to Merchant360 for upload {UploadId} persisted nothing: received={Received}, skipped={Skipped}",
                     upload.Id, totalReceived, totalSkipped);
             }
+            else
+            {
+                // Real success — clear any message left over from a prior failed/empty push attempt.
+                upload.ErrorMessage = null;
+            }
 
             await _uploadRepository.UpdateAsync(upload, cancellationToken);
 
