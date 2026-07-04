@@ -20,7 +20,9 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 public class AdminFtpIngestionController : ControllerBase
 {
     private readonly IConfiguration _configuration;
-    private readonly IServiceProvider _serviceProvider;
+    // A singleton scope factory — NOT the request-scoped IServiceProvider — so the fire-and-forget
+    // ingestion task can create scopes after the HTTP request (and its scope) has been disposed.
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IFtpIngestionRunRepository _runRepository;
     private readonly IPartnerIngestionConfigRepository _configRepository;
     private readonly ILogger<AdminFtpIngestionController> _logger;
@@ -33,13 +35,13 @@ public class AdminFtpIngestionController : ControllerBase
 
     public AdminFtpIngestionController(
         IConfiguration configuration,
-        IServiceProvider serviceProvider,
+        IServiceScopeFactory scopeFactory,
         IFtpIngestionRunRepository runRepository,
         IPartnerIngestionConfigRepository configRepository,
         ILogger<AdminFtpIngestionController> logger)
     {
         _configuration = configuration;
-        _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
         _runRepository = runRepository;
         _configRepository = configRepository;
         _logger = logger;
@@ -273,7 +275,7 @@ public class AdminFtpIngestionController : ControllerBase
         {
             try
             {
-                using var scope = _serviceProvider.CreateScope();
+                using var scope = _scopeFactory.CreateScope();
                 var bgRunRepository = scope.ServiceProvider.GetRequiredService<IFtpIngestionRunRepository>();
 
                 // Create options from config snapshot
@@ -370,7 +372,7 @@ public class AdminFtpIngestionController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Background ingestion failed for run {RunId}", runId);
-                using var scope = _serviceProvider.CreateScope();
+                using var scope = _scopeFactory.CreateScope();
                 var bgRunRepository = scope.ServiceProvider.GetRequiredService<IFtpIngestionRunRepository>();
                 var bgRunRecord = await bgRunRepository.GetByIdAsync(runId, CancellationToken.None);
                 if (bgRunRecord != null)

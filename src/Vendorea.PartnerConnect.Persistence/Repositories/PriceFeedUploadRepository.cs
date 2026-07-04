@@ -156,7 +156,8 @@ public class PriceFeedUploadRepository : IPriceFeedUploadRepository
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(u => u.Status, PriceFeedUploadStatus.PushQueued)
-                    .SetProperty(u => u.ProcessingStartedAt, (DateTime?)null),
+                    .SetProperty(u => u.ProcessingStartedAt, (DateTime?)null)
+                    .SetProperty(u => u.ErrorMessage, (string?)null),
                 cancellationToken);
 
         return rowsAffected == 1;
