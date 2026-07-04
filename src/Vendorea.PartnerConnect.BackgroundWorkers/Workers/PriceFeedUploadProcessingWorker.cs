@@ -29,6 +29,7 @@ public class PriceFeedUploadProcessingWorker : BackgroundService
         var pollSeconds = _configuration.GetValue<int>("Workers:PriceFeedUploadProcessing:PollSeconds", 15);
         var batchSize = _configuration.GetValue<int>("Workers:PriceFeedUploadProcessing:BatchSize", 5);
         var initialDelaySeconds = _configuration.GetValue<int>("Workers:PriceFeedUploadProcessing:InitialDelaySeconds", 15);
+        var staleMinutes = _configuration.GetValue<int>("Workers:PriceFeedUploadProcessing:StaleProcessingMinutes", 30);
         var poll = TimeSpan.FromSeconds(pollSeconds);
 
         _logger.LogInformation(
@@ -42,7 +43,7 @@ public class PriceFeedUploadProcessingWorker : BackgroundService
         {
             try
             {
-                await DrainPendingUploadsAsync(batchSize, stoppingToken);
+                await DrainPendingUploadsAsync(batchSize, staleMinutes, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -66,11 +67,20 @@ public class PriceFeedUploadProcessingWorker : BackgroundService
         _logger.LogInformation("Price Feed Upload Processing Worker stopping");
     }
 
-    private async Task DrainPendingUploadsAsync(int batchSize, CancellationToken cancellationToken)
+    private async Task DrainPendingUploadsAsync(int batchSize, int staleMinutes, CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var uploadRepository = scope.ServiceProvider.GetRequiredService<IPriceFeedUploadRepository>();
         var priceFeedService = scope.ServiceProvider.GetRequiredService<IPriceFeedService>();
+
+        // Safety net: return uploads stranded in Processing by a crashed/restarted worker to Pending.
+        if (staleMinutes > 0)
+        {
+            var reclaimed = await uploadRepository.ReclaimStaleProcessingAsync(
+                DateTime.UtcNow.AddMinutes(-staleMinutes), cancellationToken);
+            if (reclaimed > 0)
+                _logger.LogWarning("Reclaimed {Count} stale Processing upload(s) back to Pending", reclaimed);
+        }
 
         var pending = await uploadRepository.GetByStatusAsync(
             PriceFeedUploadStatus.Pending, batchSize, cancellationToken);

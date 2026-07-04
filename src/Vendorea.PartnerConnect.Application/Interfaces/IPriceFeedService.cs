@@ -66,6 +66,12 @@ public interface IPriceFeedService
         int uploadId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Cancels a queued (Pending) upload so it will not be processed.</summary>
+    Task<PriceFeedActionResult> CancelUploadAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes an upload, its price records, and its stored file. Not allowed while Processing.</summary>
+    Task<PriceFeedActionResult> DeleteUploadAsync(int uploadId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Gets current prices for a dealer from a trading partner.
     /// </summary>
@@ -98,6 +104,11 @@ public record PriceFeedUploadResult(
     string? ErrorMessage = null,
     bool IsDuplicate = false,
     string? Status = null);
+
+/// <summary>Outcome of a cancel/delete action, mapped to HTTP status by the controller.</summary>
+public enum PriceFeedActionStatus { Ok, NotFound, Conflict }
+
+public record PriceFeedActionResult(PriceFeedActionStatus Status, string? Message = null);
 
 /// <summary>
 /// Result of pushing to Merchant360.

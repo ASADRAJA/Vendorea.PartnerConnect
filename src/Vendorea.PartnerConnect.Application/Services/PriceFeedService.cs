@@ -641,6 +641,57 @@ public class PriceFeedService : IPriceFeedService
         }
     }
 
+    public async Task<PriceFeedActionResult> CancelUploadAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+            return new PriceFeedActionResult(PriceFeedActionStatus.NotFound, "Upload not found.");
+
+        // Atomic Pending -> Cancelled; loses the race if a worker just claimed it.
+        var cancelled = await _uploadRepository.TryCancelPendingAsync(
+            uploadId, "Cancelled by operator", cancellationToken);
+
+        if (!cancelled)
+            return new PriceFeedActionResult(PriceFeedActionStatus.Conflict,
+                $"Only a pending upload can be cancelled (current status: {upload.Status}).");
+
+        _logger.LogInformation("Cancelled price feed upload {UploadId}", uploadId);
+        return new PriceFeedActionResult(PriceFeedActionStatus.Ok);
+    }
+
+    public async Task<PriceFeedActionResult> DeleteUploadAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
+        if (upload == null)
+            return new PriceFeedActionResult(PriceFeedActionStatus.NotFound, "Upload not found.");
+
+        if (upload.Status == PriceFeedUploadStatus.Processing)
+            return new PriceFeedActionResult(PriceFeedActionStatus.Conflict,
+                "Cannot delete an upload while it is processing.");
+
+        // Remove child price records, then the stored raw file, then the upload row.
+        await _sprPriceRecordRepository.DeleteByUploadIdAsync(uploadId, cancellationToken);
+
+        if (!string.IsNullOrEmpty(upload.StoragePath))
+        {
+            try
+            {
+                await _documentStorage.DeleteAsync(upload.StoragePath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Best-effort: a missing/undeletable blob shouldn't block removing the record.
+                _logger.LogWarning(ex, "Failed to delete stored file for upload {UploadId} at {Path}",
+                    uploadId, upload.StoragePath);
+            }
+        }
+
+        await _uploadRepository.DeleteAsync(upload, cancellationToken);
+
+        _logger.LogInformation("Deleted price feed upload {UploadId}", uploadId);
+        return new PriceFeedActionResult(PriceFeedActionStatus.Ok);
+    }
+
     public async Task<IReadOnlyList<PriceRecordDto>> GetCurrentPricesAsync(
         int dealerId,
         string tradingPartnerCode,

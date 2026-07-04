@@ -55,9 +55,24 @@ public interface IPriceFeedUploadRepository
     Task<bool> TryClaimForProcessingAsync(int uploadId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically cancels a Pending upload (Pending → Cancelled). Returns false if it was no longer
+    /// Pending (already claimed or terminal).
+    /// </summary>
+    Task<bool> TryCancelPendingAsync(int uploadId, string reason, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns uploads stuck in Processing (claimed before <paramref name="olderThanUtc"/>) back to
+    /// Pending so a crashed worker doesn't strand them. Returns the number reclaimed.
+    /// </summary>
+    Task<int> ReclaimStaleProcessingAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a new upload.
     /// </summary>
     Task<PriceFeedUpload> AddAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes an upload row. Child price records cascade at the database level.</summary>
+    Task DeleteAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates an existing upload.

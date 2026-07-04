@@ -74,6 +74,12 @@ public class PriceFeedUpload
     public string? UploadedByUserId { get; set; }
 
     /// <summary>
+    /// When a worker claimed this upload for processing (Pending → Processing). Used to detect and
+    /// reclaim uploads left stuck in Processing by a crashed/restarted worker.
+    /// </summary>
+    public DateTime? ProcessingStartedAt { get; set; }
+
+    /// <summary>
     /// When parsing completed.
     /// </summary>
     public DateTime? ProcessedAt { get; set; }
@@ -122,5 +128,10 @@ public enum PriceFeedUploadStatus
     /// <summary>
     /// Push to Merchant360 failed.
     /// </summary>
-    PushFailed = 5
+    PushFailed = 5,
+
+    /// <summary>
+    /// Cancelled by an operator before processing completed.
+    /// </summary>
+    Cancelled = 6
 }

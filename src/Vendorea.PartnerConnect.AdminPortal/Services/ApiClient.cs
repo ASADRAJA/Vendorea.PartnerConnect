@@ -438,6 +438,38 @@ public class ApiClient
         }
     }
 
+    public async Task<(bool Success, string? Error)> CancelPriceFeedUploadAsync(int uploadId)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/v1/pricefeeds/{uploadId}/cancel", null);
+            if (response.IsSuccessStatusCode)
+                return (true, null);
+            return (false, ExtractError(await response.Content.ReadAsStringAsync()) ?? $"Request failed ({(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cancel price feed upload {UploadId}", uploadId);
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> DeletePriceFeedUploadAsync(int uploadId)
+    {
+        try
+        {
+            var response = await _httpClient.DeleteAsync($"/api/v1/pricefeeds/{uploadId}");
+            if (response.IsSuccessStatusCode)
+                return (true, null);
+            return (false, ExtractError(await response.Content.ReadAsStringAsync()) ?? $"Request failed ({(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete price feed upload {UploadId}", uploadId);
+            return (false, ex.Message);
+        }
+    }
+
     public async Task<List<MerchantDto>> GetMerchantsAsync()
     {
         try
