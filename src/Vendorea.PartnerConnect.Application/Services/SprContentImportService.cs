@@ -33,8 +33,10 @@ public class SprContentImportService : ISprContentImportService
     // Track progress for M360 push operations (static to persist across scoped instances)
     private static readonly Dictionary<int, M360PushProgress> _pushProgressCache = new();
 
-    private const int MaxBatchSize = 10000;
-    private const int PushBatchSize = 500; // M360 uses bulk insert for specs/features/relationships
+    // Page size for streaming products to M360. Kept at 2,000 so each page:
+    //   - stays under SQL Server's 2,100-parameter limit for the child ids.Contains() queries, and
+    //   - stays under M360's max content batch size (10,000), so one page == one M360 content batch.
+    private const int PushPageSize = 2000;
 
     public SprContentImportService(
         ILogger<SprContentImportService> logger,
@@ -872,10 +874,19 @@ public class SprContentImportService : ISprContentImportService
 
         try
         {
-            // Get all products for this upload
-            var products = await _productContentRepository.GetByUploadIdAsync(uploadId, cancellationToken);
+            // Stream products to M360 one page at a time (see PushProductsInPagesAsync).
+            // No progress cache on this path, so the progress callback is null.
+            var outcome = await PushProductsInPagesAsync(
+                uploadId,
+                tradingPartner,
+                upload.ContentVersion,
+                upload.LocaleId,
+                _productContentRepository,
+                _merchant360Client,
+                onProgress: null,
+                cancellationToken);
 
-            if (!products.Any())
+            if (outcome.TotalProducts == 0)
             {
                 return new ContentPushResult
                 {
@@ -885,77 +896,22 @@ public class SprContentImportService : ISprContentImportService
                 };
             }
 
-            _logger.LogInformation("Found {Count} products to push", products.Count);
-
-            // Get features, relationships, and specifications for all products
-            var productIds = products.Select(p => p.Id).ToList();
-            var features = await _productContentRepository.GetFeaturesByProductIdsAsync(productIds, cancellationToken);
-            var relationships = await _productContentRepository.GetRelationshipsByProductIdsAsync(productIds, cancellationToken);
-            var specifications = await _productContentRepository.GetSpecificationsByProductIdsAsync(productIds, cancellationToken);
-
-            // Group by product
-            var featuresByProduct = features.GroupBy(f => f.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
-            var relationshipsByProduct = relationships.GroupBy(r => r.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
-            var specsByProduct = specifications.ToDictionary(s => s.SprProductContentId, s => s.SpecificationsHtml);
-
-            // Map to M360 format and de-duplicate by stock number
-            var contentProducts = products
-                .Select(p => MapToContentBatchProduct(p,
-                    featuresByProduct.GetValueOrDefault(p.Id, new List<SprProductFeature>()),
-                    relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>()),
-                    specsByProduct.GetValueOrDefault(p.Id)))
-                .Where(p => !string.IsNullOrWhiteSpace(p.StockNumber)) // Skip products with no stock number
-                .GroupBy(p => p.StockNumber)
-                .Select(g =>
-                {
-                    if (g.Count() > 1)
-                    {
-                        _logger.LogWarning("Duplicate stock number {StockNumber} found, using first occurrence", g.Key);
-                    }
-                    return g.First();
-                })
-                .ToList();
-
-            // Push in batches
             var result = new ContentPushResult
             {
                 UploadId = uploadId,
-                Success = true
+                Success = outcome.Success,
+                BatchCount = outcome.BatchCount,
+                RecordsPushed = outcome.RecordsPushed,
+                RecordsCreated = outcome.RecordsCreated,
+                RecordsUpdated = outcome.RecordsUpdated,
+                RecordsSkipped = outcome.RecordsSkipped,
+                ErrorMessage = outcome.ErrorMessage,
+                Errors = outcome.Errors
             };
 
-            var batches = contentProducts.Chunk(MaxBatchSize).ToList();
-            result.BatchCount = batches.Count;
-
-            _logger.LogInformation("Pushing {Count} products in {Batches} batches", contentProducts.Count, batches.Count);
-
-            foreach (var batch in batches)
+            if (!outcome.Success)
             {
-                var request = new ContentBatchRequest
-                {
-                    TradingPartnerId = tradingPartner.Id,
-                    TradingPartnerCode = tradingPartner.Code,
-                    ContentVersion = upload.ContentVersion,
-                    Locale = upload.LocaleId,
-                    SourceUploadId = uploadId,
-                    Products = batch.ToList()
-                };
-
-                var response = await _merchant360Client.PushContentBatchAsync(request, cancellationToken);
-
-                if (!response.Success)
-                {
-                    result.Success = false;
-                    result.Errors.AddRange(response.Errors ?? new List<string>());
-                    result.ErrorMessage = string.Join("; ", response.Errors ?? new List<string>());
-
-                    _logger.LogError("Content push failed: {Errors}", result.ErrorMessage);
-                    return result;
-                }
-
-                result.RecordsPushed += response.RecordsReceived;
-                result.RecordsCreated += response.RecordsCreated;
-                result.RecordsUpdated += response.RecordsUpdated;
-                result.RecordsSkipped += response.RecordsSkipped;
+                return result;
             }
 
             // Update upload with push timestamp
@@ -1312,8 +1268,34 @@ public class SprContentImportService : ISprContentImportService
         progress.Phase = M360PushPhase.PushingProducts;
         progress.PhaseDescription = "Loading products...";
 
-        var products = await productContentRepository.GetByUploadIdAsync(uploadId);
-        if (!products.Any())
+        var upload = await uploadRepository.GetByIdAsync(uploadId);
+
+        // Stream products to M360 one page at a time so the full catalog is never held in memory.
+        // The onProgress callback mirrors the paged outcome onto the shared M360PushProgress so the
+        // modal's "Products X / total" (total set up front, pushed count incremented per page) advances.
+        var outcome = await PushProductsInPagesAsync(
+            uploadId,
+            tradingPartner,
+            upload?.ContentVersion ?? "Unknown",
+            upload?.LocaleId ?? "EN_US",
+            productContentRepository,
+            merchant360Client,
+            onProgress: o =>
+            {
+                progress.TotalProducts = o.TotalProducts;
+                progress.TotalBatches = o.BatchCount;
+                progress.CurrentBatch = o.CurrentBatch;
+                progress.ProductsPushed = o.ProductsPushed;
+                progress.RecordsCreated = o.RecordsCreated;
+                progress.RecordsUpdated = o.RecordsUpdated;
+                progress.RecordsSkipped = o.RecordsSkipped;
+                progress.PhaseDescription = o.BatchCount > 0
+                    ? $"Pushing products batch {o.CurrentBatch}/{o.BatchCount}..."
+                    : "No products to push";
+            },
+            CancellationToken.None);
+
+        if (outcome.TotalProducts == 0)
         {
             progress.Phase = M360PushPhase.Completed;
             progress.PhaseDescription = "No products to push";
@@ -1323,70 +1305,16 @@ public class SprContentImportService : ISprContentImportService
             return;
         }
 
-        // Get features, relationships, and specifications
-        var productIds = products.Select(p => p.Id).ToList();
-        var features = await productContentRepository.GetFeaturesByProductIdsAsync(productIds);
-        var relationships = await productContentRepository.GetRelationshipsByProductIdsAsync(productIds);
-        var specifications = await productContentRepository.GetSpecificationsByProductIdsAsync(productIds);
-
-        var featuresByProduct = features.GroupBy(f => f.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
-        var relationshipsByProduct = relationships.GroupBy(r => r.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
-        var specsByProduct = specifications.ToDictionary(s => s.SprProductContentId, s => s.SpecificationsHtml);
-
-        // Map and deduplicate
-        var contentProducts = products
-            .Select(p => MapToContentBatchProduct(p,
-                featuresByProduct.GetValueOrDefault(p.Id, new List<SprProductFeature>()),
-                relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>()),
-                specsByProduct.GetValueOrDefault(p.Id)))
-            .Where(p => !string.IsNullOrWhiteSpace(p.StockNumber))
-            .GroupBy(p => p.StockNumber)
-            .Select(g => g.First())
-            .ToList();
-
-        progress.TotalProducts = contentProducts.Count;
-        var batches = contentProducts.Chunk(PushBatchSize).ToList();
-        progress.TotalBatches = batches.Count;
-
-        _logger.LogInformation("Pushing {Count} products in {Batches} batches", contentProducts.Count, batches.Count);
-
-        var upload = await uploadRepository.GetByIdAsync(uploadId);
-
-        int batchIndex = 0;
-        foreach (var batch in batches)
+        if (!outcome.Success)
         {
-            batchIndex++;
-            progress.CurrentBatch = batchIndex;
-            progress.PhaseDescription = $"Pushing products batch {batchIndex}/{batches.Count}...";
-
-            var request = new ContentBatchRequest
-            {
-                TradingPartnerId = tradingPartner.Id,
-                TradingPartnerCode = tradingPartner.Code,
-                ContentVersion = upload?.ContentVersion ?? "Unknown",
-                Locale = upload?.LocaleId ?? "EN_US",
-                SourceUploadId = uploadId,
-                Products = batch.ToList()
-            };
-
-            var response = await merchant360Client.PushContentBatchAsync(request);
-
-            if (!response.Success)
-            {
-                progress.Phase = M360PushPhase.Failed;
-                progress.PhaseDescription = $"Failed at batch {batchIndex}";
-                progress.IsComplete = true;
-                progress.Success = false;
-                progress.ErrorMessage = string.Join("; ", response.Errors ?? new List<string>());
-                progress.Errors.AddRange(response.Errors ?? new List<string>());
-                progress.CompletedAt = DateTime.UtcNow;
-                return;
-            }
-
-            progress.ProductsPushed += batch.Length;
-            progress.RecordsCreated += response.RecordsCreated;
-            progress.RecordsUpdated += response.RecordsUpdated;
-            progress.RecordsSkipped += response.RecordsSkipped;
+            progress.Phase = M360PushPhase.Failed;
+            progress.PhaseDescription = $"Failed at batch {outcome.CurrentBatch}";
+            progress.IsComplete = true;
+            progress.Success = false;
+            progress.ErrorMessage = outcome.ErrorMessage;
+            progress.Errors.AddRange(outcome.Errors);
+            progress.CompletedAt = DateTime.UtcNow;
+            return;
         }
 
         // Mark upload as pushed
@@ -1401,6 +1329,144 @@ public class SprContentImportService : ISprContentImportService
         _logger.LogInformation(
             "M360 push completed: Upload={UploadId}, Categories={Categories}, Products={Products}, Created={Created}, Updated={Updated}",
             uploadId, progress.CategoriesPushed, progress.ProductsPushed, progress.RecordsCreated, progress.RecordsUpdated);
+    }
+
+    /// <summary>
+    /// Streams an upload's products to Merchant360 one page at a time instead of loading the whole
+    /// catalog into memory. Each page (<see cref="PushPageSize"/> products) becomes exactly one M360
+    /// content batch, keeping the child-table id queries under SQL Server's 2,100-parameter limit.
+    /// The total product count is established up front from the DB count; <paramref name="onProgress"/>
+    /// (if supplied) is invoked once after the total is known and again after every page so callers can
+    /// advance a progress indicator. On a failed batch the push stops and the outcome is marked failed
+    /// (matching the previous behavior).
+    /// </summary>
+    private async Task<PagedPushOutcome> PushProductsInPagesAsync(
+        int uploadId,
+        TradingPartner tradingPartner,
+        string contentVersion,
+        string locale,
+        ISprProductContentRepository productContentRepository,
+        IMerchant360Client merchant360Client,
+        Action<PagedPushOutcome>? onProgress,
+        CancellationToken cancellationToken)
+    {
+        var outcome = new PagedPushOutcome();
+
+        // Establish the total up front so progress can show "X / total" immediately.
+        var totalProducts = await productContentRepository.GetCountByUploadIdAsync(uploadId, cancellationToken);
+        outcome.TotalProducts = totalProducts;
+        outcome.BatchCount = totalProducts == 0
+            ? 0
+            : (int)Math.Ceiling(totalProducts / (double)PushPageSize);
+        onProgress?.Invoke(outcome);
+
+        if (totalProducts == 0)
+        {
+            _logger.LogWarning("No products found to push for upload {UploadId}", uploadId);
+            return outcome;
+        }
+
+        _logger.LogInformation(
+            "Pushing {Count} products for upload {UploadId} in {Batches} pages of {PageSize}",
+            totalProducts, uploadId, outcome.BatchCount, PushPageSize);
+
+        for (int skip = 0; skip < totalProducts; skip += PushPageSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Load only this page's products, then only this page's children (<= PushPageSize ids,
+            // safely under the 2,100-parameter limit for the ids.Contains() queries).
+            var page = await productContentRepository.GetPageByUploadIdAsync(uploadId, skip, PushPageSize, cancellationToken);
+            if (page.Count == 0)
+                break;
+
+            var pageIds = page.Select(p => p.Id).ToList();
+            var features = await productContentRepository.GetFeaturesByProductIdsAsync(pageIds, cancellationToken);
+            var relationships = await productContentRepository.GetRelationshipsByProductIdsAsync(pageIds, cancellationToken);
+            var specifications = await productContentRepository.GetSpecificationsByProductIdsAsync(pageIds, cancellationToken);
+
+            var featuresByProduct = features.GroupBy(f => f.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+            var relationshipsByProduct = relationships.GroupBy(r => r.SprProductContentId).ToDictionary(g => g.Key, g => g.ToList());
+            var specsByProduct = specifications.ToDictionary(s => s.SprProductContentId, s => s.SpecificationsHtml);
+
+            // Map to M360 format and de-duplicate by stock number WITHIN this page only.
+            // Cross-page duplicates are fine: M360 upserts by stock number, so a later page just
+            // re-upserts the same record rather than creating a duplicate.
+            var contentProducts = page
+                .Select(p => MapToContentBatchProduct(p,
+                    featuresByProduct.GetValueOrDefault(p.Id, new List<SprProductFeature>()),
+                    relationshipsByProduct.GetValueOrDefault(p.Id, new List<SprProductRelationship>()),
+                    specsByProduct.GetValueOrDefault(p.Id)))
+                .Where(p => !string.IsNullOrWhiteSpace(p.StockNumber)) // Skip products with no stock number
+                .GroupBy(p => p.StockNumber)
+                .Select(g =>
+                {
+                    if (g.Count() > 1)
+                    {
+                        _logger.LogWarning("Duplicate stock number {StockNumber} found in page, using first occurrence", g.Key);
+                    }
+                    return g.First();
+                })
+                .ToList();
+
+            outcome.CurrentBatch++;
+
+            if (contentProducts.Count > 0)
+            {
+                var request = new ContentBatchRequest
+                {
+                    TradingPartnerId = tradingPartner.Id,
+                    TradingPartnerCode = tradingPartner.Code,
+                    ContentVersion = contentVersion,
+                    Locale = locale,
+                    SourceUploadId = uploadId,
+                    Products = contentProducts
+                };
+
+                var response = await merchant360Client.PushContentBatchAsync(request, cancellationToken);
+
+                if (!response.Success)
+                {
+                    outcome.Success = false;
+                    outcome.Errors.AddRange(response.Errors ?? new List<string>());
+                    outcome.ErrorMessage = string.Join("; ", response.Errors ?? new List<string>());
+
+                    _logger.LogError("Content push failed at page {Page}: {Errors}", outcome.CurrentBatch, outcome.ErrorMessage);
+                    onProgress?.Invoke(outcome);
+                    return outcome;
+                }
+
+                outcome.RecordsPushed += response.RecordsReceived;
+                outcome.RecordsCreated += response.RecordsCreated;
+                outcome.RecordsUpdated += response.RecordsUpdated;
+                outcome.RecordsSkipped += response.RecordsSkipped;
+            }
+
+            // Advance by the number of products read from this page so progress reaches the total.
+            outcome.ProductsPushed += page.Count;
+            onProgress?.Invoke(outcome);
+        }
+
+        return outcome;
+    }
+
+    /// <summary>
+    /// Accumulates the results of a paged product push so the different callers
+    /// (<see cref="ContentPushResult"/> and <see cref="M360PushProgress"/>) can map from a single shape.
+    /// </summary>
+    private sealed class PagedPushOutcome
+    {
+        public bool Success { get; set; } = true;
+        public int TotalProducts { get; set; }
+        public int BatchCount { get; set; }
+        public int CurrentBatch { get; set; }
+        public int ProductsPushed { get; set; }
+        public int RecordsPushed { get; set; }
+        public int RecordsCreated { get; set; }
+        public int RecordsUpdated { get; set; }
+        public int RecordsSkipped { get; set; }
+        public string? ErrorMessage { get; set; }
+        public List<string> Errors { get; set; } = new();
     }
 
     private static string? BuildCategoryFullPath(SprCategory category, IReadOnlyList<SprCategory> allCategories)

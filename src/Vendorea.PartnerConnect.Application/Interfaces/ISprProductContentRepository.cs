@@ -93,6 +93,16 @@ public interface ISprProductContentRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a single page of product content for an upload batch, ordered by Id for stable paging.
+    /// Used to stream large uploads to Merchant360 without loading the entire catalog into memory.
+    /// </summary>
+    Task<IReadOnlyList<SprProductContent>> GetPageByUploadIdAsync(
+        int uploadId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets product relationships by type.
     /// </summary>
     Task<IReadOnlyList<SprProductRelationship>> GetRelationshipsAsync(
