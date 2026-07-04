@@ -157,6 +157,40 @@ public class PriceFeedsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Cancels a queued (Pending) upload so it will not be processed.</summary>
+    [HttpPost("{uploadId:int}/cancel")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.Admin)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Cancel(int uploadId, CancellationToken cancellationToken)
+    {
+        var result = await _priceFeedService.CancelUploadAsync(uploadId, cancellationToken);
+        return result.Status switch
+        {
+            PriceFeedActionStatus.NotFound => NotFound(new { message = result.Message }),
+            PriceFeedActionStatus.Conflict => Conflict(new { message = result.Message }),
+            _ => Ok(new { message = "Upload cancelled." })
+        };
+    }
+
+    /// <summary>Deletes an upload, its price records, and its stored file. Not allowed while processing.</summary>
+    [HttpDelete("{uploadId:int}")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.Admin)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(int uploadId, CancellationToken cancellationToken)
+    {
+        var result = await _priceFeedService.DeleteUploadAsync(uploadId, cancellationToken);
+        return result.Status switch
+        {
+            PriceFeedActionStatus.NotFound => NotFound(new { message = result.Message }),
+            PriceFeedActionStatus.Conflict => Conflict(new { message = result.Message }),
+            _ => NoContent()
+        };
+    }
+
     /// <summary>
     /// Gets current prices for a dealer from a trading partner.
     /// </summary>

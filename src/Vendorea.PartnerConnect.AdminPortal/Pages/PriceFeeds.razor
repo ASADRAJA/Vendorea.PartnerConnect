@@ -119,6 +119,13 @@
                 </div>
             </div>
             <div class="card-body">
+                @if (!string.IsNullOrEmpty(actionError))
+                {
+                    <div class="alert alert-danger alert-dismissible mb-3">
+                        @actionError
+                        <button type="button" class="btn-close" @onclick="() => actionError = null"></button>
+                    </div>
+                }
                 @if (lastPushResult != null)
                 {
                     <div class="mb-3">
@@ -247,6 +254,22 @@
                                                         {
                                                             <span class="oi oi-loop-circular"></span>
                                                         }
+                                                    </button>
+                                                }
+                                                @if (upload.Status == "Pending")
+                                                {
+                                                    <button class="btn btn-sm btn-outline-warning me-1" @onclick="() => CancelUpload(upload.Id)"
+                                                            disabled="@(actioningUploadId == upload.Id)" title="Cancel this queued upload">
+                                                        <span class="oi oi-ban"></span>
+                                                    </button>
+                                                }
+                                            </AuthorizeView>
+                                            <AuthorizeView Policy="RequireAdmin" Context="admin">
+                                                @if (upload.Status != "Pending" && upload.Status != "Processing")
+                                                {
+                                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteUpload(upload.Id)"
+                                                            disabled="@(actioningUploadId == upload.Id)" title="Delete this upload and its records">
+                                                        <span class="oi oi-trash"></span>
                                                     </button>
                                                 }
                                             </AuthorizeView>
@@ -563,6 +586,48 @@
     private PushToMerchant360Result? lastPushResult;
     private int lastPushUploadId;
 
+    private int? actioningUploadId;
+    private string? actionError;
+
+    private async Task CancelUpload(int uploadId)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Cancel queued upload #{uploadId}? It will not be processed."))
+            return;
+
+        actioningUploadId = uploadId;
+        actionError = null;
+        try
+        {
+            var (success, error) = await Api.CancelPriceFeedUploadAsync(uploadId);
+            if (!success) actionError = error;
+            await LoadHistory();
+        }
+        finally
+        {
+            actioningUploadId = null;
+        }
+    }
+
+    private async Task DeleteUpload(int uploadId)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete upload #{uploadId} and all its price records? This cannot be undone."))
+            return;
+
+        actioningUploadId = uploadId;
+        actionError = null;
+        try
+        {
+            var (success, error) = await Api.DeletePriceFeedUploadAsync(uploadId);
+            if (!success) actionError = error;
+            if (selectedUploadDetail?.Id == uploadId) selectedUploadDetail = null;
+            await LoadHistory();
+        }
+        finally
+        {
+            actioningUploadId = null;
+        }
+    }
+
     private string GetStatusBadgeClass(string status) => status?.ToLower() switch
     {
         "pending" => "bg-warning text-dark",
@@ -571,6 +636,7 @@
         "failed" => "bg-danger",
         "pushedtomerchant360" => "bg-primary",
         "pushfailed" => "bg-danger",
+        "cancelled" => "bg-dark",
         _ => "bg-secondary"
     };
 

@@ -94,13 +94,55 @@ public class PriceFeedUploadRepository : IPriceFeedUploadRepository
     {
         // Atomic Pending -> Processing transition. ExecuteUpdate issues a single UPDATE ... WHERE
         // Status = 'Pending', so only one worker can win even if several poll the same row.
+        // Stamp ProcessingStartedAt so a stuck row can later be detected and reclaimed.
+        var now = DateTime.UtcNow;
         var rowsAffected = await _context.PriceFeedUploads
             .Where(u => u.Id == uploadId && u.Status == PriceFeedUploadStatus.Pending)
             .ExecuteUpdateAsync(
-                s => s.SetProperty(u => u.Status, PriceFeedUploadStatus.Processing),
+                s => s
+                    .SetProperty(u => u.Status, PriceFeedUploadStatus.Processing)
+                    .SetProperty(u => u.ProcessingStartedAt, now),
                 cancellationToken);
 
         return rowsAffected == 1;
+    }
+
+    public async Task<bool> TryCancelPendingAsync(int uploadId, string reason, CancellationToken cancellationToken = default)
+    {
+        // Only a Pending upload can be cancelled — a Processing one is mid-insert (let it finish or
+        // be reclaimed); terminal ones are already done.
+        var now = DateTime.UtcNow;
+        var rowsAffected = await _context.PriceFeedUploads
+            .Where(u => u.Id == uploadId && u.Status == PriceFeedUploadStatus.Pending)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.Status, PriceFeedUploadStatus.Cancelled)
+                    .SetProperty(u => u.ErrorMessage, reason)
+                    .SetProperty(u => u.ProcessedAt, now),
+                cancellationToken);
+
+        return rowsAffected == 1;
+    }
+
+    public async Task<int> ReclaimStaleProcessingAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default)
+    {
+        // A worker that crashed after claiming leaves an upload stuck in Processing. Return any
+        // Processing row claimed before the cutoff to Pending so it gets retried.
+        return await _context.PriceFeedUploads
+            .Where(u => u.Status == PriceFeedUploadStatus.Processing
+                        && u.ProcessingStartedAt != null
+                        && u.ProcessingStartedAt < olderThanUtc)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.Status, PriceFeedUploadStatus.Pending)
+                    .SetProperty(u => u.ProcessingStartedAt, (DateTime?)null),
+                cancellationToken);
+    }
+
+    public async Task DeleteAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default)
+    {
+        _context.PriceFeedUploads.Remove(upload);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<PriceFeedUpload> AddAsync(PriceFeedUpload upload, CancellationToken cancellationToken = default)
