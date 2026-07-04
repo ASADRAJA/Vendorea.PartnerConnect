@@ -244,6 +244,26 @@ public class WebhookSubscriptionDto
     public int FailedDeliveries { get; set; }
 }
 
+// Partner distribution center (editable in the partner modal)
+public class DistributionCenterModel
+{
+    public int Id { get; set; }
+    public int DcNumber { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string? Area { get; set; }
+    public string? ContactName { get; set; }
+    public string? AddressLine1 { get; set; }
+    public string? AddressLine2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Region { get; set; }
+    public string? Phone { get; set; }
+    public string? TollFreePhone { get; set; }
+    public string? Fax { get; set; }
+    public string? AdditionalContactInfo { get; set; }
+}
+
 // Price Feed Models
 public class PriceFeedUploadResult
 {

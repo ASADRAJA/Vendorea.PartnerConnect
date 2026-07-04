@@ -19,6 +19,7 @@ public class PublicTradingPartnersController : ControllerBase
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IPriceFeedUploadRepository _priceFeedRepository;
     private readonly ISprContentUploadRepository _contentUploadRepository;
+    private readonly IPartnerDistributionCenterRepository _distributionCenterRepository;
     private readonly ICredentialProtector _credentialProtector;
     private readonly ILogger<PublicTradingPartnersController> _logger;
 
@@ -26,12 +27,14 @@ public class PublicTradingPartnersController : ControllerBase
         ITradingPartnerRepository partnerRepository,
         IPriceFeedUploadRepository priceFeedRepository,
         ISprContentUploadRepository contentUploadRepository,
+        IPartnerDistributionCenterRepository distributionCenterRepository,
         ICredentialProtector credentialProtector,
         ILogger<PublicTradingPartnersController> logger)
     {
         _partnerRepository = partnerRepository;
         _priceFeedRepository = priceFeedRepository;
         _contentUploadRepository = contentUploadRepository;
+        _distributionCenterRepository = distributionCenterRepository;
         _credentialProtector = credentialProtector;
         _logger = logger;
     }
@@ -247,6 +250,125 @@ public class PublicTradingPartnersController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Lists a partner's distribution centers (admin view — includes the surrogate id), ordered by DC number.</summary>
+    [HttpGet("{id:int}/distribution-centers")]
+    public async Task<IActionResult> GetDistributionCenters(int id, CancellationToken cancellationToken)
+    {
+        var partner = await _partnerRepository.GetByIdAsync(id, cancellationToken);
+        if (partner == null)
+            return NotFound();
+
+        var centers = await _distributionCenterRepository.GetByPartnerAsync(id, cancellationToken);
+        return Ok(centers.OrderBy(dc => dc.DcNumber).Select(ToAdminDto).ToList());
+    }
+
+    /// <summary>Creates a distribution center for a partner.</summary>
+    [HttpPost("{id:int}/distribution-centers")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.Admin)]
+    public async Task<IActionResult> CreateDistributionCenter(
+        int id, [FromBody] SaveDistributionCenterRequest request, CancellationToken cancellationToken)
+    {
+        var partner = await _partnerRepository.GetByIdAsync(id, cancellationToken);
+        if (partner == null)
+            return NotFound();
+
+        if (request.DcNumber <= 0)
+            return BadRequest(new { error = "DcNumber must be a positive number." });
+        if (string.IsNullOrWhiteSpace(request.Label))
+            return BadRequest(new { error = "Label is required." });
+        if (await _distributionCenterRepository.DcNumberExistsAsync(id, request.DcNumber, null, cancellationToken))
+            return Conflict(new { error = $"DC number {request.DcNumber} already exists for this partner." });
+
+        var dc = new PartnerDistributionCenter { TradingPartnerId = id };
+        Apply(dc, request);
+        dc.CreatedAt = DateTime.UtcNow;
+
+        await _distributionCenterRepository.AddAsync(dc, cancellationToken);
+        _logger.LogInformation("Created DC {DcNumber} for partner {PartnerId}", dc.DcNumber, id);
+
+        return CreatedAtAction(nameof(GetDistributionCenters), new { id }, ToAdminDto(dc));
+    }
+
+    /// <summary>Updates a distribution center.</summary>
+    [HttpPut("{id:int}/distribution-centers/{dcId:int}")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.Admin)]
+    public async Task<IActionResult> UpdateDistributionCenter(
+        int id, int dcId, [FromBody] SaveDistributionCenterRequest request, CancellationToken cancellationToken)
+    {
+        var dc = await _distributionCenterRepository.GetByIdAsync(dcId, cancellationToken);
+        if (dc == null || dc.TradingPartnerId != id)
+            return NotFound();
+
+        if (request.DcNumber <= 0)
+            return BadRequest(new { error = "DcNumber must be a positive number." });
+        if (string.IsNullOrWhiteSpace(request.Label))
+            return BadRequest(new { error = "Label is required." });
+        if (await _distributionCenterRepository.DcNumberExistsAsync(id, request.DcNumber, dcId, cancellationToken))
+            return Conflict(new { error = $"DC number {request.DcNumber} already exists for this partner." });
+
+        Apply(dc, request);
+        dc.UpdatedAt = DateTime.UtcNow;
+
+        await _distributionCenterRepository.UpdateAsync(dc, cancellationToken);
+        _logger.LogInformation("Updated DC {DcId} (number {DcNumber}) for partner {PartnerId}", dcId, dc.DcNumber, id);
+
+        return Ok(ToAdminDto(dc));
+    }
+
+    /// <summary>Deletes a distribution center.</summary>
+    [HttpDelete("{id:int}/distribution-centers/{dcId:int}")]
+    [Vendorea.PartnerConnect.Api.Authorization.RequireScope(ApiScopes.Admin)]
+    public async Task<IActionResult> DeleteDistributionCenter(int id, int dcId, CancellationToken cancellationToken)
+    {
+        var dc = await _distributionCenterRepository.GetByIdAsync(dcId, cancellationToken);
+        if (dc == null || dc.TradingPartnerId != id)
+            return NotFound();
+
+        await _distributionCenterRepository.DeleteAsync(dc, cancellationToken);
+        _logger.LogInformation("Deleted DC {DcId} for partner {PartnerId}", dcId, id);
+
+        return NoContent();
+    }
+
+    private static void Apply(PartnerDistributionCenter dc, SaveDistributionCenterRequest r)
+    {
+        static string? Trim(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+
+        dc.DcNumber = r.DcNumber;
+        dc.Label = r.Label?.Trim() ?? string.Empty;
+        dc.Area = Trim(r.Area);
+        dc.ContactName = Trim(r.ContactName);
+        dc.AddressLine1 = Trim(r.AddressLine1);
+        dc.AddressLine2 = Trim(r.AddressLine2);
+        dc.City = Trim(r.City);
+        dc.State = Trim(r.State);
+        dc.PostalCode = Trim(r.PostalCode);
+        dc.Region = Trim(r.Region);
+        dc.Phone = Trim(r.Phone);
+        dc.TollFreePhone = Trim(r.TollFreePhone);
+        dc.Fax = Trim(r.Fax);
+        dc.AdditionalContactInfo = Trim(r.AdditionalContactInfo);
+    }
+
+    private static AdminDistributionCenterDto ToAdminDto(PartnerDistributionCenter dc) => new()
+    {
+        Id = dc.Id,
+        DcNumber = dc.DcNumber,
+        Label = dc.Label,
+        Area = dc.Area,
+        ContactName = dc.ContactName,
+        AddressLine1 = dc.AddressLine1,
+        AddressLine2 = dc.AddressLine2,
+        City = dc.City,
+        State = dc.State,
+        PostalCode = dc.PostalCode,
+        Region = dc.Region,
+        Phone = dc.Phone,
+        TollFreePhone = dc.TollFreePhone,
+        Fax = dc.Fax,
+        AdditionalContactInfo = dc.AdditionalContactInfo
+    };
+
     private static List<string> ParseRequirements(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -276,6 +398,45 @@ public class PublicTradingPartnersController : ControllerBase
 public class UpdateConnectionRequirementsRequest
 {
     public List<string>? Requirements { get; set; }
+}
+
+/// <summary>Admin view of a partner distribution center (includes the surrogate id for edit/delete).</summary>
+public class AdminDistributionCenterDto
+{
+    public int Id { get; set; }
+    public int DcNumber { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string? Area { get; set; }
+    public string? ContactName { get; set; }
+    public string? AddressLine1 { get; set; }
+    public string? AddressLine2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Region { get; set; }
+    public string? Phone { get; set; }
+    public string? TollFreePhone { get; set; }
+    public string? Fax { get; set; }
+    public string? AdditionalContactInfo { get; set; }
+}
+
+/// <summary>Create/update payload for a partner distribution center (id comes from the route).</summary>
+public class SaveDistributionCenterRequest
+{
+    public int DcNumber { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string? Area { get; set; }
+    public string? ContactName { get; set; }
+    public string? AddressLine1 { get; set; }
+    public string? AddressLine2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Region { get; set; }
+    public string? Phone { get; set; }
+    public string? TollFreePhone { get; set; }
+    public string? Fax { get; set; }
+    public string? AdditionalContactInfo { get; set; }
 }
 
 /// <summary>Request to set a partner's SPR interactive web-services credentials.</summary>

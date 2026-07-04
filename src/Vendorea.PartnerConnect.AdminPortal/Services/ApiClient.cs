@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Vendorea.PartnerConnect.AdminPortal.Models;
 
 namespace Vendorea.PartnerConnect.AdminPortal.Services;
@@ -80,6 +81,57 @@ public class ApiClient
         {
             _logger.LogError(ex, "Failed to get trading partners");
             return new();
+        }
+    }
+
+    // Partner distribution centers
+    public async Task<List<DistributionCenterModel>> GetPartnerDistributionCentersAsync(int partnerId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<List<DistributionCenterModel>>(
+                $"/api/v1/partners/{partnerId}/distribution-centers") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get distribution centers for partner {Id}", partnerId);
+            return new();
+        }
+    }
+
+    /// <summary>Creates or updates a DC. Returns (success, error message). Error surfaces conflicts/validation to the UI.</summary>
+    public async Task<(bool Success, string? Error)> SavePartnerDistributionCenterAsync(int partnerId, DistributionCenterModel dc)
+    {
+        try
+        {
+            var response = dc.Id > 0
+                ? await _httpClient.PutAsJsonAsync($"/api/v1/partners/{partnerId}/distribution-centers/{dc.Id}", dc)
+                : await _httpClient.PostAsJsonAsync($"/api/v1/partners/{partnerId}/distribution-centers", dc);
+
+            if (response.IsSuccessStatusCode)
+                return (true, null);
+
+            var body = await response.Content.ReadAsStringAsync();
+            return (false, ExtractError(body) ?? $"Request failed ({(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save distribution center for partner {Id}", partnerId);
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<bool> DeletePartnerDistributionCenterAsync(int partnerId, int dcId)
+    {
+        try
+        {
+            var response = await _httpClient.DeleteAsync($"/api/v1/partners/{partnerId}/distribution-centers/{dcId}");
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete distribution center {DcId} for partner {Id}", dcId, partnerId);
+            return false;
         }
     }
 
@@ -1309,5 +1361,29 @@ public class ApiClient
             return (true, null);
         var body = await response.Content.ReadAsStringAsync();
         return (false, string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body);
+    }
+
+    /// <summary>Pulls the "error"/"message" field out of a JSON error body; falls back to the raw text.</summary>
+    private static string? ExtractError(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var name in new[] { "error", "message" })
+                {
+                    if (doc.RootElement.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String)
+                        return prop.GetString();
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // not JSON — return the raw body below
+        }
+        return body;
     }
 }

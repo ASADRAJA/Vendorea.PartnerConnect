@@ -1,6 +1,7 @@
 @page "/partners"
 @attribute [Authorize(Policy = "RequireAdmin")]
 @inject ApiClient Api
+@inject IJSRuntime JS
 
 <PageTitle>Trading Partners - PartnerConnect Admin</PageTitle>
 
@@ -63,7 +64,7 @@ else
 @if (showEditModal && selectedPartner != null)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Edit Trading Partner</h5>
@@ -92,6 +93,12 @@ else
                             <button class="nav-link @(activeTab == ModalTab.Transport ? "active" : "")"
                                     type="button" @onclick="SelectTransportTab">
                                 Transport
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link @(activeTab == ModalTab.DistributionCenters ? "active" : "")"
+                                    type="button" @onclick="SelectDistributionCentersTab">
+                                Distribution Centers
                             </button>
                         </li>
                     </ul>
@@ -196,6 +203,151 @@ else
                             </details>
                         }
                     }
+                    else if (activeTab == ModalTab.DistributionCenters)
+                    {
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">Distribution Centers</h6>
+                            <button class="btn btn-sm btn-outline-primary" type="button" @onclick="StartAddDc" disabled="@(editingDc != null)">
+                                <span class="oi oi-plus me-1"></span> Add DC
+                            </button>
+                        </div>
+                        <p class="text-muted small">Partner distribution centers (reference/address data). Used to resolve DC numbers in feeds and exposed to orgs via the DC API.</p>
+
+                        @if (loadingDcs)
+                        {
+                            <p><em>Loading distribution centers...</em></p>
+                        }
+                        else
+                        {
+                            @if (editingDc != null)
+                            {
+                                <div class="card mb-3">
+                                    <div class="card-header py-2">
+                                        @(editingDc.Id > 0 ? $"Edit DC {editingDc.DcNumber}" : "New Distribution Center")
+                                    </div>
+                                    <div class="card-body">
+                                        @if (!string.IsNullOrEmpty(dcError))
+                                        {
+                                            <div class="alert alert-danger py-2">@dcError</div>
+                                        }
+                                        <div class="row g-2">
+                                            <div class="col-md-2">
+                                                <label class="form-label small mb-0">DC Number *</label>
+                                                <input type="number" class="form-control form-control-sm" @bind="editingDc.DcNumber" />
+                                            </div>
+                                            <div class="col-md-5">
+                                                <label class="form-label small mb-0">Label *</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.Label" placeholder="e.g. Atlanta, GA" />
+                                            </div>
+                                            <div class="col-md-5">
+                                                <label class="form-label small mb-0">Area / alias</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.Area" placeholder="e.g. Lithia Springs" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0">Contact name</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.ContactName" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0">Address line 1</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.AddressLine1" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0">Address line 2</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.AddressLine2" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0">City</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.City" />
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small mb-0">State</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.State" maxlength="2" />
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small mb-0">Postal code</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.PostalCode" />
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small mb-0">Region</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.Region" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0">Phone</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.Phone" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0">Toll-free phone</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.TollFreePhone" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0">Fax</label>
+                                                <input class="form-control form-control-sm" @bind="editingDc.Fax" />
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label small mb-0">Additional contact info</label>
+                                                <textarea class="form-control form-control-sm" rows="2" @bind="editingDc.AdditionalContactInfo"></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer py-2 text-end">
+                                        <button class="btn btn-sm btn-secondary me-1" type="button" @onclick="CancelDcEdit" disabled="@savingDc">Cancel</button>
+                                        <button class="btn btn-sm btn-primary" type="button" @onclick="SaveDc" disabled="@savingDc">
+                                            @if (savingDc) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            Save DC
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (dcs.Count == 0)
+                            {
+                                <div class="alert alert-info">No distribution centers yet. Use "Add DC" to create one.</div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover align-middle">
+                                        <thead>
+                                            <tr>
+                                                <th>DC #</th>
+                                                <th>Label</th>
+                                                <th>Area</th>
+                                                <th>City</th>
+                                                <th>State</th>
+                                                <th>Postal</th>
+                                                <th>Contact</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var dc in dcs)
+                                            {
+                                                <tr>
+                                                    <td>@dc.DcNumber</td>
+                                                    <td>@dc.Label</td>
+                                                    <td>@(dc.Area ?? "—")</td>
+                                                    <td>@(dc.City ?? "—")</td>
+                                                    <td>@(dc.State ?? "—")</td>
+                                                    <td>@(dc.PostalCode ?? "—")</td>
+                                                    <td>@(dc.ContactName ?? "—")</td>
+                                                    <td class="text-end">
+                                                        <button class="btn btn-sm btn-outline-primary me-1" type="button"
+                                                                @onclick="() => StartEditDc(dc)" disabled="@(editingDc != null)" title="Edit">
+                                                            <span class="oi oi-pencil"></span>
+                                                        </button>
+                                                        <button class="btn btn-sm btn-outline-danger" type="button"
+                                                                @onclick="() => DeleteDc(dc)" disabled="@(editingDc != null)" title="Delete">
+                                                            <span class="oi oi-trash"></span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        }
+                    }
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
@@ -213,7 +365,7 @@ else
 }
 
 @code {
-    private enum ModalTab { Requirements, Transport }
+    private enum ModalTab { Requirements, Transport, DistributionCenters }
 
     private List<TradingPartnerDto>? partners;
     private TradingPartnerDto? selectedPartner;
@@ -225,6 +377,14 @@ else
     private PartnerTransportDto? transport;
     private bool loadingTransport;
 
+    // Distribution Centers tab
+    private List<DistributionCenterModel> dcs = new();
+    private bool dcsLoaded;
+    private bool loadingDcs;
+    private DistributionCenterModel? editingDc;
+    private bool savingDc;
+    private string? dcError;
+
     protected override async Task OnInitializedAsync() => await RefreshPartners();
 
     private async Task RefreshPartners() => partners = await Api.GetTradingPartnersAsync();
@@ -235,6 +395,7 @@ else
         requirements = new List<string>(partner.ConnectionRequirements);
         activeTab = ModalTab.Requirements;
         transport = null;
+        ResetDcState();
         showEditModal = true;
     }
 
@@ -259,7 +420,118 @@ else
         showEditModal = false;
         selectedPartner = null;
         transport = null;
+        ResetDcState();
         activeTab = ModalTab.Requirements;
+    }
+
+    private void ResetDcState()
+    {
+        dcs = new();
+        dcsLoaded = false;
+        loadingDcs = false;
+        editingDc = null;
+        savingDc = false;
+        dcError = null;
+    }
+
+    private async Task SelectDistributionCentersTab()
+    {
+        activeTab = ModalTab.DistributionCenters;
+        if (selectedPartner == null || dcsLoaded) return;
+        await LoadDcs();
+    }
+
+    private async Task LoadDcs()
+    {
+        if (selectedPartner == null) return;
+        loadingDcs = true;
+        try
+        {
+            dcs = await Api.GetPartnerDistributionCentersAsync(selectedPartner.Id);
+            dcsLoaded = true;
+        }
+        finally
+        {
+            loadingDcs = false;
+        }
+    }
+
+    private void StartAddDc()
+    {
+        dcError = null;
+        // Default the new DC number to one past the current max for convenience.
+        var nextNumber = dcs.Count > 0 ? dcs.Max(d => d.DcNumber) + 1 : 1;
+        editingDc = new DistributionCenterModel { DcNumber = nextNumber };
+    }
+
+    private void StartEditDc(DistributionCenterModel dc)
+    {
+        dcError = null;
+        // Edit a copy so Cancel doesn't mutate the table row.
+        editingDc = new DistributionCenterModel
+        {
+            Id = dc.Id,
+            DcNumber = dc.DcNumber,
+            Label = dc.Label,
+            Area = dc.Area,
+            ContactName = dc.ContactName,
+            AddressLine1 = dc.AddressLine1,
+            AddressLine2 = dc.AddressLine2,
+            City = dc.City,
+            State = dc.State,
+            PostalCode = dc.PostalCode,
+            Region = dc.Region,
+            Phone = dc.Phone,
+            TollFreePhone = dc.TollFreePhone,
+            Fax = dc.Fax,
+            AdditionalContactInfo = dc.AdditionalContactInfo
+        };
+    }
+
+    private void CancelDcEdit()
+    {
+        editingDc = null;
+        dcError = null;
+    }
+
+    private async Task SaveDc()
+    {
+        if (selectedPartner == null || editingDc == null) return;
+
+        dcError = null;
+        if (editingDc.DcNumber <= 0) { dcError = "DC number must be a positive number."; return; }
+        if (string.IsNullOrWhiteSpace(editingDc.Label)) { dcError = "Label is required."; return; }
+
+        savingDc = true;
+        try
+        {
+            var (success, error) = await Api.SavePartnerDistributionCenterAsync(selectedPartner.Id, editingDc);
+            if (success)
+            {
+                editingDc = null;
+                await LoadDcs();
+            }
+            else
+            {
+                dcError = error ?? "Failed to save the distribution center.";
+            }
+        }
+        finally
+        {
+            savingDc = false;
+        }
+    }
+
+    private async Task DeleteDc(DistributionCenterModel dc)
+    {
+        if (selectedPartner == null) return;
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete DC {dc.DcNumber} ({dc.Label})?");
+        if (!confirmed) return;
+
+        if (await Api.DeletePartnerDistributionCenterAsync(selectedPartner.Id, dc.Id))
+        {
+            await LoadDcs();
+        }
     }
 
     private static string Show(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;

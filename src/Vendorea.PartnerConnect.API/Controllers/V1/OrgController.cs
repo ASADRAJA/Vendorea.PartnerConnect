@@ -28,6 +28,7 @@ public class OrgController : ControllerBase
     private readonly ITenantPartnerAccountRepository _connectionRepository;
     private readonly ISprStockCheckService _stockCheckService;
     private readonly ISprFreightService _freightService;
+    private readonly IPartnerDistributionCenterRepository _distributionCenterRepository;
     private readonly ILogger<OrgController> _logger;
 
     public OrgController(
@@ -37,6 +38,7 @@ public class OrgController : ControllerBase
         ITenantPartnerAccountRepository connectionRepository,
         ISprStockCheckService stockCheckService,
         ISprFreightService freightService,
+        IPartnerDistributionCenterRepository distributionCenterRepository,
         ILogger<OrgController> logger)
     {
         _authenticator = authenticator;
@@ -45,6 +47,7 @@ public class OrgController : ControllerBase
         _connectionRepository = connectionRepository;
         _stockCheckService = stockCheckService;
         _freightService = freightService;
+        _distributionCenterRepository = distributionCenterRepository;
         _logger = logger;
     }
 
@@ -124,6 +127,57 @@ public class OrgController : ControllerBase
             .ToList();
 
         return Ok(partners);
+    }
+
+    /// <summary>
+    /// Lists a partner's distribution centers (reference/address data). The org must be associated
+    /// with the partner and the partner must be active. No tenant connection is required — DC data
+    /// is partner-level, not tenant- or pricing-specific.
+    /// </summary>
+    [HttpGet("partners/{partnerCode}/distribution-centers")]
+    [RequireScope(ApiScopes.PartnersRead)]
+    public async Task<IActionResult> GetPartnerDistributionCenters(string partnerCode, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var withPartners = await _organizationRepository.GetByIdWithPartnersAsync(org.Id, cancellationToken);
+        var partner = (withPartners?.Partners ?? new List<OrganizationPartner>())
+            .Select(p => p.TradingPartner)
+            .FirstOrDefault(tp =>
+                tp is not null &&
+                tp.Status == TradingPartnerStatus.Active &&
+                string.Equals(tp.Code, partnerCode, StringComparison.OrdinalIgnoreCase));
+
+        // Don't leak partner existence to orgs that aren't associated with it.
+        if (partner is null)
+            return NotFound(new { error = $"Partner '{partnerCode}' not found for this organization" });
+
+        var centers = await _distributionCenterRepository.GetByPartnerAsync(partner.Id, cancellationToken);
+
+        var result = centers
+            .OrderBy(dc => dc.DcNumber)
+            .Select(dc => new PartnerDistributionCenterDto
+            {
+                DcNumber = dc.DcNumber,
+                Label = dc.Label,
+                Area = dc.Area,
+                City = dc.City,
+                State = dc.State,
+                PostalCode = dc.PostalCode,
+                Region = dc.Region,
+                ContactName = dc.ContactName,
+                AddressLine1 = dc.AddressLine1,
+                AddressLine2 = dc.AddressLine2,
+                Phone = dc.Phone,
+                TollFreePhone = dc.TollFreePhone,
+                Fax = dc.Fax,
+                AdditionalContactInfo = dc.AdditionalContactInfo
+            })
+            .ToList();
+
+        return Ok(result);
     }
 
     /// <summary>Requests a tenant-partner connection (status Pending; tenant created on approval).</summary>
