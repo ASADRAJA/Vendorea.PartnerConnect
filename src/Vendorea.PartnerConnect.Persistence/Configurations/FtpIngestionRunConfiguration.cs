@@ -16,6 +16,13 @@ public class FtpIngestionRunConfiguration : IEntityTypeConfiguration<FtpIngestio
             .HasMaxLength(50)
             .IsRequired();
 
+        builder.Property(r => r.Status)
+            .HasMaxLength(20)
+            .IsRequired();
+
+        builder.Property(r => r.Phase)
+            .HasMaxLength(50);
+
         builder.Property(r => r.Errors)
             .HasConversion(
                 v => string.Join("|||", v),

@@ -111,6 +111,8 @@ builder.Services.AddHostedService<ScheduledJobsCoordinator>();
 // SPR Content Ingestion Worker
 builder.Services.AddWorkerProcesses(builder.Configuration);
 builder.Services.AddSprContentIngestionWorker();
+// Drains queued manual SPR content-ingestion runs off the API request thread.
+builder.Services.AddHostedService<FtpIngestionQueueWorker>();
 
 try
 {

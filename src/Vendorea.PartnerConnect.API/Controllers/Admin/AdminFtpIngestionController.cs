@@ -1,14 +1,7 @@
 using FluentFTP;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
-using Vendorea.PartnerConnect.Persistence;
-using Vendorea.PartnerConnect.WorkerProcesses.Configuration;
-using Vendorea.PartnerConnect.WorkerProcesses.Services;
-using Vendorea.PartnerConnect.WorkerProcesses.Storage;
-using Vendorea.PartnerConnect.WorkerProcesses.Workers;
 
 namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 
@@ -20,28 +13,17 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 public class AdminFtpIngestionController : ControllerBase
 {
     private readonly IConfiguration _configuration;
-    // A singleton scope factory — NOT the request-scoped IServiceProvider — so the fire-and-forget
-    // ingestion task can create scopes after the HTTP request (and its scope) has been disposed.
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IFtpIngestionRunRepository _runRepository;
     private readonly IPartnerIngestionConfigRepository _configRepository;
     private readonly ILogger<AdminFtpIngestionController> _logger;
 
-    // Static state for tracking current run (in production, use distributed cache)
-    private static bool _isRunning;
-    private static DateTime? _lastRunAt;
-    private static bool? _lastRunSuccess;
-    private static string? _currentPhase;
-
     public AdminFtpIngestionController(
         IConfiguration configuration,
-        IServiceScopeFactory scopeFactory,
         IFtpIngestionRunRepository runRepository,
         IPartnerIngestionConfigRepository configRepository,
         ILogger<AdminFtpIngestionController> logger)
     {
         _configuration = configuration;
-        _scopeFactory = scopeFactory;
         _runRepository = runRepository;
         _configRepository = configRepository;
         _logger = logger;
@@ -211,28 +193,25 @@ public class AdminFtpIngestionController : ControllerBase
             }
         }
 
+        var isRunning = lastRun != null && (lastRun.Status == "Queued" || lastRun.Status == "Running");
+
         return Ok(new FtpIngestionStatusResponse
         {
-            IsRunning = _isRunning,
-            LastRunAt = lastRun?.StartedAt ?? _lastRunAt,
-            LastRunSuccess = lastRun?.Success ?? _lastRunSuccess,
+            IsRunning = isRunning,
+            LastRunAt = lastRun?.StartedAt,
+            LastRunSuccess = lastRun?.Success,
             NextScheduledRun = nextScheduledRun,
-            CurrentPhase = _isRunning ? _currentPhase : null
+            CurrentPhase = isRunning ? lastRun?.Phase : null
         });
     }
 
     /// <summary>
-    /// Manually triggers an FTP ingestion run.
-    /// Entire process runs in background - returns immediately with run ID.
+    /// Manually queues an FTP ingestion run. The heavy Download → Import → Transform pipeline is
+    /// drained by the BackgroundWorkers <c>FtpIngestionQueueWorker</c>, so this returns immediately.
     /// </summary>
     [HttpPost("run")]
     public async Task<IActionResult> RunIngestion([FromQuery] string partnerCode = "SPR", CancellationToken cancellationToken = default)
     {
-        if (_isRunning)
-        {
-            return Conflict(new { message = "An ingestion is already running" });
-        }
-
         // Load configuration from database
         var dbConfig = await _configRepository.GetByPartnerCodeAsync(partnerCode, cancellationToken);
         if (dbConfig == null || string.IsNullOrEmpty(dbConfig.FtpUsername))
@@ -240,164 +219,29 @@ public class AdminFtpIngestionController : ControllerBase
             return BadRequest(new { message = "FTP configuration not found. Please save your settings first." });
         }
 
-        _isRunning = true;
-        _currentPhase = "Starting...";
+        // Reject if a run is already Queued or Running so we don't stack concurrent ingestions.
+        var queued = await _runRepository.GetByStatusAsync("Queued", 1, cancellationToken);
+        var running = await _runRepository.GetByStatusAsync("Running", 1, cancellationToken);
+        if (queued.Count > 0 || running.Count > 0)
+        {
+            return Conflict(new { message = "An ingestion is already queued or running" });
+        }
 
-        // Create run record immediately so UI can track it
+        // Create a Queued run record; the queue worker will claim and process it.
         var runRecord = new FtpIngestionRun
         {
             StartedAt = DateTime.UtcNow,
+            Status = "Queued",
+            Phase = "Queued",
             TriggeredBy = "Manual"
         };
         await _runRepository.SaveRunAsync(runRecord, cancellationToken);
-        var runId = runRecord.Id;
 
-        // Capture config values for background task (avoid capturing dbConfig which may be disposed)
-        var configSnapshot = new
+        return Accepted(new
         {
-            dbConfig.FtpHost,
-            dbConfig.FtpUsername,
-            dbConfig.FtpPassword,
-            dbConfig.FtpPort,
-            LocalDownloadPath = !string.IsNullOrEmpty(dbConfig.LocalDownloadPath)
-                ? dbConfig.LocalDownloadPath
-                : Path.Combine(Path.GetTempPath(), "spr-inquire"),
-            dbConfig.Locale,
-            dbConfig.DatabaseType,
-            BulkInsertBatchSize = dbConfig.BulkInsertBatchSize > 0 ? dbConfig.BulkInsertBatchSize : 10000,
-            dbConfig.UseAzureBlobStorage,
-            dbConfig.AzureBlobConnectionString,
-            AzureBlobContainerName = dbConfig.AzureBlobContainerName ?? "spr-content-ingestion"
-        };
-
-        // Run entire ingestion process in background
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var bgRunRepository = scope.ServiceProvider.GetRequiredService<IFtpIngestionRunRepository>();
-
-                // Create options from config snapshot
-                var options = Options.Create(new SprContentIngestionOptions
-                {
-                    FtpHost = configSnapshot.FtpHost,
-                    FtpUsername = configSnapshot.FtpUsername,
-                    FtpPassword = configSnapshot.FtpPassword,
-                    LocalDownloadPath = configSnapshot.LocalDownloadPath,
-                    Locale = configSnapshot.Locale,
-                    DatabaseType = configSnapshot.DatabaseType,
-                    BulkInsertBatchSize = configSnapshot.BulkInsertBatchSize,
-                    UseAzureBlobStorage = configSnapshot.UseAzureBlobStorage,
-                    AzureBlobConnectionString = configSnapshot.AzureBlobConnectionString,
-                    AzureBlobContainerName = configSnapshot.AzureBlobContainerName
-                });
-
-                // Create storage based on config
-                var storage = configSnapshot.UseAzureBlobStorage
-                    ? (IIngestionFileStorage)new BlobIngestionFileStorage(
-                        scope.ServiceProvider.GetRequiredService<ILogger<BlobIngestionFileStorage>>(), options)
-                    : new LocalIngestionFileStorage(
-                        scope.ServiceProvider.GetRequiredService<ILogger<LocalIngestionFileStorage>>(), options);
-
-                // Create services
-                var ftpService = new SprFtpDownloadService(
-                    scope.ServiceProvider.GetRequiredService<ILogger<SprFtpDownloadService>>(),
-                    options,
-                    storage);
-
-                var dbContext = scope.ServiceProvider.GetRequiredService<PartnerConnectDbContext>();
-                var importService = new SprCsvBulkImportService(
-                    scope.ServiceProvider.GetRequiredService<ILogger<SprCsvBulkImportService>>(),
-                    dbContext,
-                    options,
-                    storage);
-
-                var transformService = scope.ServiceProvider.GetRequiredService<ISprRawToCanonicalTransformService>();
-
-                // Step 1: Download
-                _currentPhase = "Downloading from FTP...";
-                var downloadResult = await ftpService.DownloadAllFilesAsync(CancellationToken.None);
-
-                var bgRunRecord = await bgRunRepository.GetByIdAsync(runId, CancellationToken.None);
-                if (bgRunRecord == null) return;
-
-                bgRunRecord.FilesDownloaded = downloadResult.FilesDownloaded;
-                bgRunRecord.BytesDownloaded = downloadResult.TotalBytesDownloaded;
-
-                if (!downloadResult.Success)
-                {
-                    bgRunRecord.Success = false;
-                    bgRunRecord.Errors.AddRange(downloadResult.Errors);
-                    bgRunRecord.CompletedAt = DateTime.UtcNow;
-                    await bgRunRepository.SaveRunAsync(bgRunRecord, CancellationToken.None);
-                    return;
-                }
-
-                // Step 2: Import to raw schema
-                _currentPhase = "Importing to raw schema...";
-                var importResult = await importService.ImportAllAsync(downloadResult.Files, CancellationToken.None);
-                bgRunRecord.TablesImported = importResult.TablesSucceeded;
-                bgRunRecord.RowsImported = importResult.TotalRowsInserted;
-
-                if (!importResult.Success)
-                {
-                    bgRunRecord.Success = false;
-                    bgRunRecord.Errors.AddRange(importResult.Errors);
-                    bgRunRecord.CompletedAt = DateTime.UtcNow;
-                    await bgRunRepository.SaveRunAsync(bgRunRecord, CancellationToken.None);
-                    return;
-                }
-
-                // Save intermediate progress
-                await bgRunRepository.SaveRunAsync(bgRunRecord, CancellationToken.None);
-
-                // Step 3: Transform to canonical
-                _currentPhase = "Transforming to canonical schema...";
-                var transformResult = await transformService.TransformAllAsync(CancellationToken.None);
-
-                bgRunRecord.ProductsTransformed = transformResult.ProductsTransformed;
-                bgRunRecord.CategoriesTransformed = transformResult.CategoriesTransformed;
-                bgRunRecord.FeaturesTransformed = transformResult.FeaturesTransformed;
-                bgRunRecord.RelationshipsTransformed = transformResult.RelationshipsTransformed;
-                bgRunRecord.SpecificationsTransformed = transformResult.SpecificationsTransformed;
-                bgRunRecord.Success = transformResult.Success;
-                bgRunRecord.Errors.AddRange(transformResult.Errors);
-                bgRunRecord.CompletedAt = DateTime.UtcNow;
-                await bgRunRepository.SaveRunAsync(bgRunRecord, CancellationToken.None);
-
-                _lastRunAt = bgRunRecord.CompletedAt;
-                _lastRunSuccess = bgRunRecord.Success;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Background ingestion failed for run {RunId}", runId);
-                using var scope = _scopeFactory.CreateScope();
-                var bgRunRepository = scope.ServiceProvider.GetRequiredService<IFtpIngestionRunRepository>();
-                var bgRunRecord = await bgRunRepository.GetByIdAsync(runId, CancellationToken.None);
-                if (bgRunRecord != null)
-                {
-                    bgRunRecord.Success = false;
-                    bgRunRecord.Errors.Add($"Ingestion failed: {ex.Message}");
-                    bgRunRecord.CompletedAt = DateTime.UtcNow;
-                    await bgRunRepository.SaveRunAsync(bgRunRecord, CancellationToken.None);
-                }
-            }
-            finally
-            {
-                _isRunning = false;
-                _currentPhase = null;
-            }
-        });
-
-        // Return immediately - entire process runs in background
-        return Ok(new FtpIngestionRunResponse
-        {
-            Id = runRecord.Id,
-            Success = true,
-            StartedAt = runRecord.StartedAt,
-            Status = "Running",
-            Message = "Ingestion started in background. Poll /api/admin/ftp-ingestion/history or /status for progress."
+            runRecord.Id,
+            Status = "Queued",
+            Message = "Ingestion queued; the worker will process it."
         });
     }
 
@@ -477,30 +321,12 @@ public class AdminFtpIngestionController : ControllerBase
 
     private static FtpIngestionRunResponse MapToResponse(FtpIngestionRun run)
     {
-        // Determine status based on run state
-        string status;
-        if (!run.CompletedAt.HasValue)
-        {
-            // Still running - determine phase based on what's populated
-            if (run.ProductsTransformed > 0)
-                status = "Transforming";
-            else if (run.RowsImported > 0)
-                status = "Transforming";
-            else if (run.FilesDownloaded > 0)
-                status = "Importing";
-            else
-                status = "Downloading";
-        }
-        else if (run.Success)
-            status = "Completed";
-        else
-            status = "Failed";
-
         return new FtpIngestionRunResponse
         {
             Id = run.Id,
             Success = run.Success,
-            Status = status,
+            Status = run.Status,
+            Phase = run.Phase,
             StartedAt = run.StartedAt,
             CompletedAt = run.CompletedAt,
             Duration = run.CompletedAt.HasValue
@@ -562,6 +388,7 @@ public class FtpIngestionRunResponse
     public int Id { get; set; }
     public bool Success { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string? Phase { get; set; }
     public string? Message { get; set; }
     public DateTime StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }

@@ -13,6 +13,17 @@ public class FtpIngestionRun
     public bool Success { get; set; }
 
     /// <summary>
+    /// Lifecycle status of the run. One of: Queued, Running, Succeeded, Failed.
+    /// Used by the queue worker to atomically claim and drain runs.
+    /// </summary>
+    public string Status { get; set; } = "Queued";
+
+    /// <summary>
+    /// Current phase of an in-progress run (e.g. Downloading, Importing, Transforming).
+    /// </summary>
+    public string? Phase { get; set; }
+
+    /// <summary>
     /// How the run was triggered (Manual, Scheduled).
     /// </summary>
     public string TriggeredBy { get; set; } = "Manual";
