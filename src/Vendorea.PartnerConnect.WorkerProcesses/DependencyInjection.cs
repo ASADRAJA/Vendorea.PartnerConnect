@@ -44,6 +44,9 @@ public static class DependencyInjection
         services.AddScoped<ISprCsvBulkImportService, SprCsvBulkImportService>();
         services.AddScoped<ISprRawToCanonicalTransformService, SprRawToCanonicalTransformService>();
 
+        // Shared executor for the queue-drained manual ingestion path (BackgroundWorkers host).
+        services.AddScoped<ISprContentIngestionExecutor, SprContentIngestionExecutor>();
+
         return services;
     }
 
