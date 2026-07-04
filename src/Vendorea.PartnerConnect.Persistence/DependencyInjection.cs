@@ -24,6 +24,10 @@ public static class DependencyInjection
             {
                 sqlOptions.MigrationsAssembly(typeof(PartnerConnectDbContext).Assembly.FullName);
                 sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
+                // Heavy operations (e.g. the price-feed push: loading tens of thousands of records
+                // and mapping SKUs → categories) exceed the 30s default. These run off the request
+                // thread in the worker, so a generous command timeout is safe.
+                sqlOptions.CommandTimeout(180);
             });
 
             // Add the auditing interceptor

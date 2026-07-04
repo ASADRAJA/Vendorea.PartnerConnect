@@ -60,11 +60,16 @@ public interface IPriceFeedService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Pushes the latest price data for a dealer to Merchant360.
+    /// Queues an already-processed upload for an asynchronous push to Merchant360 (the worker does
+    /// the heavy DB reads + batched push off the request thread). Returns immediately.
     /// </summary>
-    Task<PushToMerchant360Result> PushToMerchant360Async(
-        int uploadId,
-        CancellationToken cancellationToken = default);
+    Task<PriceFeedActionResult> RequestPushAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Performs a queued push to Merchant360 (claims PushQueued → Pushing, reads records, pushes in
+    /// batches, sets the final status). Invoked by the background worker.
+    /// </summary>
+    Task<PushToMerchant360Result> ProcessQueuedPushAsync(int uploadId, CancellationToken cancellationToken = default);
 
     /// <summary>Cancels a queued (Pending) upload so it will not be processed.</summary>
     Task<PriceFeedActionResult> CancelUploadAsync(int uploadId, CancellationToken cancellationToken = default);

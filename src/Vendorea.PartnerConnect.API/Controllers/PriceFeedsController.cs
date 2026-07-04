@@ -130,31 +130,27 @@ public class PriceFeedsController : ControllerBase
     }
 
     /// <summary>
-    /// Pushes an uploaded price feed to Merchant360.
+    /// Queues an uploaded price feed for an asynchronous push to Merchant360. Returns 202 immediately;
+    /// a background worker performs the push (watch the upload status for Pushed/PushFailed).
     /// </summary>
     /// <param name="uploadId">The upload ID to push.</param>
     [HttpPost("{uploadId:int}/push-to-merchant360")]
     [Vendorea.PartnerConnect.Api.Authorization.RequireScope(Vendorea.PartnerConnect.Domain.Entities.ApiScopes.Admin)]
-    [ProducesResponseType(typeof(PushToMerchant360Result), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> PushToMerchant360(
         int uploadId,
         CancellationToken cancellationToken)
     {
-        var result = await _priceFeedService.PushToMerchant360Async(uploadId, cancellationToken);
+        var result = await _priceFeedService.RequestPushAsync(uploadId, cancellationToken);
 
-        if (result.ErrorMessage?.Contains("not found") == true)
+        return result.Status switch
         {
-            return NotFound(new { message = result.ErrorMessage });
-        }
-
-        if (!result.Success)
-        {
-            return BadRequest(new { message = result.ErrorMessage });
-        }
-
-        return Ok(result);
+            PriceFeedActionStatus.NotFound => NotFound(new { message = result.Message }),
+            PriceFeedActionStatus.Conflict => Conflict(new { message = result.Message }),
+            _ => Accepted(new { message = "Push queued." })
+        };
     }
 
     /// <summary>Cancels a queued (Pending) upload so it will not be processed.</summary>

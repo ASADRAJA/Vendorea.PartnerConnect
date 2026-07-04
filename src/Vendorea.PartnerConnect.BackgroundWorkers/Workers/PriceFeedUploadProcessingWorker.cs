@@ -80,33 +80,60 @@ public class PriceFeedUploadProcessingWorker : BackgroundService
                 DateTime.UtcNow.AddMinutes(-staleMinutes), cancellationToken);
             if (reclaimed > 0)
                 _logger.LogWarning("Reclaimed {Count} stale Processing upload(s) back to Pending", reclaimed);
+
+            var reclaimedPush = await uploadRepository.ReclaimStalePushingAsync(
+                DateTime.UtcNow.AddMinutes(-staleMinutes), cancellationToken);
+            if (reclaimedPush > 0)
+                _logger.LogWarning("Reclaimed {Count} stale Pushing upload(s) back to PushQueued", reclaimedPush);
         }
 
+        // Drain imports (Pending -> Completed/Failed).
         var pending = await uploadRepository.GetByStatusAsync(
             PriceFeedUploadStatus.Pending, batchSize, cancellationToken);
 
-        if (pending.Count == 0)
+        if (pending.Count > 0)
         {
-            return;
+            _logger.LogInformation("Found {Count} pending price feed upload(s) to process", pending.Count);
+
+            // Process sequentially: each upload is a large bulk insert into Azure SQL, and serial
+            // processing keeps load predictable. The atomic claim inside the service guards against
+            // another worker instance picking up the same row.
+            foreach (var upload in pending)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                var result = await priceFeedService.ProcessPendingUploadAsync(upload.Id, cancellationToken);
+
+                _logger.LogInformation(
+                    "Processed price feed upload {UploadId}: status={Status}, records={Records}, errors={Errors}",
+                    upload.Id, result.Status, result.RecordCount, result.ErrorCount);
+            }
         }
 
-        _logger.LogInformation("Found {Count} pending price feed upload(s) to process", pending.Count);
+        // Drain queued pushes (PushQueued -> PushedToMerchant360/PushFailed).
+        var queuedPushes = await uploadRepository.GetByStatusAsync(
+            PriceFeedUploadStatus.PushQueued, batchSize, cancellationToken);
 
-        // Process sequentially: each upload is a large bulk insert into Azure SQL, and serial
-        // processing keeps load predictable. The atomic claim inside the service guards against
-        // another worker instance picking up the same row.
-        foreach (var upload in pending)
+        if (queuedPushes.Count > 0)
         {
-            if (cancellationToken.IsCancellationRequested)
+            _logger.LogInformation("Found {Count} queued price feed push(es) to process", queuedPushes.Count);
+
+            foreach (var upload in queuedPushes)
             {
-                break;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                var result = await priceFeedService.ProcessQueuedPushAsync(upload.Id, cancellationToken);
+
+                _logger.LogInformation(
+                    "Pushed price feed upload {UploadId}: success={Success}, received={Received}, created={Created}, updated={Updated}, skipped={Skipped}",
+                    upload.Id, result.Success, result.RecordsReceived, result.RecordsCreated, result.RecordsUpdated, result.RecordsSkipped);
             }
-
-            var result = await priceFeedService.ProcessPendingUploadAsync(upload.Id, cancellationToken);
-
-            _logger.LogInformation(
-                "Processed price feed upload {UploadId}: status={Status}, records={Records}, errors={Errors}",
-                upload.Id, result.Status, result.RecordCount, result.ErrorCount);
         }
     }
 }

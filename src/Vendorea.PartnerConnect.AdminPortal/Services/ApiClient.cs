@@ -417,24 +417,20 @@ public class ApiClient
         }
     }
 
-    public async Task<PushToMerchant360Result?> PushToMerchant360Async(int uploadId)
+    /// <summary>Queues an async push. Returns (success, error); the outcome is tracked via upload status.</summary>
+    public async Task<(bool Success, string? Error)> PushToMerchant360Async(int uploadId)
     {
         try
         {
             var response = await _httpClient.PostAsync($"/api/v1/pricefeeds/{uploadId}/push-to-merchant360", null);
-
             if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadFromJsonAsync<PushToMerchant360Result>();
-            }
-
-            var errorContent = await response.Content.ReadAsStringAsync();
-            return new PushToMerchant360Result { Success = false, ErrorMessage = errorContent };
+                return (true, null);
+            return (false, ExtractError(await response.Content.ReadAsStringAsync()) ?? $"Request failed ({(int)response.StatusCode})");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to push to Merchant360 for upload {UploadId}", uploadId);
-            return new PushToMerchant360Result { Success = false, ErrorMessage = ex.Message };
+            _logger.LogError(ex, "Failed to queue push to Merchant360 for upload {UploadId}", uploadId);
+            return (false, ex.Message);
         }
     }
 
