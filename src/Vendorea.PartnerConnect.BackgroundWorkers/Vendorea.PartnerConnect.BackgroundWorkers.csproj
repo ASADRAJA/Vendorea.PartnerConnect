@@ -1,4 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk.Worker">
+<!-- Web SDK (not Worker SDK) so `dotnet publish` emits a web.config with the AspNetCore module.
+     Windows App Service (IIS/ANCM) needs that web.config to start the process; without it the app
+     is never hosted and the background services never run. The minimal web host also serves /health. -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -8,7 +11,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.*" />
     <PackageReference Include="Serilog.AspNetCore" Version="8.*" />
     <PackageReference Include="Serilog.Sinks.ApplicationInsights" Version="4.*" />
