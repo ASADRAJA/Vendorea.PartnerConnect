@@ -99,6 +99,14 @@ public interface ISprContentImportService
     /// <param name="uploadId">The content upload ID being pushed.</param>
     /// <returns>Current progress, or null if no push is in progress.</returns>
     Task<M360PushProgress?> GetM360PushProgressAsync(int uploadId);
+
+    /// <summary>
+    /// Worker entry point: executes a previously-queued M360 push (categories then products), persisting
+    /// progress to the DB. The caller must have already atomically claimed the upload (Queued -> Pushing).
+    /// </summary>
+    /// <param name="uploadId">The content upload ID to push.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ExecuteQueuedM360PushAsync(int uploadId, CancellationToken cancellationToken);
 }
 
 /// <summary>

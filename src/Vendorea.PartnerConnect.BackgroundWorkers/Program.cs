@@ -113,6 +113,9 @@ builder.Services.AddWorkerProcesses(builder.Configuration);
 builder.Services.AddSprContentIngestionWorker();
 // Drains queued manual SPR content-ingestion runs off the API request thread.
 builder.Services.AddHostedService<FtpIngestionQueueWorker>();
+// Drains queued SPR content -> Merchant360 pushes off the API request thread (durable, DB-persisted
+// progress so push-status survives an API/worker recycle).
+builder.Services.AddHostedService<SprContentPushQueueWorker>();
 
 try
 {

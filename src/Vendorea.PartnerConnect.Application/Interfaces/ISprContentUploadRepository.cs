@@ -127,4 +127,53 @@ public interface ISprContentUploadRepository
     /// Marks an upload as pushed to Merchant360.
     /// </summary>
     Task MarkPushedToM360Async(int uploadId, CancellationToken cancellationToken = default);
+
+    // --- Durable Merchant360 push queue ---
+
+    /// <summary>
+    /// Gets uploads whose Merchant360 push is in the given queue status (e.g. "Queued").
+    /// </summary>
+    Task<IReadOnlyList<SprContentUpload>> GetByM360PushStatusAsync(
+        string status,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims a queued push (Queued -> Pushing), stamping the claim time and clearing any
+    /// prior error. Returns true only for the single worker that won the claim.
+    /// </summary>
+    Task<bool> TryClaimM360PushAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enqueues an upload for a Merchant360 push (status -> "Queued") and zeroes the progress counters,
+    /// but only when it is not already Queued or Pushing. Returns whether it was enqueued.
+    /// </summary>
+    Task<bool> TryEnqueueM360PushAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lightweight per-page progress update of just the push counter columns (no entity tracking).
+    /// </summary>
+    Task UpdateM360PushProgressAsync(
+        int uploadId,
+        int productsPushed,
+        int currentBatch,
+        int totalBatches,
+        int totalProducts,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks a push as completed (status -> "Pushed", stamps PushedToM360At, clears the error).
+    /// </summary>
+    Task MarkM360PushCompletedAsync(int uploadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks a push as failed (status -> "Failed", records the error).
+    /// </summary>
+    Task MarkM360PushFailedAsync(int uploadId, string error, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns pushes stranded in "Pushing" (claimed before the cutoff) back to a terminal "Failed"
+    /// state so an operator can re-trigger. Returns the count reclaimed.
+    /// </summary>
+    Task<int> ReclaimStaleM360PushAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default);
 }

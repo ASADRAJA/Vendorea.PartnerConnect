@@ -106,6 +106,45 @@ public class SprContentUpload
     /// When content was pushed to Merchant360.
     /// </summary>
     public DateTime? PushedToM360At { get; set; }
+
+    // --- Durable Merchant360 push queue state ---
+    // These drive the queue-drained push in BackgroundWorkers and let the push-status endpoint
+    // survive an API/worker recycle (progress is read straight from these columns).
+
+    /// <summary>
+    /// Merchant360 push queue status: None / Queued / Pushing / Pushed / Failed.
+    /// </summary>
+    public string M360PushStatus { get; set; } = "None";
+
+    /// <summary>
+    /// When a worker claimed this upload for pushing (used to detect and reclaim stale pushes).
+    /// </summary>
+    public DateTime? M360PushClaimedAt { get; set; }
+
+    /// <summary>
+    /// Total products the push expects to send (established up front from the DB count).
+    /// </summary>
+    public int M360PushTotalProducts { get; set; }
+
+    /// <summary>
+    /// Products pushed so far (advances per page).
+    /// </summary>
+    public int M360PushProductsPushed { get; set; }
+
+    /// <summary>
+    /// The page/batch currently being pushed.
+    /// </summary>
+    public int M360PushCurrentBatch { get; set; }
+
+    /// <summary>
+    /// Total pages/batches the push will send.
+    /// </summary>
+    public int M360PushTotalBatches { get; set; }
+
+    /// <summary>
+    /// Error detail when the push fails (or when a stale push is reclaimed).
+    /// </summary>
+    public string? M360PushError { get; set; }
 }
 
 /// <summary>

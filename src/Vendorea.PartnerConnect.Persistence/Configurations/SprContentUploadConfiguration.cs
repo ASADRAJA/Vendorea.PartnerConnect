@@ -48,6 +48,15 @@ public class SprContentUploadConfiguration : IEntityTypeConfiguration<SprContent
         builder.Property(e => e.UploadedByUserId)
             .HasMaxLength(100);
 
+        // Durable Merchant360 push queue state
+        builder.Property(e => e.M360PushStatus)
+            .HasMaxLength(20)
+            .HasDefaultValue("None")
+            .IsRequired();
+
+        builder.Property(e => e.M360PushError)
+            .HasMaxLength(1024);
+
         // Relationship to TradingPartner
         builder.HasOne(e => e.TradingPartner)
             .WithMany()
