@@ -256,4 +256,119 @@ public class SprContentUploadRepository : ISprContentUploadRepository
             await _context.SaveChangesAsync(cancellationToken);
         }
     }
+
+    public async Task<IReadOnlyList<SprContentUpload>> GetByM360PushStatusAsync(
+        string status,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.SprContentUploads
+            .Where(u => u.M360PushStatus == status)
+            .OrderBy(u => u.M360PushClaimedAt)
+            .ThenBy(u => u.UploadedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> TryClaimM360PushAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        // Atomic Queued -> Pushing. ExecuteUpdate issues a single UPDATE ... WHERE M360PushStatus =
+        // 'Queued', so only one worker can win even if several poll the same row. Stamp the claim time
+        // so a crashed push can later be detected and reclaimed.
+        var now = DateTime.UtcNow;
+        var rowsAffected = await _context.SprContentUploads
+            .Where(u => u.Id == uploadId && u.M360PushStatus == "Queued")
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.M360PushStatus, "Pushing")
+                    .SetProperty(u => u.M360PushClaimedAt, now)
+                    .SetProperty(u => u.M360PushError, (string?)null),
+                cancellationToken);
+
+        return rowsAffected == 1;
+    }
+
+    public async Task<bool> TryEnqueueM360PushAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        // Guard against double-queue: only enqueue when the push is not already Queued or Pushing.
+        // Zero the counters and clear any prior error so the modal starts from a clean slate.
+        var rowsAffected = await _context.SprContentUploads
+            .Where(u => u.Id == uploadId
+                        && u.M360PushStatus != "Queued"
+                        && u.M360PushStatus != "Pushing")
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.M360PushStatus, "Queued")
+                    .SetProperty(u => u.M360PushClaimedAt, (DateTime?)null)
+                    .SetProperty(u => u.M360PushTotalProducts, 0)
+                    .SetProperty(u => u.M360PushProductsPushed, 0)
+                    .SetProperty(u => u.M360PushCurrentBatch, 0)
+                    .SetProperty(u => u.M360PushTotalBatches, 0)
+                    .SetProperty(u => u.M360PushError, (string?)null),
+                cancellationToken);
+
+        return rowsAffected == 1;
+    }
+
+    public async Task UpdateM360PushProgressAsync(
+        int uploadId,
+        int productsPushed,
+        int currentBatch,
+        int totalBatches,
+        int totalProducts,
+        CancellationToken cancellationToken = default)
+    {
+        // Lightweight per-page update of just the counter columns — no entity tracking churn.
+        await _context.SprContentUploads
+            .Where(u => u.Id == uploadId)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.M360PushProductsPushed, productsPushed)
+                    .SetProperty(u => u.M360PushCurrentBatch, currentBatch)
+                    .SetProperty(u => u.M360PushTotalBatches, totalBatches)
+                    .SetProperty(u => u.M360PushTotalProducts, totalProducts),
+                cancellationToken);
+    }
+
+    public async Task MarkM360PushCompletedAsync(int uploadId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        await _context.SprContentUploads
+            .Where(u => u.Id == uploadId)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.M360PushStatus, "Pushed")
+                    .SetProperty(u => u.PushedToM360At, now)
+                    .SetProperty(u => u.M360PushError, (string?)null),
+                cancellationToken);
+    }
+
+    public async Task MarkM360PushFailedAsync(int uploadId, string error, CancellationToken cancellationToken = default)
+    {
+        // M360PushError is capped at 1024 chars in the schema.
+        var trimmed = error.Length > 1024 ? error.Substring(0, 1024) : error;
+        await _context.SprContentUploads
+            .Where(u => u.Id == uploadId)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.M360PushStatus, "Failed")
+                    .SetProperty(u => u.M360PushError, trimmed),
+                cancellationToken);
+    }
+
+    public async Task<int> ReclaimStaleM360PushAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default)
+    {
+        // A worker that crashed after claiming leaves a push stuck in Pushing. Move any Pushing row
+        // claimed before the cutoff to a terminal Failed state (no auto-requeue — an operator re-clicks
+        // Push, which is an idempotent upsert).
+        return await _context.SprContentUploads
+            .Where(u => u.M360PushStatus == "Pushing"
+                        && u.M360PushClaimedAt != null
+                        && u.M360PushClaimedAt < olderThanUtc)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(u => u.M360PushStatus, "Failed")
+                    .SetProperty(u => u.M360PushError, "Reclaimed: push process interrupted"),
+                cancellationToken);
+    }
 }
