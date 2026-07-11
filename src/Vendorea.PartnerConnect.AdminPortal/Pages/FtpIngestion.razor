@@ -610,6 +610,7 @@ else
     }
 
     private System.Threading.Timer? _pollingTimer;
+    private int _pollFailures;
 
     private async Task RunImportNowWithPolling()
     {
@@ -621,29 +622,57 @@ else
             // Start the import (returns immediately now)
             runResult = await Api.RunFtpIngestionAsync();
 
-            // Start polling for updates every 5 seconds
+            // Poll for updates. A transient poll failure must never freeze the wheel, so we catch per
+            // tick and retry, giving up only after several consecutive failures or a safety timeout.
+            _pollFailures = 0;
+            var startedUtc = DateTime.UtcNow;
             _pollingTimer = new System.Threading.Timer(async _ =>
             {
                 await InvokeAsync(async () =>
                 {
-                    await LoadStatus();
-                    await LoadHistory();
-                    StateHasChanged();
-
-                    // Stop polling when no longer running
-                    if (status != null && !status.IsRunning)
+                    try
                     {
-                        _pollingTimer?.Dispose();
-                        _pollingTimer = null;
-                        isRunning = false;
+                        await LoadStatus();
+                        await LoadHistory();
+                        _pollFailures = 0;
 
-                        // Get final result
-                        if (importHistory.Count > 0)
+                        if (status != null && !status.IsRunning)
                         {
-                            runResult = importHistory[0];
+                            // Worker finished — stop the wheel and surface the final run.
+                            StopIngestionPolling();
+                            if (importHistory.Count > 0)
+                            {
+                                runResult = importHistory[0];
+                            }
                         }
-                        StateHasChanged();
+                        else if (DateTime.UtcNow - startedUtc > TimeSpan.FromMinutes(60))
+                        {
+                            // Far longer than any real run — stop spinning and let the user refresh.
+                            StopIngestionPolling();
+                            runResult = new FtpIngestionRunDto
+                            {
+                                Success = false,
+                                Errors = new List<string> { "Import is taking longer than expected. Refresh to check the latest status." }
+                            };
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        // Keep retrying on a transient failure; give up only after several in a row.
+                        _pollFailures++;
+                        Console.WriteLine($"Ingestion status poll failed ({_pollFailures}): {ex.Message}");
+                        if (_pollFailures >= 5)
+                        {
+                            StopIngestionPolling();
+                            runResult = new FtpIngestionRunDto
+                            {
+                                Success = false,
+                                Errors = new List<string> { "Lost connection while checking import status. Refresh to check the latest status." }
+                            };
+                        }
+                    }
+
+                    StateHasChanged();
                 });
             }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
         }
@@ -656,6 +685,13 @@ else
             };
             isRunning = false;
         }
+    }
+
+    private void StopIngestionPolling()
+    {
+        _pollingTimer?.Dispose();
+        _pollingTimer = null;
+        isRunning = false;
     }
 
     public void Dispose()
