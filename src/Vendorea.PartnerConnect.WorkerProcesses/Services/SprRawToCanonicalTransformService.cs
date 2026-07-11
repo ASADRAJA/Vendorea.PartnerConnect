@@ -377,12 +377,13 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
         // Accessories and Options
         var accessoriesSql = @"
             INSERT INTO SprProductRelationships (
-                SprProductContentId, RelatedProductId, RelationshipType,
+                SprProductContentId, RelatedProductId, RelatedSku, RelationshipType,
                 SortOrder, IsBidirectional, CreatedAt
             )
             SELECT
                 pc.Id AS SprProductContentId,
                 CAST(pa.accessoryproductid AS NVARCHAR(50)) AS RelatedProductId,
+                rpc.Sku AS RelatedSku,
                 CASE WHEN pa.isoption = '1' THEN 'CrossSell'
                      WHEN pa.note LIKE '%Also Bought%' THEN 'AlsoBought'
                      ELSE 'Accessory' END AS RelationshipType,
@@ -391,6 +392,10 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
                 GETUTCDATE() AS CreatedAt
             FROM spr.productaccessories pa
             INNER JOIN SprProductContent pc ON pc.ProductId = CAST(pa.productid AS NVARCHAR(50))
+            -- Resolve the related product's SKU (its StockNumber on M360) from its product id, so the
+            -- content push emits RelatedStockNumber as a real SKU that matches a product. Left join so
+            -- relationships to products outside the catalog still insert (RelatedSku stays null).
+            LEFT JOIN SprProductContent rpc ON rpc.ProductId = CAST(pa.accessoryproductid AS NVARCHAR(50))
             WHERE pa.isactive = '1'";
 
         totalCount += await _dbContext.Database.ExecuteSqlRawAsync(accessoriesSql, cancellationToken);
@@ -398,18 +403,20 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
         // Similar products
         var similarSql = @"
             INSERT INTO SprProductRelationships (
-                SprProductContentId, RelatedProductId, RelationshipType,
+                SprProductContentId, RelatedProductId, RelatedSku, RelationshipType,
                 SortOrder, IsBidirectional, CreatedAt
             )
             SELECT
                 pc.Id AS SprProductContentId,
                 CAST(ps.similarproductid AS NVARCHAR(50)) AS RelatedProductId,
+                rpc.Sku AS RelatedSku,
                 'Similar' AS RelationshipType,
                 0 AS SortOrder,
                 1 AS IsBidirectional,
                 GETUTCDATE() AS CreatedAt
             FROM spr.productsimilar ps
             INNER JOIN SprProductContent pc ON pc.ProductId = CAST(ps.productid AS NVARCHAR(50))
+            LEFT JOIN SprProductContent rpc ON rpc.ProductId = CAST(ps.similarproductid AS NVARCHAR(50))
             WHERE ps.localeid = @p0";
 
         totalCount += await _dbContext.Database.ExecuteSqlRawAsync(
@@ -418,18 +425,20 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
         // Upsell products
         var upsellSql = @"
             INSERT INTO SprProductRelationships (
-                SprProductContentId, RelatedProductId, RelationshipType,
+                SprProductContentId, RelatedProductId, RelatedSku, RelationshipType,
                 SortOrder, IsBidirectional, CreatedAt
             )
             SELECT
                 pc.Id AS SprProductContentId,
                 CAST(pu.upsellproductid AS NVARCHAR(50)) AS RelatedProductId,
+                rpc.Sku AS RelatedSku,
                 'Upsell' AS RelationshipType,
                 0 AS SortOrder,
                 0 AS IsBidirectional,
                 GETUTCDATE() AS CreatedAt
             FROM spr.productupsell pu
             INNER JOIN SprProductContent pc ON pc.ProductId = CAST(pu.productid AS NVARCHAR(50))
+            LEFT JOIN SprProductContent rpc ON rpc.ProductId = CAST(pu.upsellproductid AS NVARCHAR(50))
             WHERE pu.localeid = @p0";
 
         totalCount += await _dbContext.Database.ExecuteSqlRawAsync(
