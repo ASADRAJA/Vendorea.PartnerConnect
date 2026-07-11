@@ -553,6 +553,7 @@
     private bool showPushProgress;
     private M360PushProgressDto? pushProgress;
     private System.Threading.Timer? _pushPollTimer;
+    private int _pushPollFailures;
 
     private bool CanImport => selectedTradingPartnerId > 0 && !string.IsNullOrEmpty(contentVersion) && selectedFile != null;
 
@@ -717,7 +718,11 @@
                 return;
             }
 
-            // Start polling for progress
+            // Poll the persisted push state. A transient poll failure (blip, timeout, 404) must never
+            // leave the modal stuck "in progress": retry, and give up only after several consecutive
+            // failures or a safety timeout — surfacing a terminal message so the Close button appears.
+            _pushPollFailures = 0;
+            var pushStartedUtc = DateTime.UtcNow;
             _pushPollTimer = new System.Threading.Timer(async _ =>
             {
                 await InvokeAsync(async () =>
@@ -727,8 +732,8 @@
                         var progress = await Api.GetM360PushProgressAsync(uploadId);
                         if (progress != null)
                         {
+                            _pushPollFailures = 0;
                             pushProgress = progress;
-                            StateHasChanged();
 
                             if (progress.IsComplete)
                             {
@@ -736,12 +741,33 @@
                                 await LoadHistory();
                             }
                         }
+                        else
+                        {
+                            // No push state on the server (shouldn't happen mid-push) — count as a failure.
+                            _pushPollFailures++;
+                        }
                     }
                     catch (Exception ex)
                     {
-                        // Log but don't stop polling on transient errors
-                        Console.WriteLine($"Polling error: {ex.Message}");
+                        _pushPollFailures++;
+                        Console.WriteLine($"Push status poll failed ({_pushPollFailures}): {ex.Message}");
                     }
+
+                    // Never spin forever: on repeated failures or a safety timeout, mark the modal
+                    // complete-with-a-message so Close appears and the user can refresh.
+                    if (pushProgress?.IsComplete != true)
+                    {
+                        if (_pushPollFailures >= 5)
+                        {
+                            FailPushModal(uploadId, "Lost connection while checking push status. The push may still be running — refresh to check the result.");
+                        }
+                        else if (DateTime.UtcNow - pushStartedUtc > TimeSpan.FromMinutes(60))
+                        {
+                            FailPushModal(uploadId, "Timed out waiting for push status. The push may still be running — refresh to check the result.");
+                        }
+                    }
+
+                    StateHasChanged();
                 });
             }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
         }
@@ -767,6 +793,17 @@
         _pushPollTimer = null;
         pushingUploadId = null;
         StateHasChanged();
+    }
+
+    // Stop polling and put the modal into a terminal (failed) state with a message, so the wheel
+    // can't spin forever and the Close button appears.
+    private void FailPushModal(int uploadId, string message)
+    {
+        StopPushPolling();
+        pushProgress ??= new M360PushProgressDto { UploadId = uploadId };
+        pushProgress.IsComplete = true;
+        pushProgress.Success = false;
+        pushProgress.PhaseDescription = message;
     }
 
     private async Task ClosePushProgress()
