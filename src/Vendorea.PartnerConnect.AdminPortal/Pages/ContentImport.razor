@@ -517,7 +517,17 @@
                     }
                     else
                     {
-                        <span class="text-muted">Please wait while content is being pushed...</span>
+                        <span class="text-muted me-auto small">
+                            This runs in the background — safe to close. Progress is saved; use Refresh if it looks stuck.
+                        </span>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="RefreshPushStatus" disabled="@isRefreshingPush">
+                            @if (isRefreshingPush)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Refresh status
+                        </button>
+                        <button type="button" class="btn btn-secondary" @onclick="ClosePushProgress">Close</button>
                     }
                 </div>
             </div>
@@ -554,6 +564,7 @@
     private M360PushProgressDto? pushProgress;
     private System.Threading.Timer? _pushPollTimer;
     private int _pushPollFailures;
+    private bool isRefreshingPush;
 
     private bool CanImport => selectedTradingPartnerId > 0 && !string.IsNullOrEmpty(contentVersion) && selectedFile != null;
 
@@ -793,6 +804,36 @@
         _pushPollTimer = null;
         pushingUploadId = null;
         StateHasChanged();
+    }
+
+    // Manually re-fetch the push status from the DB (the source of truth). If the live SignalR-driven
+    // updates froze (e.g. the Blazor circuit dropped during a long push), this pulls the real state —
+    // including a completion the live view missed.
+    private async Task RefreshPushStatus()
+    {
+        if (pushProgress == null || isRefreshingPush) return;
+        isRefreshingPush = true;
+        try
+        {
+            var progress = await Api.GetM360PushProgressAsync(pushProgress.UploadId);
+            if (progress != null)
+            {
+                pushProgress = progress;
+                if (progress.IsComplete)
+                {
+                    StopPushPolling();
+                    await LoadHistory();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Manual push status refresh failed: {ex.Message}");
+        }
+        finally
+        {
+            isRefreshingPush = false;
+        }
     }
 
     // Stop polling and put the modal into a terminal (failed) state with a message, so the wheel
