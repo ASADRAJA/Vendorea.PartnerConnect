@@ -28,11 +28,11 @@ public class SprContentImportService : ISprContentImportService
     // Track progress for current import (static to persist across scoped instances)
     private static readonly Dictionary<int, ContentImportProgress> _progressCache = new();
 
-    // Page size for streaming products to M360. Kept at 2,000 so each page:
-    //   - stays under SQL Server's 2,100-parameter limit for the child ids.Contains() queries, and
-    //   - stays under M360's max content batch size (10,000), so one page == one M360 content batch.
-    // 1,000 products per page keeps each M360 batch well under M360's 230s App Service request limit
-    // (2,000 occasionally ran long enough for M360 to drop the connection). One page = one M360 batch.
+    // Page size for streaming products to M360 (one page == one M360 content batch). 1,000 keeps each page:
+    //   - under SQL Server's 2,100-parameter limit for the child ids.Contains() queries,
+    //   - under M360's max content batch size (10,000), and
+    //   - small enough to process well under M360's 230s App Service request limit
+    //     (2,000 occasionally ran long enough for M360 to drop the connection mid-batch).
     private const int PushPageSize = 1000;
 
     // A batch can fail on a transient transport error (e.g. "connection forcibly closed by the remote
@@ -1290,17 +1290,15 @@ public class SprContentImportService : ISprContentImportService
                 upload.LocaleId,
                 _productContentRepository,
                 _merchant360Client,
-                onProgress: o =>
-                {
-                    // Fire-and-forget would race the DbContext; await synchronously per page instead.
-                    _uploadRepository.UpdateM360PushProgressAsync(
-                        uploadId,
-                        o.ProductsPushed,
-                        o.CurrentBatch,
-                        o.BatchCount,
-                        o.TotalProducts,
-                        cancellationToken).GetAwaiter().GetResult();
-                },
+                // Awaited once per page inside the loop (sequential, so no DbContext race) — never
+                // block the worker thread with sync-over-async, which can starve the pool and hang.
+                onProgress: o => _uploadRepository.UpdateM360PushProgressAsync(
+                    uploadId,
+                    o.ProductsPushed,
+                    o.CurrentBatch,
+                    o.BatchCount,
+                    o.TotalProducts,
+                    cancellationToken),
                 cancellationToken);
 
             if (!outcome.Success)
@@ -1342,7 +1340,7 @@ public class SprContentImportService : ISprContentImportService
         string locale,
         ISprProductContentRepository productContentRepository,
         IMerchant360Client merchant360Client,
-        Action<PagedPushOutcome>? onProgress,
+        Func<PagedPushOutcome, Task>? onProgress,
         CancellationToken cancellationToken)
     {
         var outcome = new PagedPushOutcome();
@@ -1353,7 +1351,7 @@ public class SprContentImportService : ISprContentImportService
         outcome.BatchCount = totalProducts == 0
             ? 0
             : (int)Math.Ceiling(totalProducts / (double)PushPageSize);
-        onProgress?.Invoke(outcome);
+        if (onProgress != null) await onProgress(outcome);
 
         if (totalProducts == 0)
         {
@@ -1453,7 +1451,7 @@ public class SprContentImportService : ISprContentImportService
                     outcome.Errors.Add(outcome.ErrorMessage);
                     _logger.LogError(lastTransportError, "Content push failed at page {Page} after {Max} attempts",
                         outcome.CurrentBatch, PushBatchMaxAttempts);
-                    onProgress?.Invoke(outcome);
+                    if (onProgress != null) await onProgress(outcome);
                     return outcome;
                 }
 
@@ -1464,7 +1462,7 @@ public class SprContentImportService : ISprContentImportService
                     outcome.ErrorMessage = string.Join("; ", response.Errors ?? new List<string>());
 
                     _logger.LogError("Content push failed at page {Page}: {Errors}", outcome.CurrentBatch, outcome.ErrorMessage);
-                    onProgress?.Invoke(outcome);
+                    if (onProgress != null) await onProgress(outcome);
                     return outcome;
                 }
 
@@ -1476,7 +1474,7 @@ public class SprContentImportService : ISprContentImportService
 
             // Advance by the number of products read from this page so progress reaches the total.
             outcome.ProductsPushed += page.Count;
-            onProgress?.Invoke(outcome);
+            if (onProgress != null) await onProgress(outcome);
         }
 
         return outcome;
