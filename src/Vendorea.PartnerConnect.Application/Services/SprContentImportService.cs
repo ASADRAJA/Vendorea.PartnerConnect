@@ -31,7 +31,14 @@ public class SprContentImportService : ISprContentImportService
     // Page size for streaming products to M360. Kept at 2,000 so each page:
     //   - stays under SQL Server's 2,100-parameter limit for the child ids.Contains() queries, and
     //   - stays under M360's max content batch size (10,000), so one page == one M360 content batch.
-    private const int PushPageSize = 2000;
+    // 1,000 products per page keeps each M360 batch well under M360's 230s App Service request limit
+    // (2,000 occasionally ran long enough for M360 to drop the connection). One page = one M360 batch.
+    private const int PushPageSize = 1000;
+
+    // A batch can fail on a transient transport error (e.g. "connection forcibly closed by the remote
+    // host" when M360 drops a slow batch). Retry the same batch a few times before failing the push —
+    // the content push is an idempotent upsert, so re-sending is safe.
+    private const int PushBatchMaxAttempts = 3;
 
     public SprContentImportService(
         ILogger<SprContentImportService> logger,
@@ -1411,7 +1418,44 @@ public class SprContentImportService : ISprContentImportService
                     Products = contentProducts
                 };
 
-                var response = await merchant360Client.PushContentBatchAsync(request, cancellationToken);
+                // Push the batch, retrying transient transport failures (M360 dropping the connection)
+                // with a short backoff. A non-success *response* is an application error, not transient,
+                // so it is not retried.
+                ContentBatchResponse? response = null;
+                Exception? lastTransportError = null;
+                for (int attempt = 1; attempt <= PushBatchMaxAttempts; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        response = await merchant360Client.PushContentBatchAsync(request, cancellationToken);
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastTransportError = ex;
+                        _logger.LogWarning(ex,
+                            "Content push batch {Page} attempt {Attempt}/{Max} failed (transport): {Message}",
+                            outcome.CurrentBatch, attempt, PushBatchMaxAttempts, ex.Message);
+                        if (attempt < PushBatchMaxAttempts)
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken); // 2s, 4s
+                        }
+                    }
+                }
+
+                if (response == null)
+                {
+                    // Every attempt threw — the connection failure persisted.
+                    outcome.Success = false;
+                    outcome.ErrorMessage =
+                        $"Batch {outcome.CurrentBatch} failed after {PushBatchMaxAttempts} attempts: {lastTransportError?.Message}";
+                    outcome.Errors.Add(outcome.ErrorMessage);
+                    _logger.LogError(lastTransportError, "Content push failed at page {Page} after {Max} attempts",
+                        outcome.CurrentBatch, PushBatchMaxAttempts);
+                    onProgress?.Invoke(outcome);
+                    return outcome;
+                }
 
                 if (!response.Success)
                 {
