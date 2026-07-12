@@ -53,7 +53,9 @@
                         </svg>
                     </div>
                 </FluentButton>
-                <FluentMenu Anchor="userMenuBtn" @bind-Open="_userMenuOpen" VerticalThreshold="170">
+                @* UseMenuService=false renders the menu inline so it doesn't depend on FluentMenuProvider
+                   being initialized first (init order: this menu is declared before the provider). *@
+                <FluentMenu Anchor="userMenuBtn" @bind-Open="_userMenuOpen" VerticalThreshold="170" UseMenuService="false">
                     <FluentMenuItem Disabled="true">@UserDisplay</FluentMenuItem>
                     <FluentDivider />
                     <FluentMenuItem OnClick="SignOut">Sign out</FluentMenuItem>
