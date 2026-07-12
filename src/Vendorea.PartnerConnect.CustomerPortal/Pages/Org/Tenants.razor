@@ -5,7 +5,10 @@
 <PageTitle>Tenants — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Tenants</h1>
+    <div>
+        <h1 class="page-title">Tenants</h1>
+        <p class="page-subtitle">Operator-provisioned tenants in your organization (read-only).</p>
+    </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Stealth" OnClick="LoadAsync">Refresh</FluentButton>
     </div>
@@ -34,23 +37,25 @@ else if (_tenants.Count == 0)
 }
 else
 {
-    <FluentDataGrid Items="@_tenants.AsQueryable()" TGridItem="OrgTenantRowDto"
-                    GridTemplateColumns="1.6fr 1fr 1fr 1.4fr 1.2fr" Style="width: 100%;">
-        <PropertyColumn Title="Tenant" Property="@(t => t.Name)" Sortable="true" />
-        <PropertyColumn Title="Code" Property="@(t => t.Code)" Sortable="true" />
-        <TemplateColumn Title="Status">
-            <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
-        </TemplateColumn>
-        <TemplateColumn Title="M360 mapping">
-            @(string.IsNullOrWhiteSpace(context.ExternalId)
-                ? (MarkupString)"<span class=\"muted\">Not mapped</span>"
-                : (MarkupString)System.Net.WebUtility.HtmlEncode(context.ExternalId))
-        </TemplateColumn>
-        <TemplateColumn Title="Connections">
-            @context.ActiveConnectionCount active
-            <span class="muted">/ @context.ConnectionCount total</span>
-        </TemplateColumn>
-    </FluentDataGrid>
+    <div class="grid-card">
+        <FluentDataGrid Items="@_tenants.AsQueryable()" TGridItem="OrgTenantRowDto"
+                        GridTemplateColumns="1.6fr 1fr 1fr 1.4fr 1.2fr" Style="width: 100%;">
+            <PropertyColumn Title="Tenant" Property="@(t => t.Name)" Sortable="true" />
+            <PropertyColumn Title="Code" Property="@(t => t.Code)" Sortable="true" />
+            <TemplateColumn Title="Status">
+                <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
+            </TemplateColumn>
+            <TemplateColumn Title="M360 mapping">
+                @(string.IsNullOrWhiteSpace(context.ExternalId)
+                    ? (MarkupString)"<span class=\"muted\">Not mapped</span>"
+                    : (MarkupString)System.Net.WebUtility.HtmlEncode(context.ExternalId))
+            </TemplateColumn>
+            <TemplateColumn Title="Connections">
+                @context.ActiveConnectionCount active
+                <span class="muted">/ @context.ConnectionCount total</span>
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
 }
 
 @code {

@@ -7,7 +7,10 @@
 <PageTitle>Prices — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Prices</h1>
+    <div>
+        <h1 class="page-title">Prices</h1>
+        <p class="page-subtitle">Current partner pricing for the selected tenant.</p>
+    </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Stealth" Disabled="@(!HasTenantAndPartner)" OnClick="RefreshAsync">Refresh</FluentButton>
     </div>
@@ -55,20 +58,22 @@ else
                       Style="width: 320px;" />
     </div>
 
-    <FluentDataGrid @ref="_grid" TGridItem="PriceRowDto" ItemsProvider="_provider" Pagination="_pagination"
-                    GridTemplateColumns="1.2fr 3fr 1fr 1fr 0.7fr 1.4fr 0.8fr" Style="width: 100%;">
-        <PropertyColumn Title="SKU" Property="@(p => p.Sku)" />
-        <PropertyColumn Title="Description" Property="@(p => p.Description)" />
-        <TemplateColumn Title="Cost" Align="Align.End">@Money(context.Cost)</TemplateColumn>
-        <TemplateColumn Title="List" Align="Align.End">@Money(context.ListPrice)</TemplateColumn>
-        <PropertyColumn Title="UOM" Property="@(p => p.Uom)" />
-        <TemplateColumn Title="Last updated">@Fmt(context.LastUpdatedAt)</TemplateColumn>
-        <TemplateColumn Title="" Align="Align.End">
-            <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => ShowHistoryAsync(context.Sku))">History</FluentButton>
-        </TemplateColumn>
-    </FluentDataGrid>
+    <div class="grid-card">
+        <FluentDataGrid @ref="_grid" TGridItem="PriceRowDto" ItemsProvider="_provider" Pagination="_pagination"
+                        GridTemplateColumns="1.2fr 3fr 1fr 1fr 0.7fr 1.4fr 0.8fr" Style="width: 100%;">
+            <PropertyColumn Title="SKU" Property="@(p => p.Sku)" />
+            <PropertyColumn Title="Description" Property="@(p => p.Description)" />
+            <TemplateColumn Title="Cost" Align="Align.End">@Money(context.Cost)</TemplateColumn>
+            <TemplateColumn Title="List" Align="Align.End">@Money(context.ListPrice)</TemplateColumn>
+            <PropertyColumn Title="UOM" Property="@(p => p.Uom)" />
+            <TemplateColumn Title="Last updated">@Fmt(context.LastUpdatedAt)</TemplateColumn>
+            <TemplateColumn Title="" Align="Align.End">
+                <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => ShowHistoryAsync(context.Sku))">History</FluentButton>
+            </TemplateColumn>
+        </FluentDataGrid>
 
-    <FluentPaginator State="_pagination" />
+        <FluentPaginator State="_pagination" />
+    </div>
 
     @if (_historySku is not null)
     {

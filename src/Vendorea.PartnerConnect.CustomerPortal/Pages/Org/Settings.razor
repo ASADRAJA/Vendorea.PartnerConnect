@@ -5,7 +5,10 @@
 <PageTitle>Settings — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Organization settings</h1>
+    <div>
+        <h1 class="page-title">Organization settings</h1>
+        <p class="page-subtitle">Your organization profile and contact details.</p>
+    </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Accent" Disabled="@(_settings is null || _saving)" OnClick="SaveAsync">
             @(_saving ? "Saving…" : "Save")

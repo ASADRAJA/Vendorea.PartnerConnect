@@ -8,7 +8,10 @@
 <PageTitle>Order — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">@Title</h1>
+    <div>
+        <h1 class="page-title">@Title</h1>
+        <p class="page-subtitle">Order tracking, line items, and document chain.</p>
+    </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Stealth" OnClick="@(() => Navigation.NavigateTo("/orders"))">Back to orders</FluentButton>
         <FluentButton Appearance="Appearance.Stealth" Disabled="@(State.SelectedTenant is null)" OnClick="LoadAsync">Refresh</FluentButton>
@@ -78,17 +81,19 @@ else
     }
     else
     {
-        <FluentDataGrid Items="@_order.Lines.AsQueryable()" TGridItem="OrderLineDto"
-                        GridTemplateColumns="0.5fr 1.2fr 2.4fr 0.7fr 0.6fr 0.9fr 0.9fr 1fr" Style="width: 100%;">
-            <PropertyColumn Title="#" Property="@(l => l.LineNumber)" />
-            <PropertyColumn Title="SKU" Property="@(l => l.Sku)" />
-            <PropertyColumn Title="Description" Property="@(l => l.Description)" />
-            <TemplateColumn Title="Qty" Align="Align.End">@Qty(context.Quantity) @context.UnitOfMeasure</TemplateColumn>
-            <TemplateColumn Title="Ack" Align="Align.End">@QtyOrDash(context.AcknowledgedQuantity)</TemplateColumn>
-            <TemplateColumn Title="Shipped" Align="Align.End">@QtyOrDash(context.ShippedQuantity)</TemplateColumn>
-            <TemplateColumn Title="Unit" Align="Align.End">@Money(context.UnitPrice, _order.Currency)</TemplateColumn>
-            <TemplateColumn Title="Line total" Align="Align.End">@Money(context.LineTotal, _order.Currency)</TemplateColumn>
-        </FluentDataGrid>
+        <div class="grid-card">
+            <FluentDataGrid Items="@_order.Lines.AsQueryable()" TGridItem="OrderLineDto"
+                            GridTemplateColumns="0.5fr 1.2fr 2.4fr 0.7fr 0.6fr 0.9fr 0.9fr 1fr" Style="width: 100%;">
+                <PropertyColumn Title="#" Property="@(l => l.LineNumber)" />
+                <PropertyColumn Title="SKU" Property="@(l => l.Sku)" />
+                <PropertyColumn Title="Description" Property="@(l => l.Description)" />
+                <TemplateColumn Title="Qty" Align="Align.End">@Qty(context.Quantity) @context.UnitOfMeasure</TemplateColumn>
+                <TemplateColumn Title="Ack" Align="Align.End">@QtyOrDash(context.AcknowledgedQuantity)</TemplateColumn>
+                <TemplateColumn Title="Shipped" Align="Align.End">@QtyOrDash(context.ShippedQuantity)</TemplateColumn>
+                <TemplateColumn Title="Unit" Align="Align.End">@Money(context.UnitPrice, _order.Currency)</TemplateColumn>
+                <TemplateColumn Title="Line total" Align="Align.End">@Money(context.LineTotal, _order.Currency)</TemplateColumn>
+            </FluentDataGrid>
+        </div>
     }
 
     <h2 class="section-title">Documents</h2>
@@ -98,22 +103,24 @@ else
     }
     else
     {
-        <FluentDataGrid Items="@_order.Documents.AsQueryable()" TGridItem="OrderDocumentDto"
-                        GridTemplateColumns="1fr 1.6fr 1.6fr 1fr" Style="width: 100%;">
-            <PropertyColumn Title="Type" Property="@(d => d.Type)" />
-            <TemplateColumn Title="Received">@Fmt(context.ReceivedAt)</TemplateColumn>
-            <PropertyColumn Title="Reference" Property="@(d => d.Reference)" />
-            <TemplateColumn Title="" Align="Align.End">
-                @if (!string.IsNullOrEmpty(context.ViewUrl))
-                {
-                    <FluentAnchor Href="@context.ViewUrl" Target="_blank" Appearance="Appearance.Lightweight">View</FluentAnchor>
-                }
-                else
-                {
-                    <span class="tile-sub muted">Metadata only</span>
-                }
-            </TemplateColumn>
-        </FluentDataGrid>
+        <div class="grid-card">
+            <FluentDataGrid Items="@_order.Documents.AsQueryable()" TGridItem="OrderDocumentDto"
+                            GridTemplateColumns="1fr 1.6fr 1.6fr 1fr" Style="width: 100%;">
+                <PropertyColumn Title="Type" Property="@(d => d.Type)" />
+                <TemplateColumn Title="Received">@Fmt(context.ReceivedAt)</TemplateColumn>
+                <PropertyColumn Title="Reference" Property="@(d => d.Reference)" />
+                <TemplateColumn Title="" Align="Align.End">
+                    @if (!string.IsNullOrEmpty(context.ViewUrl))
+                    {
+                        <FluentAnchor Href="@context.ViewUrl" Target="_blank" Appearance="Appearance.Lightweight">View</FluentAnchor>
+                    }
+                    else
+                    {
+                        <span class="tile-sub muted">Metadata only</span>
+                    }
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
     }
 }
 

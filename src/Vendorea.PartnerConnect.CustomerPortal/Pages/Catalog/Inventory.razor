@@ -7,7 +7,10 @@
 <PageTitle>Inventory — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Inventory</h1>
+    <div>
+        <h1 class="page-title">Inventory</h1>
+        <p class="page-subtitle">Partner-level stock by distribution center.</p>
+    </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Stealth" Disabled="@(_selectedPartnerCode is null)" OnClick="RefreshAsync">Refresh</FluentButton>
     </div>
@@ -120,33 +123,35 @@ else
         }
     </FluentCard>
 
-    <FluentDataGrid @ref="_grid" TGridItem="InventoryRowDto" ItemsProvider="_provider" Pagination="_pagination"
-                    GridTemplateColumns="1.2fr 3fr 0.8fr 3fr 1.4fr" Style="width: 100%;">
-        <PropertyColumn Title="SKU" Property="@(i => i.Sku)" />
-        <PropertyColumn Title="Description" Property="@(i => i.Description)" />
-        <PropertyColumn Title="On hand" Property="@(i => i.TotalOnHand)" Align="Align.End" />
-        <TemplateColumn Title="By distribution center">
-            @if (context.ByDistributionCenter.Count == 0)
-            {
-                <span class="muted">—</span>
-            }
-            else
-            {
-                <div class="badge-row">
-                    @foreach (var dc in context.ByDistributionCenter)
-                    {
-                        <FluentBadge Appearance="@(dc.OnHand > 0 ? Appearance.Accent : Appearance.Lightweight)"
-                                     title="@(dc.DcName ?? dc.Dc)">
-                            @dc.Dc: @dc.OnHand
-                        </FluentBadge>
-                    }
-                </div>
-            }
-        </TemplateColumn>
-        <TemplateColumn Title="As of">@Fmt(context.AsOf)</TemplateColumn>
-    </FluentDataGrid>
+    <div class="grid-card">
+        <FluentDataGrid @ref="_grid" TGridItem="InventoryRowDto" ItemsProvider="_provider" Pagination="_pagination"
+                        GridTemplateColumns="1.2fr 3fr 0.8fr 3fr 1.4fr" Style="width: 100%;">
+            <PropertyColumn Title="SKU" Property="@(i => i.Sku)" />
+            <PropertyColumn Title="Description" Property="@(i => i.Description)" />
+            <PropertyColumn Title="On hand" Property="@(i => i.TotalOnHand)" Align="Align.End" />
+            <TemplateColumn Title="By distribution center">
+                @if (context.ByDistributionCenter.Count == 0)
+                {
+                    <span class="muted">—</span>
+                }
+                else
+                {
+                    <div class="badge-row">
+                        @foreach (var dc in context.ByDistributionCenter)
+                        {
+                            <FluentBadge Appearance="@(dc.OnHand > 0 ? Appearance.Accent : Appearance.Lightweight)"
+                                         title="@(dc.DcName ?? dc.Dc)">
+                                @dc.Dc: @dc.OnHand
+                            </FluentBadge>
+                        }
+                    </div>
+                }
+            </TemplateColumn>
+            <TemplateColumn Title="As of">@Fmt(context.AsOf)</TemplateColumn>
+        </FluentDataGrid>
 
-    <FluentPaginator State="_pagination" />
+        <FluentPaginator State="_pagination" />
+    </div>
 }
 
 @code {

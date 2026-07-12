@@ -8,7 +8,10 @@
 <PageTitle>Orders — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Orders</h1>
+    <div>
+        <h1 class="page-title">Orders</h1>
+        <p class="page-subtitle">Purchase orders and their document chain for the selected tenant.</p>
+    </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Stealth" Disabled="@(State.SelectedTenant is null)" OnClick="RefreshAsync">Refresh</FluentButton>
     </div>
@@ -53,30 +56,32 @@ else
         }
     </div>
 
-    <FluentDataGrid @ref="_grid" TGridItem="OrderSummaryDto" ItemsProvider="_provider" Pagination="_pagination"
-                    GridTemplateColumns="1.3fr 1.4fr 1.2fr 1fr 1.6fr 1fr 0.7fr" Style="width: 100%;">
-        <PropertyColumn Title="PO #" Property="@(o => o.PoNumber)" />
-        <PropertyColumn Title="Partner" Property="@(o => o.PartnerName)" />
-        <TemplateColumn Title="Ordered">@Fmt(context.OrderedAt)</TemplateColumn>
-        <TemplateColumn Title="Status">
-            <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
-        </TemplateColumn>
-        <TemplateColumn Title="Chain">
-            <div class="badge-row">
-                @foreach (var stage in new[] { "PO", "ACK", "ASN", "Invoice" })
-                {
-                    var present = context.Chain.Contains(stage);
-                    <FluentBadge Appearance="@(present ? Appearance.Accent : Appearance.Lightweight)">@stage</FluentBadge>
-                }
-            </div>
-        </TemplateColumn>
-        <TemplateColumn Title="Total" Align="Align.End">@Money(context.Total, context.Currency)</TemplateColumn>
-        <TemplateColumn Title="" Align="Align.End">
-            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => View(context.Id))">View</FluentButton>
-        </TemplateColumn>
-    </FluentDataGrid>
+    <div class="grid-card">
+        <FluentDataGrid @ref="_grid" TGridItem="OrderSummaryDto" ItemsProvider="_provider" Pagination="_pagination"
+                        GridTemplateColumns="1.3fr 1.4fr 1.2fr 1fr 1.6fr 1fr 0.7fr" Style="width: 100%;">
+            <PropertyColumn Title="PO #" Property="@(o => o.PoNumber)" />
+            <PropertyColumn Title="Partner" Property="@(o => o.PartnerName)" />
+            <TemplateColumn Title="Ordered">@Fmt(context.OrderedAt)</TemplateColumn>
+            <TemplateColumn Title="Status">
+                <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
+            </TemplateColumn>
+            <TemplateColumn Title="Chain">
+                <div class="badge-row">
+                    @foreach (var stage in new[] { "PO", "ACK", "ASN", "Invoice" })
+                    {
+                        var present = context.Chain.Contains(stage);
+                        <FluentBadge Appearance="@(present ? Appearance.Accent : Appearance.Lightweight)">@stage</FluentBadge>
+                    }
+                </div>
+            </TemplateColumn>
+            <TemplateColumn Title="Total" Align="Align.End">@Money(context.Total, context.Currency)</TemplateColumn>
+            <TemplateColumn Title="" Align="Align.End">
+                <FluentButton Appearance="Appearance.Outline" OnClick="@(() => View(context.Id))">View</FluentButton>
+            </TemplateColumn>
+        </FluentDataGrid>
 
-    <FluentPaginator State="_pagination" />
+        <FluentPaginator State="_pagination" />
+    </div>
 
     @if (_loaded && _isEmpty)
     {

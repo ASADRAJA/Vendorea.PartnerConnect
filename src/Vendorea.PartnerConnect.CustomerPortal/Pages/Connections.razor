@@ -6,8 +6,13 @@
 <PageTitle>Connections — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Connections</h1>
-    <FluentButton Appearance="Appearance.Stealth" OnClick="LoadAsync">Refresh</FluentButton>
+    <div>
+        <h1 class="page-title">Connections</h1>
+        <p class="page-subtitle">Trading-partner connections for your organization.</p>
+    </div>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Stealth" OnClick="LoadAsync">Refresh</FluentButton>
+    </div>
 </div>
 
 @if (!_loaded)
@@ -25,18 +30,20 @@ else if (_connections.Count == 0)
 }
 else
 {
-    <FluentDataGrid Items="@_connections.AsQueryable()" TGridItem="OrgConnectionDto" GridTemplateColumns="2fr 1fr 1.5fr 1fr">
-        <PropertyColumn Title="Partner" Property="@(c => c.PartnerLabel)" Sortable="true" />
-        <TemplateColumn Title="Status" Sortable="false">
-            <FluentBadge Appearance="@BadgeAppearance(context.DisplayStatus)">@context.DisplayStatus</FluentBadge>
-        </TemplateColumn>
-        <TemplateColumn Title="Last activity">
-            @(context.LastActivity is { } d ? d.ToLocalTime().ToString("g") : "—")
-        </TemplateColumn>
-        <TemplateColumn Title="Actions" Align="Align.End">
-            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => View(context.Code))">View</FluentButton>
-        </TemplateColumn>
-    </FluentDataGrid>
+    <div class="grid-card">
+        <FluentDataGrid Items="@_connections.AsQueryable()" TGridItem="OrgConnectionDto" GridTemplateColumns="2fr 1fr 1.5fr 1fr" Style="width: 100%;">
+            <PropertyColumn Title="Partner" Property="@(c => c.PartnerLabel)" Sortable="true" />
+            <TemplateColumn Title="Status" Sortable="false">
+                <FluentBadge Appearance="@BadgeAppearance(context.DisplayStatus)">@context.DisplayStatus</FluentBadge>
+            </TemplateColumn>
+            <TemplateColumn Title="Last activity">
+                @(context.LastActivity is { } d ? d.ToLocalTime().ToString("g") : "—")
+            </TemplateColumn>
+            <TemplateColumn Title="Actions" Align="Align.End">
+                <FluentButton Appearance="Appearance.Outline" OnClick="@(() => View(context.Code))">View</FluentButton>
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
 }
 
 @code {
