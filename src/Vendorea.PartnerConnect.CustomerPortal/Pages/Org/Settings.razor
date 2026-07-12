@@ -1,0 +1,118 @@
+@page "/org/settings"
+@attribute [Authorize]
+@inject ApiClient Api
+
+<PageTitle>Settings — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Organization settings</h1>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Accent" Disabled="@(_settings is null || _saving)" OnClick="SaveAsync">
+            @(_saving ? "Saving…" : "Save")
+        </FluentButton>
+    </div>
+</div>
+
+@if (_message is not null)
+{
+    <FluentMessageBar Intent="@_messageIntent" AllowDismiss="true" OnDismiss="@(() => _message = null)" Class="page-message">
+        @_message
+    </FluentMessageBar>
+}
+
+@if (!_loaded)
+{
+    <FluentProgressRing />
+}
+else if (_settings is null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error" Title="Couldn't load settings" AllowDismiss="false">
+        We couldn't load your organization profile. Your session may have expired — try signing out and back in.
+    </FluentMessageBar>
+}
+else
+{
+    <FluentCard Class="settings-card">
+        <div class="settings-grid">
+            <FluentTextField @bind-Value="_settings.Name" Label="Organization name" Style="width: 100%;" />
+            <div class="settings-readonly">
+                <FluentTextField Value="@_settings.Code" Label="Organization code" ReadOnly="true" Style="width: 100%;" />
+                <div class="settings-status">
+                    <span class="tile-label">Status</span>
+                    <FluentBadge Appearance="Appearance.Neutral">@_settings.Status</FluentBadge>
+                </div>
+            </div>
+
+            <FluentTextField @bind-Value="_settings.ContactEmail" Label="Contact email" TextFieldType="TextFieldType.Email" Style="width: 100%;" />
+            <FluentTextField @bind-Value="_settings.ContactPhone" Label="Contact phone" TextFieldType="TextFieldType.Tel" Style="width: 100%;" />
+
+            <FluentTextField @bind-Value="_settings.Address" Label="Address" Style="width: 100%;" />
+            <FluentTextField @bind-Value="_settings.City" Label="City" Style="width: 100%;" />
+            <FluentTextField @bind-Value="_settings.State" Label="State / Province" Style="width: 100%;" />
+            <FluentTextField @bind-Value="_settings.PostalCode" Label="Postal code" Style="width: 100%;" />
+            <FluentTextField @bind-Value="_settings.Country" Label="Country" Style="width: 100%;" />
+        </div>
+    </FluentCard>
+
+    @if (!_settings.NotificationPreferencesSupported)
+    {
+        <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false" Class="page-message">
+            Notification preferences (email / webhook alerts for feeds and orders) aren't configurable yet —
+            they arrive in a later release.
+        </FluentMessageBar>
+    }
+}
+
+@code {
+    private bool _loaded;
+    private bool _saving;
+    private OrgSettingsDto? _settings;
+    private string? _message;
+    private MessageIntent _messageIntent = MessageIntent.Success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _settings = await Api.GetSettingsAsync();
+        _loaded = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_settings is null)
+            return;
+
+        _saving = true;
+        _message = null;
+
+        var result = await Api.UpdateSettingsAsync(new UpdateOrgSettingsRequest
+        {
+            Name = _settings.Name,
+            ContactEmail = _settings.ContactEmail ?? string.Empty,
+            ContactPhone = _settings.ContactPhone ?? string.Empty,
+            Address = _settings.Address ?? string.Empty,
+            City = _settings.City ?? string.Empty,
+            State = _settings.State ?? string.Empty,
+            PostalCode = _settings.PostalCode ?? string.Empty,
+            Country = _settings.Country
+        });
+
+        _saving = false;
+
+        if (result.Success)
+        {
+            if (result.Settings is not null)
+                _settings = result.Settings;
+            ShowMessage("Settings saved.", MessageIntent.Success);
+        }
+        else
+        {
+            ShowMessage(result.Error ?? "Couldn't save your settings.", MessageIntent.Error);
+        }
+    }
+
+    private void ShowMessage(string message, MessageIntent intent)
+    {
+        _message = message;
+        _messageIntent = intent;
+    }
+}

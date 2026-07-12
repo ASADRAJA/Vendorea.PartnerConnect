@@ -1,5 +1,6 @@
 @page "/"
 @attribute [Authorize]
+@implements IDisposable
 @inject ApiClient Api
 @inject PortalState State
 
@@ -11,6 +12,13 @@
 {
     <FluentMessageBar Intent="MessageIntent.Error" Title="Couldn't load your organization">
         We couldn't load your organization context. Your session may have expired — try signing out and back in.
+    </FluentMessageBar>
+}
+
+@if (_summaryFailed && State.SelectedTenant is not null)
+{
+    <FluentMessageBar Intent="MessageIntent.Warning" AllowDismiss="false" Class="page-message">
+        We couldn't load the latest summary for @State.SelectedTenant.Name. The counts below may be out of date.
     </FluentMessageBar>
 }
 
@@ -56,24 +64,102 @@
     <FluentCard>
         <div class="tile">
             <div class="tile-label">Last price sync</div>
-            <div class="tile-value muted">—</div>
-            <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
+            @if (State.SelectedTenant is null)
+            {
+                <div class="tile-value muted">—</div>
+                <div class="tile-sub">Select a tenant to see feed activity.</div>
+            }
+            else if (!_summaryLoaded)
+            {
+                <FluentSkeleton Width="120px" Height="24px" />
+            }
+            else
+            {
+                <div class="tile-value">@Ago(_summary?.LastPriceSyncAt)</div>
+                <div class="tile-sub">@Full(_summary?.LastPriceSyncAt)</div>
+            }
         </div>
     </FluentCard>
 
     <FluentCard>
         <div class="tile">
             <div class="tile-label">Last content sync</div>
-            <div class="tile-value muted">—</div>
-            <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
+            @if (State.SelectedTenant is null)
+            {
+                <div class="tile-value muted">—</div>
+                <div class="tile-sub">Select a tenant to see content activity.</div>
+            }
+            else if (!_summaryLoaded)
+            {
+                <FluentSkeleton Width="120px" Height="24px" />
+            }
+            else
+            {
+                <div class="tile-value">@Ago(_summary?.LastContentSyncAt)</div>
+                <div class="tile-sub">@Full(_summary?.LastContentSyncAt)</div>
+            }
         </div>
     </FluentCard>
 
     <FluentCard>
         <div class="tile">
             <div class="tile-label">Open errors</div>
-            <div class="tile-value muted">—</div>
-            <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
+            @if (State.SelectedTenant is null)
+            {
+                <div class="tile-value muted">—</div>
+            }
+            else if (!_summaryLoaded)
+            {
+                <FluentSkeleton Width="80px" Height="24px" />
+            }
+            else
+            {
+                var count = _summary?.OpenErrorCount ?? 0;
+                <div class="tile-value @(count > 0 ? "" : "muted")">@count</div>
+                @if (count > 0)
+                {
+                    <FluentBadge Appearance="Appearance.Neutral">Needs attention</FluentBadge>
+                    <FluentAnchor Href="/activity" Appearance="Appearance.Hypertext">Review activity</FluentAnchor>
+                }
+                else
+                {
+                    <div class="tile-sub">Nothing needs attention.</div>
+                }
+            }
+        </div>
+    </FluentCard>
+
+    <FluentCard>
+        <div class="tile">
+            <div class="tile-label">Recent orders</div>
+            @if (State.SelectedTenant is null)
+            {
+                <div class="tile-value muted">—</div>
+                <div class="tile-sub">Select a tenant to see recent orders.</div>
+            }
+            else if (!_summaryLoaded)
+            {
+                <FluentSkeleton Width="160px" Height="24px" />
+            }
+            else if (_summary is null || _summary.RecentOrders.Count == 0)
+            {
+                <div class="tile-value muted">No orders</div>
+                <FluentAnchor Href="/orders" Appearance="Appearance.Hypertext">View orders</FluentAnchor>
+            }
+            else
+            {
+                <div class="mini-list">
+                    @foreach (var o in _summary.RecentOrders)
+                    {
+                        <div class="mini-row">
+                            <span class="mini-primary">@o.PoNumber</span>
+                            <FluentBadge Appearance="Appearance.Lightweight">@o.Status</FluentBadge>
+                            <span class="mini-sub">@Ago(o.OrderedAt)</span>
+                        </div>
+                    }
+                </div>
+                <FluentAnchor Href="/orders" Appearance="Appearance.Hypertext">View all orders</FluentAnchor>
+            }
         </div>
     </FluentCard>
 </div>
@@ -84,6 +170,12 @@
     private int _pendingCount;
     private int _totalCount;
 
+    private TenantSummaryDto? _summary;
+    private bool _summaryLoaded;
+    private bool _summaryFailed;
+
+    protected override void OnInitialized() => State.OnChange += OnStateChanged;
+
     protected override async Task OnInitializedAsync()
     {
         var connections = await Api.GetConnectionsAsync();
@@ -92,5 +184,60 @@
         _pendingCount = connections.Count(c =>
             string.Equals(c.ApprovalStatus, "Pending", StringComparison.OrdinalIgnoreCase));
         _connectionsLoaded = true;
+
+        await LoadSummaryAsync();
     }
+
+    private void OnStateChanged() => _ = ReloadSummaryAsync();
+
+    private async Task ReloadSummaryAsync()
+    {
+        await LoadSummaryAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        var tenant = State.SelectedTenant;
+        if (tenant is null)
+        {
+            _summary = null;
+            _summaryLoaded = false;
+            _summaryFailed = false;
+            return;
+        }
+
+        _summaryLoaded = false;
+        _summaryFailed = false;
+        var summary = await Api.GetTenantSummaryAsync(tenant.Id);
+
+        // Guard against a tenant switch that raced this load.
+        if (State.SelectedTenant?.Id != tenant.Id)
+            return;
+
+        _summary = summary;
+        _summaryFailed = summary is null;
+        _summaryLoaded = true;
+    }
+
+    private static string Ago(DateTime? d)
+    {
+        if (d is not { } value)
+            return "—";
+
+        var span = DateTime.UtcNow - value.ToUniversalTime();
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "just now",
+            { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes}m ago",
+            { TotalHours: < 24 } => $"{(int)span.TotalHours}h ago",
+            { TotalDays: < 30 } => $"{(int)span.TotalDays}d ago",
+            _ => value.ToLocalTime().ToString("d")
+        };
+    }
+
+    private static string Full(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "No activity yet";
+
+    void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
 }

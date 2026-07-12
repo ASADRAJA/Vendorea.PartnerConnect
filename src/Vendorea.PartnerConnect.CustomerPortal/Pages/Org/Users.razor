@@ -1,0 +1,27 @@
+@page "/org/users"
+@attribute [Authorize]
+
+<PageTitle>Users — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Users</h1>
+</div>
+
+@* Per-user identity isn't wired to the org portal yet: the portal authenticates with the org API
+   key, and the user model associates users to a dealer/tenant rather than to an organization. So
+   there's no org-scoped user list to show today — this is an honest placeholder, not a fake CRUD. *@
+<FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false" Class="page-message">
+    Per-user access management arrives with single sign-on.
+</FluentMessageBar>
+
+<FluentCard>
+    <div class="empty-state">
+        <div class="empty-title">User management is coming with SSO</div>
+        <div class="empty-sub">
+            Today your organization signs in with a shared organization key, so there are no individual
+            user accounts to manage here yet. Once single sign-on is enabled you'll be able to invite
+            teammates, assign roles (Org Admin, Tenant Manager, Viewer), and scope them to specific
+            tenants from this screen.
+        </div>
+    </div>
+</FluentCard>

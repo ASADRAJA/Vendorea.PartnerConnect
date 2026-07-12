@@ -303,6 +303,55 @@ public class ApiClient
         return await GetPagedAsync<ActivityEventDto>($"/api/v1/org/tenants/{tenantId}/activity{query}", cancellationToken);
     }
 
+    // ========================================================================================
+    // Organization admin (increment 5): tenants (read-only), settings, dashboard summary.
+    // ========================================================================================
+
+    /// <summary>The org's tenants (read-only; operator-provisioned). Empty list on error.</summary>
+    public async Task<List<OrgTenantRowDto>> GetTenantsAsync(CancellationToken cancellationToken = default)
+        => await GetListAsync<OrgTenantRowDto>("/api/v1/org/tenants", cancellationToken);
+
+    /// <summary>The org's editable profile. Null on any non-success/transport error.</summary>
+    public async Task<OrgSettingsDto?> GetSettingsAsync(CancellationToken cancellationToken = default)
+        => await GetJsonAsync<OrgSettingsDto>("/api/v1/org/settings", cancellationToken);
+
+    /// <summary>Updates the org's editable profile fields.</summary>
+    public async Task<SettingsSaveResult> UpdateSettingsAsync(UpdateOrgSettingsRequest body, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Put, "/api/v1/org/settings");
+            request.Content = JsonContent.Create(body);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var settings = await response.Content.ReadFromJsonAsync<OrgSettingsDto>(cancellationToken: cancellationToken);
+                return SettingsSaveResult.Ok(settings);
+            }
+
+            string? message = null;
+            try
+            {
+                using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+                if (doc.RootElement.TryGetProperty("error", out var err) && err.ValueKind == System.Text.Json.JsonValueKind.String)
+                    message = err.GetString();
+            }
+            catch { /* non-JSON body */ }
+
+            return SettingsSaveResult.Fail(message ?? $"Couldn't save settings ({(int)response.StatusCode}).");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update org settings");
+            return SettingsSaveResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>One-call dashboard summary for a tenant. Null on any non-success/transport error.</summary>
+    public async Task<TenantSummaryDto?> GetTenantSummaryAsync(int tenantId, CancellationToken cancellationToken = default)
+        => await GetJsonAsync<TenantSummaryDto>($"/api/v1/org/tenants/{tenantId}/summary", cancellationToken);
+
     /// <summary>GETs a paged result; returns an empty page on any non-success/transport error.</summary>
     private async Task<PagedResult<T>> GetPagedAsync<T>(string requestUri, CancellationToken cancellationToken)
     {

@@ -366,3 +366,83 @@ public class ActivityEventDto
     public string? CorrelationId { get; set; }
     public string? Link { get; set; }
 }
+
+// ============================================================================================
+// Organization admin (increment 5) — tenants, settings, dashboard summary. Mirror the org API DTOs.
+// ============================================================================================
+
+/// <summary>A tenant row for the Organization → Tenants screen (<c>GET /org/tenants</c>). Read-only.</summary>
+public class OrgTenantRowDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>The M360 mapping (external id); null until the tenant is provisioned by the operator.</summary>
+    public string? ExternalId { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+    public string? ContactName { get; set; }
+    public string? ContactEmail { get; set; }
+    public int ConnectionCount { get; set; }
+    public int ActiveConnectionCount { get; set; }
+}
+
+/// <summary>The org's editable profile (<c>GET/PUT /org/settings</c>). Never carries secrets.</summary>
+public class OrgSettingsDto
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
+    public string? Address { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string Country { get; set; } = "US";
+
+    /// <summary>False today — notification preferences aren't modeled; the page shows a note.</summary>
+    public bool NotificationPreferencesSupported { get; set; }
+}
+
+/// <summary>Body of <c>PUT /org/settings</c> — editable org profile fields.</summary>
+public class UpdateOrgSettingsRequest
+{
+    public string? Name { get; set; }
+    public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
+    public string? Address { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Country { get; set; }
+}
+
+/// <summary>One-call dashboard summary for a tenant (<c>GET /org/tenants/{id}/summary</c>).</summary>
+public class TenantSummaryDto
+{
+    public int TenantId { get; set; }
+    public string TenantName { get; set; } = string.Empty;
+    public List<TenantConnectionHealthDto> Connections { get; set; } = new();
+    public DateTime? LastPriceSyncAt { get; set; }
+    public DateTime? LastContentSyncAt { get; set; }
+    public int OpenErrorCount { get; set; }
+    public List<OrderSummaryDto> RecentOrders { get; set; } = new();
+}
+
+public class TenantConnectionHealthDto
+{
+    public string PartnerCode { get; set; } = string.Empty;
+    public string PartnerName { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime? LastSyncAt { get; set; }
+}
+
+/// <summary>Outcome of a settings save (distinguishes validation/transport failures from success).</summary>
+public record SettingsSaveResult(bool Success, string? Error, OrgSettingsDto? Settings)
+{
+    public static SettingsSaveResult Ok(OrgSettingsDto? s) => new(true, null, s);
+    public static SettingsSaveResult Fail(string error) => new(false, error, null);
+}

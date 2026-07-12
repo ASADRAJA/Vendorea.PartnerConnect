@@ -1,6 +1,8 @@
-@* Primary navigation rail. Dashboard + Connections (increment 1-2), Catalog (increment 3), and
-   Orders + Activity (increment 4) are live; the Organization group is disabled until a later
-   increment. *@
+@* Primary navigation rail. Dashboard + Connections (increment 1-2), Catalog (increment 3),
+   Orders + Activity (increment 4), and the Organization group (increment 5) are live. The
+   Organization group is gated on the caller's org-admin role from PortalState. *@
+@inject PortalState State
+@implements IDisposable
 
 <FluentNavMenu Width="240" Collapsible="true" Title="Navigation" @bind-Expanded="_expanded">
     <FluentNavLink Href="/" Match="NavLinkMatch.All">Dashboard</FluentNavLink>
@@ -15,13 +17,27 @@
     <FluentNavLink Href="/orders">Orders</FluentNavLink>
     <FluentNavLink Href="/activity">Activity</FluentNavLink>
 
-    <FluentNavGroup Title="Organization" Disabled="true">
-        <FluentNavLink Disabled="true">Tenants</FluentNavLink>
-        <FluentNavLink Disabled="true">Users</FluentNavLink>
-        <FluentNavLink Disabled="true">Settings</FluentNavLink>
-    </FluentNavGroup>
+    @if (_isOrgAdmin)
+    {
+        <FluentNavGroup Title="Organization" Expanded="true">
+            <FluentNavLink Href="/org/tenants">Tenants</FluentNavLink>
+            <FluentNavLink Href="/org/users">Users</FluentNavLink>
+            <FluentNavLink Href="/org/settings">Settings</FluentNavLink>
+        </FluentNavGroup>
+    }
 </FluentNavMenu>
 
 @code {
     private bool _expanded = true;
+
+    // The Organization group is org-admin only. Role comes from /org/me (the "OrgAdmin" placeholder
+    // today), so it shows for the current key; it will tighten when per-user identity lands.
+    private bool _isOrgAdmin =>
+        string.Equals(State.Context?.User.Role, "OrgAdmin", StringComparison.OrdinalIgnoreCase);
+
+    protected override void OnInitialized() => State.OnChange += OnStateChanged;
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => State.OnChange -= OnStateChanged;
 }

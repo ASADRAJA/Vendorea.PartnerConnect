@@ -36,6 +36,7 @@ public class OrgController : ControllerBase
     private readonly IOrderRepository _orderRepository;
     private readonly IDocumentCorrelationRepository _correlationRepository;
     private readonly IActivityRepository _activityRepository;
+    private readonly ITenantSummaryRepository _summaryRepository;
     private readonly ILogger<OrgController> _logger;
 
     /// <summary>Default content locale for coverage/availability lookups.</summary>
@@ -56,6 +57,7 @@ public class OrgController : ControllerBase
         IOrderRepository orderRepository,
         IDocumentCorrelationRepository correlationRepository,
         IActivityRepository activityRepository,
+        ITenantSummaryRepository summaryRepository,
         ILogger<OrgController> logger)
     {
         _authenticator = authenticator;
@@ -72,6 +74,7 @@ public class OrgController : ControllerBase
         _orderRepository = orderRepository;
         _correlationRepository = correlationRepository;
         _activityRepository = activityRepository;
+        _summaryRepository = summaryRepository;
         _logger = logger;
     }
 
@@ -886,6 +889,214 @@ public class OrgController : ControllerBase
         return Ok(new PagedResult<ActivityEventDto>(dtos, total, skip, take));
     }
 
+    // ============================================================================================
+    // Organization admin (increment 5): tenants, settings, and the dashboard summary.
+    // Tenants are operator/M360-provisioned (created on connection approval), so they're read-only
+    // here. Per-user identity isn't wired to the org portal yet, so there is no /org/users endpoint.
+    // ============================================================================================
+
+    /// <summary>
+    /// The organization's tenants (read-only). Tenants are provisioned by PC operators / M360 when a
+    /// connection is approved — the portal cannot create them — so each row also carries the M360
+    /// mapping (ExternalId) and a cheap connection roll-up for the Organization → Tenants screen.
+    /// </summary>
+    [HttpGet("tenants")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetTenants(CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var tenants = await _tenantRepository.GetByOrganizationIdAsync(org.Id, cancellationToken);
+
+        // One connection fetch for the whole org; roll up per tenant in memory (org-sized, not a scan).
+        var connections = await _connectionRepository.GetConnectionsAsync(org.Id, null, cancellationToken);
+        var byTenant = connections
+            .Where(c => c.TenantId.HasValue)
+            .GroupBy(c => c.TenantId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var rows = tenants
+            .OrderBy(t => t.Name)
+            .Select(t =>
+            {
+                byTenant.TryGetValue(t.Id, out var conns);
+                conns ??= new List<TenantPartnerAccount>();
+                return new OrgTenantRowDto
+                {
+                    Id = t.Id,
+                    Name = t.Name,
+                    Code = t.Code,
+                    ExternalId = t.ExternalId,
+                    Status = t.Status.ToString(),
+                    ContactName = JoinName(t.ContactFirstName, t.ContactLastName),
+                    ContactEmail = t.ContactEmail,
+                    ConnectionCount = conns.Count,
+                    ActiveConnectionCount = conns.Count(c =>
+                        c.ApprovalStatus == ConnectionApprovalStatus.Approved && c.IsActive)
+                };
+            })
+            .ToList();
+
+        return Ok(rows);
+    }
+
+    /// <summary>
+    /// The organization's editable profile (contact + address). Identity fields (code, status) and
+    /// the API key are never editable here and the key is never returned. Notification preferences
+    /// are not modeled yet — the customer portal surfaces that as a note, not a fake control.
+    /// </summary>
+    [HttpGet("settings")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetSettings(CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        return Ok(MapSettings(org));
+    }
+
+    /// <summary>
+    /// Updates the organization's editable profile fields (name, contact, address). Only real,
+    /// non-secret fields are accepted; code, status, billing, and credentials are ignored. A null
+    /// field leaves the stored value unchanged; an empty string clears an optional field.
+    /// </summary>
+    [HttpPut("settings")]
+    [RequireScope(ApiScopes.ConnectionsWrite)]
+    public async Task<IActionResult> UpdateSettings([FromBody] UpdateOrgSettingsRequest request, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        if (request.Name is not null)
+        {
+            var name = request.Name.Trim();
+            if (name.Length == 0)
+                return UnprocessableEntity(new { error = "Organization name cannot be empty" });
+            org.Name = name;
+        }
+
+        if (request.ContactEmail is not null)
+            org.ContactEmail = Clean(request.ContactEmail);
+        if (request.ContactPhone is not null)
+            org.ContactPhone = Clean(request.ContactPhone);
+        if (request.Address is not null)
+            org.Address = Clean(request.Address);
+        if (request.City is not null)
+            org.City = Clean(request.City);
+        if (request.State is not null)
+            org.State = Clean(request.State);
+        if (request.PostalCode is not null)
+            org.PostalCode = Clean(request.PostalCode);
+        if (request.Country is not null)
+        {
+            var country = request.Country.Trim();
+            org.Country = country.Length == 0 ? "US" : country;
+        }
+
+        org.UpdatedAt = DateTime.UtcNow;
+        await _organizationRepository.UpdateAsync(org, cancellationToken);
+        _logger.LogInformation("Org {OrgId} updated its profile settings", org.Id);
+
+        return Ok(MapSettings(org));
+    }
+
+    /// <summary>
+    /// One-call dashboard summary for a tenant: connection health per partner, last successful price
+    /// and content sync, the five most recent orders, and the open-error count. Association-gated to
+    /// the calling org (404 for a tenant it doesn't own).
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/summary")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetTenantSummary(int tenantId, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (tenant, tenantError) = await ResolveTenantAsync(org, tenantId, cancellationToken);
+        if (tenant is null)
+            return tenantError!;
+
+        // Connection health: the tenant's connections (any state), one row per partner, newest wins.
+        var connections = await _connectionRepository.GetConnectionsAsync(org.Id, null, cancellationToken);
+        var health = connections
+            .Where(c => c.TenantId == tenantId && c.TradingPartner is not null)
+            .GroupBy(c => c.TradingPartnerId)
+            .Select(g => g.OrderByDescending(c => c.DecidedAt ?? c.CreatedAt).First())
+            .OrderBy(c => c.TradingPartner!.Name)
+            .Select(c => new TenantConnectionHealthDto
+            {
+                PartnerCode = c.TradingPartner!.Code,
+                PartnerName = c.TradingPartner.Name,
+                Status = MapStatus(c),
+                LastSyncAt = c.LastUsedAt ?? c.VerifiedAt
+            })
+            .ToList();
+
+        var (recentOrders, _) = await _orderRepository.GetTenantOrderPageAsync(
+            tenantId, null, null, null, null, 0, 5, cancellationToken);
+
+        var recent = recentOrders.Select(o => new OrderSummaryDto
+        {
+            Id = o.Id,
+            PoNumber = o.PoNumber,
+            PartnerCode = o.TradingPartner?.Code ?? string.Empty,
+            PartnerName = o.TradingPartner?.Name ?? $"Partner {o.TradingPartnerId}",
+            OrderedAt = o.OrderDate,
+            Status = o.Status.ToString(),
+            Chain = DeriveChain(o),
+            Total = o.TotalAmount,
+            Currency = o.Currency
+        }).ToList();
+
+        var signals = await _summaryRepository.GetSummarySignalsAsync(tenantId, cancellationToken);
+
+        return Ok(new TenantSummaryDto
+        {
+            TenantId = tenantId,
+            TenantName = tenant.Name,
+            Connections = health,
+            LastPriceSyncAt = signals.LastPriceSyncAt,
+            LastContentSyncAt = signals.LastContentSyncAt,
+            OpenErrorCount = signals.OpenErrorCount,
+            RecentOrders = recent
+        });
+    }
+
+    private OrgSettingsDto MapSettings(Organization org) => new()
+    {
+        Id = org.Id,
+        Code = org.Code,
+        Name = org.Name,
+        Status = org.Status.ToString(),
+        ContactEmail = org.ContactEmail,
+        ContactPhone = org.ContactPhone,
+        Address = org.Address,
+        City = org.City,
+        State = org.State,
+        PostalCode = org.PostalCode,
+        Country = org.Country,
+        // Notification preferences aren't modeled yet — advertised to the portal so it can render an
+        // honest note rather than an inert control.
+        NotificationPreferencesSupported = false
+    };
+
+    private static string? JoinName(string? first, string? last)
+    {
+        var name = string.Join(' ', new[] { first, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
+
+    private static string? Clean(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+
     /// <summary>Stage ordering for the document chain, so it always reads PO → ACK → ASN → Invoice.</summary>
     private static int StageRank(string type) => type switch
     {
@@ -1556,4 +1767,86 @@ public class ActivityEventDto
     public string? Detail { get; set; }
     public string? CorrelationId { get; set; }
     public string? Link { get; set; }
+}
+
+/// <summary>A tenant row for the Organization → Tenants screen (read-only; operator-provisioned).</summary>
+public class OrgTenantRowDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>The M360 mapping (org-side / external id), when the tenant has been provisioned.</summary>
+    public string? ExternalId { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+    public string? ContactName { get; set; }
+    public string? ContactEmail { get; set; }
+    public int ConnectionCount { get; set; }
+    public int ActiveConnectionCount { get; set; }
+}
+
+/// <summary>The organization's editable profile — <c>GET/PUT /api/v1/org/settings</c>. Never carries secrets.</summary>
+public class OrgSettingsDto
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Read-only lifecycle status (Pending | Active | Suspended | …).</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
+    public string? Address { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string Country { get; set; } = "US";
+
+    /// <summary>False today — notification preferences aren't modeled; the portal shows a note.</summary>
+    public bool NotificationPreferencesSupported { get; set; }
+}
+
+/// <summary>Body of <c>PUT /api/v1/org/settings</c>. Null fields are left unchanged; only real fields.</summary>
+public class UpdateOrgSettingsRequest
+{
+    public string? Name { get; set; }
+    public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
+    public string? Address { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Country { get; set; }
+}
+
+/// <summary>One-call dashboard summary for a tenant — <c>GET /api/v1/org/tenants/{id}/summary</c>.</summary>
+public class TenantSummaryDto
+{
+    public int TenantId { get; set; }
+    public string TenantName { get; set; } = string.Empty;
+
+    /// <summary>Connection health, one row per partner the tenant has a connection with.</summary>
+    public List<TenantConnectionHealthDto> Connections { get; set; } = new();
+
+    public DateTime? LastPriceSyncAt { get; set; }
+    public DateTime? LastContentSyncAt { get; set; }
+
+    /// <summary>Failed feeds + failed orders + unresolved quarantined documents.</summary>
+    public int OpenErrorCount { get; set; }
+
+    /// <summary>The five most recent orders (newest first).</summary>
+    public List<OrderSummaryDto> RecentOrders { get; set; } = new();
+}
+
+public class TenantConnectionHealthDto
+{
+    public string PartnerCode { get; set; } = string.Empty;
+    public string PartnerName { get; set; } = string.Empty;
+
+    /// <summary>Portal-facing status: Pending | Active | Suspended | Disconnected | Cancelled | Denied.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public DateTime? LastSyncAt { get; set; }
 }

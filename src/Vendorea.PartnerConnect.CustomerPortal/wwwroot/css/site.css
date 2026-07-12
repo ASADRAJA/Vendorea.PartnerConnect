@@ -183,6 +183,54 @@ html, body {
     background: rgba(247, 130, 5, 0.08);
 }
 
+/* Muted inline text (e.g. "Not mapped") */
+.muted {
+    color: var(--neutral-foreground-hint, #a0a0a0);
+}
+
+/* Organization settings form */
+.settings-card {
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+}
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem 1.25rem;
+}
+.settings-readonly {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.settings-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Dashboard recent-orders mini list */
+.mini-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0.25rem 0 0.35rem 0;
+}
+.mini-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+.mini-primary {
+    font-weight: 600;
+}
+.mini-sub {
+    margin-left: auto;
+    color: var(--neutral-foreground-hint, #616161);
+    font-size: 0.82rem;
+}
+
 /* Empty state */
 .empty-state {
     padding: 2rem;
