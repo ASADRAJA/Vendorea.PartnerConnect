@@ -18,9 +18,33 @@ public class OrgOrganizationDto
 
 public class OrgUserDto
 {
-    public int? Id { get; set; }
+    public string? Id { get; set; }
     public string? DisplayName { get; set; }
+    public string? Email { get; set; }
     public string Role { get; set; } = "OrgAdmin";
+}
+
+/// <summary>Response of <c>POST /api/v1/org/auth/login</c> — the minted token + user/org summary.</summary>
+public class OrgLoginResponse
+{
+    public string Token { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public OrgLoginUserDto User { get; set; } = new();
+    public OrgLoginOrganizationDto Organization { get; set; } = new();
+}
+
+public class OrgLoginUserDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+}
+
+public class OrgLoginOrganizationDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
 }
 
 public class OrgTenantDto

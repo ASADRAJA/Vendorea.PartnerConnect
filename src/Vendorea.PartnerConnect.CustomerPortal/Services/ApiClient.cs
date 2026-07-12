@@ -6,15 +6,16 @@ using Vendorea.PartnerConnect.CustomerPortal.Models;
 namespace Vendorea.PartnerConnect.CustomerPortal.Services;
 
 /// <summary>
-/// Typed HttpClient for the org-facing API (<c>/api/v1/org</c>). Unlike the Admin portal (which
-/// bakes a single admin key into the client), the customer portal is per-user/org: the caller's
-/// org portal API key is stored in the <c>org_api_key</c> cookie claim at login and attached as the
-/// <c>X-Api-Key</c> header on every request here.
+/// Typed HttpClient for the org-facing API (<c>/api/v1/org</c>). The customer portal is per-user:
+/// the user signs in with email + password (<see cref="LoginAsync"/>), receives a per-user JWT, and
+/// that token is stored in the <c>org_user_token</c> cookie claim at login and attached as an
+/// <c>Authorization: Bearer</c> header on every request here. (The org API key remains for
+/// machine/integration callers — it is not used by the human portal flow.)
 /// </summary>
 public class ApiClient
 {
-    /// <summary>Claim name that carries the caller's org portal API key. Dev-grade — see LoginModel.</summary>
-    public const string ApiKeyClaim = "org_api_key";
+    /// <summary>Cookie claim name carrying the caller's per-user bearer token.</summary>
+    public const string TokenClaim = "org_user_token";
 
     private readonly HttpClient _httpClient;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -28,24 +29,27 @@ public class ApiClient
     }
 
     /// <summary>
-    /// Validates a candidate org API key by calling <c>GET /org/me</c> with it explicitly. Used at
-    /// login (before a cookie/claim exists). Returns the org context on 200, else null.
+    /// Signs a user in with email + password against <c>POST /api/v1/org/auth/login</c> (anonymous —
+    /// no token needed yet). Returns the minted token + user/org summary on success, or null on
+    /// invalid credentials / transport error.
     /// </summary>
-    public async Task<OrgContextDto?> ValidateKeyAsync(string apiKey, CancellationToken cancellationToken = default)
+    public async Task<OrgLoginResponse?> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/org/me");
-            request.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/org/auth/login")
+            {
+                Content = JsonContent.Create(new { email, password })
+            };
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
                 return null;
-            return await response.Content.ReadFromJsonAsync<OrgContextDto>(cancellationToken: cancellationToken);
+            return await response.Content.ReadFromJsonAsync<OrgLoginResponse>(cancellationToken: cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to validate org API key");
+            _logger.LogError(ex, "Org portal login failed");
             return null;
         }
     }
@@ -447,13 +451,13 @@ public class ApiClient
         return ConnectionActionResult.Fail(message ?? $"Request failed ({(int)response.StatusCode}).");
     }
 
-    /// <summary>Builds a request with the current user's org API key attached as X-Api-Key.</summary>
+    /// <summary>Builds a request with the current user's bearer token attached as Authorization.</summary>
     private HttpRequestMessage BuildRequest(HttpMethod method, string requestUri)
     {
         var request = new HttpRequestMessage(method, requestUri);
-        var apiKey = _httpContextAccessor.HttpContext?.User?.FindFirst(ApiKeyClaim)?.Value;
-        if (!string.IsNullOrEmpty(apiKey))
-            request.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
+        var token = _httpContextAccessor.HttpContext?.User?.FindFirst(TokenClaim)?.Value;
+        if (!string.IsNullOrEmpty(token))
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
     }

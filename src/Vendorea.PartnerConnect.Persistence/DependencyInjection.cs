@@ -72,6 +72,7 @@ public static class DependencyInjection
 
         // Multi-Tenant and Orders
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
+        services.AddScoped<IOrgPortalUserRepository, OrgPortalUserRepository>();
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<ITenantPartnerAccountRepository, TenantPartnerAccountRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();

@@ -32,8 +32,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 
 builder.Services.AddAuthorization();
 
-// Typed HttpClient for the org-facing API. The X-Api-Key is attached per-request from the
-// current user's org_api_key claim (see ApiClient), not baked in here.
+// Typed HttpClient for the org-facing API. A per-user bearer token is attached per-request from the
+// current user's org_user_token claim (see ApiClient), not baked in here.
 builder.Services.AddHttpClient<ApiClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5000");

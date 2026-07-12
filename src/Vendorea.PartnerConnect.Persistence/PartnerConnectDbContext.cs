@@ -99,6 +99,10 @@ public class PartnerConnectDbContext : DbContext
     // Admin Portal login users (username/password + portal role)
     public DbSet<AdminPortalUser> AdminPortalUsers => Set<AdminPortalUser>();
 
+    // Customer (org) Portal login users (email/password + org role + tenant scope)
+    public DbSet<OrgPortalUser> OrgPortalUsers => Set<OrgPortalUser>();
+    public DbSet<OrgPortalUserTenant> OrgPortalUserTenants => Set<OrgPortalUserTenant>();
+
     // Billing
     public DbSet<BillingPlan> BillingPlans => Set<BillingPlan>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();

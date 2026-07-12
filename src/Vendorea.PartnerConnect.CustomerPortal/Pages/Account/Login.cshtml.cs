@@ -16,7 +16,10 @@ public class LoginModel : PageModel
     public LoginModel(ApiClient api) => _api = api;
 
     [BindProperty]
-    public string ApiKey { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+
+    [BindProperty]
+    public string Password { get; set; } = string.Empty;
 
     [BindProperty(SupportsGet = true)]
     public string? ReturnUrl { get; set; }
@@ -29,34 +32,30 @@ public class LoginModel : PageModel
 
     public async Task<IActionResult> OnPostAsync()
     {
-        if (string.IsNullOrWhiteSpace(ApiKey))
+        if (string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Password))
         {
-            Error = "Enter your organization API key.";
+            Error = "Invalid email or password.";
             return Page();
         }
 
-        var key = ApiKey.Trim();
-
-        // Validate the key by calling GET /org/me with it. A 200 means the key resolves to an
-        // active organization.
-        var context = await _api.ValidateKeyAsync(key);
-        if (context is null)
+        // Exchange the email/password for a per-user token via the org auth endpoint.
+        var login = await _api.LoginAsync(Email.Trim(), Password);
+        if (login is null || string.IsNullOrEmpty(login.Token))
         {
-            Error = "Invalid organization API key.";
+            Error = "Invalid email or password.";
             return Page();
         }
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, context.Organization.Id.ToString()),
-            new(ClaimTypes.Name, context.Organization.Name),
-            new("org_id", context.Organization.Id.ToString()),
-            new("org_name", context.Organization.Name),
-            new(ClaimTypes.Role, string.IsNullOrWhiteSpace(context.User.Role) ? "OrgAdmin" : context.User.Role),
-            // Dev-grade for the MVP: the org API key is stored directly in a cookie claim so the
-            // ApiClient can attach it per request. This should move to a protected server-side
-            // session (or SSO token) before production — see docs/customer-portal spec.
-            new(ApiClient.ApiKeyClaim, key)
+            new(ClaimTypes.NameIdentifier, login.User.Id),
+            new(ClaimTypes.Name, string.IsNullOrWhiteSpace(login.User.DisplayName) ? login.User.Email : login.User.DisplayName),
+            new(ClaimTypes.Email, login.User.Email),
+            new("org_id", login.Organization.Id.ToString()),
+            new("org_name", login.Organization.Name),
+            new(ClaimTypes.Role, string.IsNullOrWhiteSpace(login.User.Role) ? "Viewer" : login.User.Role),
+            // The per-user API token — the ApiClient attaches it as Authorization: Bearer per request.
+            new(ApiClient.TokenClaim, login.Token)
         };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(

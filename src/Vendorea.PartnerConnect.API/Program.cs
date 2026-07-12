@@ -122,9 +122,54 @@ builder.Services.AddBilling(builder.Configuration);
 // Worker Processes (for FTP ingestion services, without background worker)
 builder.Services.AddWorkerProcesses(builder.Configuration);
 
-// Authentication
-builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.AuthenticationScheme)
-    .AddApiKeyAuthentication();
+// JWT settings for the API's own tokens (customer-portal user tokens). The signing key is shared
+// between issuance (OrgUserTokenService) and validation (the JwtBearer scheme below).
+builder.Services.Configure<Vendorea.PartnerConnect.Api.Authentication.JwtSettings>(
+    builder.Configuration.GetSection(Vendorea.PartnerConnect.Api.Authentication.JwtSettings.SectionName));
+builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Authentication.IOrgUserTokenService,
+    Vendorea.PartnerConnect.Api.Authentication.OrgUserTokenService>();
+
+var jwtSettings = builder.Configuration
+    .GetSection(Vendorea.PartnerConnect.Api.Authentication.JwtSettings.SectionName)
+    .Get<Vendorea.PartnerConnect.Api.Authentication.JwtSettings>()
+    ?? new Vendorea.PartnerConnect.Api.Authentication.JwtSettings();
+
+// Authentication. Two schemes coexist: the org/dealer/admin API-key scheme (machine/integration
+// callers via X-API-Key) and a JWT bearer scheme (customer-portal user tokens via Authorization:
+// Bearer). A smart selector routes each request to the right one based on its headers, so the
+// default principal is populated correctly for either credential.
+const string SmartAuthScheme = "Smart";
+builder.Services.AddAuthentication(SmartAuthScheme)
+    .AddPolicyScheme(SmartAuthScheme, "API key or bearer token", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+        {
+            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+            if (!string.IsNullOrEmpty(authHeader)
+                && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
+            }
+            return ApiKeyAuthenticationHandler.AuthenticationScheme;
+        };
+    })
+    .AddApiKeyAuthentication()
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false; // keep the raw claim types (sub, role, scope, token_type)
+        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtSettings.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                System.Text.Encoding.UTF8.GetBytes(jwtSettings.SigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
 
 // Authorization with permissions
 builder.Services.AddPermissionAuthorization();

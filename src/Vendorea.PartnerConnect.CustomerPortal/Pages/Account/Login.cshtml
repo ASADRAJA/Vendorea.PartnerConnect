@@ -59,7 +59,7 @@
     <div class="wrap">
         <div class="card">
             <div class="brand">Partner<span class="dot">Connect</span></div>
-            <div class="subtitle">Sign in with your organization API key</div>
+            <div class="subtitle">Sign in to your organization portal</div>
 
             @if (!string.IsNullOrEmpty(Model.Error))
             {
@@ -68,12 +68,14 @@
 
             <form method="post">
                 <input type="hidden" asp-for="ReturnUrl" />
-                <label asp-for="ApiKey">Organization API key</label>
-                <input type="password" asp-for="ApiKey" autofocus autocomplete="off" placeholder="Paste your key" />
+                <label asp-for="Email">Email</label>
+                <input type="text" asp-for="Email" autofocus autocomplete="username" placeholder="you@company.com" />
+                <label asp-for="Password">Password</label>
+                <input type="password" asp-for="Password" autocomplete="current-password" placeholder="Your password" />
                 <button type="submit">Sign in</button>
             </form>
 
-            <div class="hint">The key authenticates your organization to the PartnerConnect API.</div>
+            <div class="hint">Sign in with the email and password provided by your administrator.</div>
         </div>
     </div>
 </body>

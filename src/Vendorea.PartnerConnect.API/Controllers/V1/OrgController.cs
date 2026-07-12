@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vendorea.PartnerConnect.Api.Authentication;
 using Vendorea.PartnerConnect.Api.Authorization;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.Integration;
@@ -93,6 +94,39 @@ public class OrgController : ControllerBase
 
         var tenants = await _tenantRepository.GetByOrganizationIdAsync(org.Id, cancellationToken);
 
+        // When resolved via a user token, return the real user and restrict tenants to the user's
+        // scope. When resolved via the org API key (integration), keep the static OrgAdmin/all-tenants
+        // behavior.
+        IEnumerable<Tenant> visibleTenants = tenants;
+        OrgContextUserDto userDto;
+        List<string> capabilities;
+
+        if (_resolvedUser is { } u)
+        {
+            if (!u.AllTenants)
+                visibleTenants = tenants.Where(t => u.ScopedTenantIds.Contains(t.Id));
+
+            userDto = new OrgContextUserDto
+            {
+                Id = u.UserId?.ToString(),
+                DisplayName = u.DisplayName,
+                Email = u.Email,
+                Role = u.Role.ToString()
+            };
+            capabilities = CapabilitiesForRole(u.Role);
+        }
+        else
+        {
+            userDto = new OrgContextUserDto
+            {
+                Id = null,
+                DisplayName = null,
+                Email = null,
+                Role = "OrgAdmin"
+            };
+            capabilities = new List<string> { "connections.read", "connections.write", "orders.read" };
+        }
+
         var dto = new OrgContextDto
         {
             Organization = new OrgContextOrganizationDto
@@ -101,14 +135,8 @@ public class OrgController : ControllerBase
                 Name = org.Name,
                 Status = org.Status.ToString()
             },
-            // Per-user identity is a later increment; return a static OrgAdmin placeholder.
-            User = new OrgContextUserDto
-            {
-                Id = null,
-                DisplayName = null,
-                Role = "OrgAdmin"
-            },
-            Tenants = tenants
+            User = userDto,
+            Tenants = visibleTenants
                 .OrderBy(t => t.Name)
                 .Select(t => new OrgTenantDto
                 {
@@ -118,7 +146,7 @@ public class OrgController : ControllerBase
                     Status = t.Status.ToString()
                 })
                 .ToList(),
-            Capabilities = new List<string> { "connections.read", "connections.write", "orders.read" }
+            Capabilities = capabilities
         };
 
         return Ok(dto);
@@ -1279,9 +1307,41 @@ public class OrgController : ControllerBase
             .ToList();
     }
 
-    /// <summary>Resolves the calling org from its X-Api-Key, or returns a 401 result.</summary>
+    /// <summary>
+    /// The authenticated org-portal user for the current request, populated by
+    /// <see cref="ResolveOrgAsync"/> when the caller presented a user token (null for the org-key path).
+    /// </summary>
+    private OrgUserContext? _resolvedUser;
+
+    /// <summary>
+    /// Resolves the calling organization. Two credentials are accepted:
+    /// <list type="bullet">
+    /// <item>a customer-portal <b>user token</b> (JWT bearer) — the org is taken from the token's
+    /// <c>org_id</c> claim and the user's role + tenant scope are captured in <see cref="_resolvedUser"/>;</item>
+    /// <item>the org <b>API key</b> (<c>X-Api-Key</c>) — machine/integration access (unchanged).</item>
+    /// </list>
+    /// Returns a 401 result when neither resolves to an active organization.
+    /// </summary>
     private async Task<(Organization? Org, IActionResult? Error)> ResolveOrgAsync(CancellationToken cancellationToken)
     {
+        // Path 1: an authenticated org-portal user token.
+        if (string.Equals(User?.FindFirst(OrgUserTokenService.TokenTypeClaim)?.Value,
+                OrgUserTokenService.OrgPortalUserTokenType, StringComparison.Ordinal))
+        {
+            var orgIdClaim = User!.FindFirst(ApiPrincipalExtensions.OrgIdClaim)?.Value;
+            if (int.TryParse(orgIdClaim, out var orgId))
+            {
+                var orgFromUser = await _organizationRepository.GetByIdAsync(orgId, cancellationToken);
+                if (orgFromUser is not null && orgFromUser.Status == OrganizationStatus.Active)
+                {
+                    _resolvedUser = BuildOrgUserContext();
+                    return (orgFromUser, null);
+                }
+            }
+            return (null, Unauthorized(new { error = "Invalid or inactive user" }));
+        }
+
+        // Path 2: the org API key (machine/integration).
         var apiKey = Request.Headers[ApiKeyHeader].FirstOrDefault();
         var org = await _authenticator.ResolveActiveOrganizationAsync(apiKey, cancellationToken);
         if (org is null)
@@ -1289,6 +1349,67 @@ public class OrgController : ControllerBase
 
         return (org, null);
     }
+
+    /// <summary>
+    /// Resolves the org AND the authenticated user's role + accessible tenant ids. When the caller
+    /// used the org API key (no user), the returned context is null. Use this where per-user role or
+    /// tenant scope matters; <see cref="ResolveOrgAsync"/> remains the org-only entry point.
+    /// </summary>
+    private async Task<(Organization? Org, OrgUserContext? User, IActionResult? Error)> ResolveOrgUserAsync(CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return (null, null, error);
+        return (org, _resolvedUser, null);
+    }
+
+    /// <summary>Reads the org-portal-user context from the validated JWT claims.</summary>
+    private OrgUserContext BuildOrgUserContext()
+    {
+        Guid? userId = Guid.TryParse(User!.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value, out var g)
+            ? g
+            : null;
+        var email = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email)?.Value;
+        var displayName = User.FindFirst("name")?.Value;
+        var role = Enum.TryParse<OrgPortalRole>(User.FindFirst(OrgUserTokenService.RoleClaim)?.Value, ignoreCase: true, out var r)
+            ? r
+            : OrgPortalRole.Viewer;
+
+        var scopeRaw = User.FindFirst(OrgUserTokenService.TenantScopeClaim)?.Value;
+        var allTenants = string.Equals(scopeRaw, OrgUserTokenService.TenantScopeAll, StringComparison.OrdinalIgnoreCase);
+        var scopedTenantIds = allTenants || string.IsNullOrWhiteSpace(scopeRaw)
+            ? Array.Empty<int>()
+            : scopeRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => int.TryParse(s, out var id) ? id : (int?)null)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToArray();
+
+        return new OrgUserContext(userId, displayName, email, role, allTenants, scopedTenantIds);
+    }
+
+    /// <summary>Portal capabilities surfaced in <c>/org/me</c> for a role (per-endpoint RBAC is Auth-2).</summary>
+    private static List<string> CapabilitiesForRole(OrgPortalRole role) => role switch
+    {
+        OrgPortalRole.OrgAdmin => new List<string>
+        {
+            "connections.read", "connections.write", "orders.read", "users.manage", "settings.write"
+        },
+        OrgPortalRole.TenantManager => new List<string>
+        {
+            "connections.read", "connections.write", "orders.read"
+        },
+        _ => new List<string> { "connections.read", "orders.read" }
+    };
+
+    /// <summary>The authenticated org-portal user's identity + role + tenant scope (from the token).</summary>
+    private sealed record OrgUserContext(
+        Guid? UserId,
+        string? DisplayName,
+        string? Email,
+        OrgPortalRole Role,
+        bool AllTenants,
+        IReadOnlyCollection<int> ScopedTenantIds);
 
     private static OrgConnectionDto MapConnection(TenantPartnerAccount c) => new()
     {
@@ -1493,8 +1614,10 @@ public class OrgContextOrganizationDto
 
 public class OrgContextUserDto
 {
-    public int? Id { get; set; }
+    /// <summary>The user's id (Guid) when authenticated via a user token; null for the org-key path.</summary>
+    public string? Id { get; set; }
     public string? DisplayName { get; set; }
+    public string? Email { get; set; }
     public string Role { get; set; } = "OrgAdmin";
 }
 
