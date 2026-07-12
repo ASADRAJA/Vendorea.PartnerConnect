@@ -265,6 +265,44 @@ public class ApiClient
         }
     }
 
+    // ========================================================================================
+    // Orders (increment 4) + Activity — tenant-scoped, read-only, server-paged.
+    // ========================================================================================
+
+    /// <summary>The tenant's orders (paged), filterable by partner, status, and order-date range.</summary>
+    public async Task<PagedResult<OrderSummaryDto>> GetOrdersAsync(
+        int tenantId, string? partnerCode, string? status, DateTime? from, DateTime? to,
+        int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(
+            ("partnerCode", partnerCode),
+            ("status", status),
+            ("from", from?.ToString("o")),
+            ("to", to?.ToString("o")),
+            ("skip", skip.ToString()),
+            ("take", take.ToString()));
+        return await GetPagedAsync<OrderSummaryDto>($"/api/v1/org/tenants/{tenantId}/orders{query}", cancellationToken);
+    }
+
+    /// <summary>Full detail for one order incl. its document chain. Null on non-success/transport error.</summary>
+    public async Task<OrderDetailDto?> GetOrderAsync(int tenantId, int orderId, CancellationToken cancellationToken = default)
+        => await GetJsonAsync<OrderDetailDto>($"/api/v1/org/tenants/{tenantId}/orders/{orderId}", cancellationToken);
+
+    /// <summary>The tenant's activity feed (paged), filterable by type, level, and date range.</summary>
+    public async Task<PagedResult<ActivityEventDto>> GetActivityAsync(
+        int tenantId, string? type, string? level, DateTime? from, DateTime? to,
+        int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(
+            ("type", type),
+            ("level", level),
+            ("from", from?.ToString("o")),
+            ("to", to?.ToString("o")),
+            ("skip", skip.ToString()),
+            ("take", take.ToString()));
+        return await GetPagedAsync<ActivityEventDto>($"/api/v1/org/tenants/{tenantId}/activity{query}", cancellationToken);
+    }
+
     /// <summary>GETs a paged result; returns an empty page on any non-success/transport error.</summary>
     private async Task<PagedResult<T>> GetPagedAsync<T>(string requestUri, CancellationToken cancellationToken)
     {

@@ -1,0 +1,169 @@
+@page "/activity"
+@attribute [Authorize]
+@implements IDisposable
+@inject ApiClient Api
+@inject PortalState State
+@inject NavigationManager Navigation
+
+<PageTitle>Activity — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Activity</h1>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Stealth" Disabled="@(State.SelectedTenant is null)" OnClick="RefreshAsync">Refresh</FluentButton>
+    </div>
+</div>
+
+@if (State.SelectedTenant is null)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">Select a tenant</div>
+            <div class="empty-sub">Choose a tenant from the switcher above to see its activity feed.</div>
+        </div>
+    </FluentCard>
+}
+else
+{
+    <div class="catalog-toolbar">
+        <FluentSelect TOption="string"
+                      Label="Type"
+                      Items="@_typeOptions"
+                      OptionText="@(t => string.IsNullOrEmpty(t) ? "All types" : t)"
+                      OptionValue="@(t => t)"
+                      @bind-Value="_typeFilter"
+                      @bind-Value:after="RefreshAsync"
+                      Width="180px" />
+        <FluentSelect TOption="string"
+                      Label="Level"
+                      Items="@_levelOptions"
+                      OptionText="@(l => string.IsNullOrEmpty(l) ? "All levels" : l)"
+                      OptionValue="@(l => l)"
+                      @bind-Value="_levelFilter"
+                      @bind-Value:after="RefreshAsync"
+                      Width="160px" />
+        <FluentDatePicker Label="From" @bind-Value="_from" @bind-Value:after="RefreshAsync" />
+        <FluentDatePicker Label="To" @bind-Value="_to" @bind-Value:after="RefreshAsync" />
+        @if (_from is not null || _to is not null || !string.IsNullOrEmpty(_typeFilter) || !string.IsNullOrEmpty(_levelFilter))
+        {
+            <FluentButton Appearance="Appearance.Lightweight" OnClick="ClearFiltersAsync">Clear filters</FluentButton>
+        }
+    </div>
+
+    <FluentDataGrid @ref="_grid" TGridItem="ActivityEventDto" ItemsProvider="_provider" Pagination="_pagination"
+                    RowClass="@RowClass"
+                    GridTemplateColumns="1.3fr 1fr 0.8fr 2fr 2.4fr 0.7fr" Style="width: 100%;">
+        <TemplateColumn Title="When">@Fmt(context.At)</TemplateColumn>
+        <PropertyColumn Title="Type" Property="@(e => e.Type)" />
+        <TemplateColumn Title="Level">
+            <FluentBadge Appearance="@LevelAppearance(context.Level)">@context.Level</FluentBadge>
+        </TemplateColumn>
+        <PropertyColumn Title="Event" Property="@(e => e.Title)" />
+        <PropertyColumn Title="Detail" Property="@(e => e.Detail)" />
+        <TemplateColumn Title="" Align="Align.End">
+            @if (!string.IsNullOrEmpty(context.Link))
+            {
+                <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => Navigation.NavigateTo(context.Link!))">Open</FluentButton>
+            }
+        </TemplateColumn>
+    </FluentDataGrid>
+
+    <FluentPaginator State="_pagination" />
+
+    @if (_loaded && _isEmpty)
+    {
+        <FluentCard>
+            <div class="empty-state">
+                <div class="empty-title">No activity</div>
+                <div class="empty-sub">No events match the current filters for @State.SelectedTenant.Name.</div>
+            </div>
+        </FluentCard>
+    }
+}
+
+@code {
+    private string? _typeFilter = string.Empty;
+    private string? _levelFilter = string.Empty;
+    private DateTime? _from;
+    private DateTime? _to;
+
+    private readonly List<string> _typeOptions = new() { "", "PriceFeed", "Order", "Connection", "Exception" };
+    private readonly List<string> _levelOptions = new() { "", "Info", "Warning", "Error" };
+
+    private FluentDataGrid<ActivityEventDto>? _grid;
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 50 };
+    private GridItemsProvider<ActivityEventDto> _provider = default!;
+    private bool _loaded;
+    private bool _isEmpty;
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += OnStateChanged;
+        _provider = async request =>
+        {
+            if (State.SelectedTenant is null)
+                return GridItemsProviderResult.From(Array.Empty<ActivityEventDto>(), 0);
+
+            var take = request.Count ?? _pagination.ItemsPerPage;
+            var page = await Api.GetActivityAsync(
+                State.SelectedTenant.Id,
+                string.IsNullOrEmpty(_typeFilter) ? null : _typeFilter,
+                string.IsNullOrEmpty(_levelFilter) ? null : _levelFilter,
+                _from, ToEndOfDay(_to),
+                request.StartIndex, take, request.CancellationToken);
+
+            _loaded = true;
+            _isEmpty = page.Total == 0;
+            return GridItemsProviderResult.From(page.Items, page.Total);
+        };
+    }
+
+    private void OnStateChanged() => _ = ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _typeFilter = string.Empty;
+        _levelFilter = string.Empty;
+        _from = null;
+        _to = null;
+        await RefreshGridAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _typeFilter = string.Empty;
+        _levelFilter = string.Empty;
+        _from = null;
+        _to = null;
+        await RefreshGridAsync();
+    }
+
+    private async Task RefreshAsync() => await RefreshGridAsync();
+
+    private async Task RefreshGridAsync()
+    {
+        if (_grid is not null)
+            await _grid.RefreshDataAsync();
+    }
+
+    private static string RowClass(ActivityEventDto e) => e.Level switch
+    {
+        "Error" => "activity-error",
+        "Warning" => "activity-warning",
+        _ => string.Empty
+    };
+
+    private static DateTime? ToEndOfDay(DateTime? d) => d?.Date.AddDays(1).AddTicks(-1);
+
+    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+
+    private static Appearance LevelAppearance(string level) => level switch
+    {
+        "Error" => Appearance.Accent,
+        "Warning" => Appearance.Neutral,
+        _ => Appearance.Lightweight
+    };
+
+    void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
+}

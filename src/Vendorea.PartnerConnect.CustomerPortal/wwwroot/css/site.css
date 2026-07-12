@@ -131,6 +131,58 @@ html, body {
     gap: 0.35rem;
 }
 
+/* Section titles (detail pages) */
+.section-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.75rem 0;
+}
+
+/* Order summary card */
+.order-summary-card {
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.5rem;
+}
+.order-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+}
+
+/* Order document chain (PO → ACK → ASN → Invoice stepper) */
+.order-chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+.chain-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid var(--neutral-stroke-rest, #d1d1d1);
+    border-radius: 6px;
+    min-width: 84px;
+}
+.chain-step.present {
+    border-color: var(--accent-fill-rest, #0f6cbd);
+    background: var(--neutral-layer-2, #fafafa);
+}
+.chain-step-time {
+    font-size: 0.78rem;
+    color: var(--neutral-foreground-hint, #616161);
+}
+
+/* Activity feed row emphasis */
+.activity-error {
+    background: rgba(196, 49, 75, 0.08);
+}
+.activity-warning {
+    background: rgba(247, 130, 5, 0.08);
+}
+
 /* Empty state */
 .empty-state {
     padding: 2rem;

@@ -1,0 +1,203 @@
+@page "/orders"
+@attribute [Authorize]
+@implements IDisposable
+@inject ApiClient Api
+@inject PortalState State
+@inject NavigationManager Navigation
+
+<PageTitle>Orders — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Orders</h1>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Stealth" Disabled="@(State.SelectedTenant is null)" OnClick="RefreshAsync">Refresh</FluentButton>
+    </div>
+</div>
+
+@if (State.SelectedTenant is null)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">Select a tenant</div>
+            <div class="empty-sub">Choose a tenant from the switcher above to track its orders.</div>
+        </div>
+    </FluentCard>
+}
+else
+{
+    <div class="catalog-toolbar">
+        @if (_partners.Count > 1)
+        {
+            <FluentSelect TOption="string"
+                          Label="Partner"
+                          Items="@_partnerOptions"
+                          OptionText="@(c => PartnerLabel(c))"
+                          OptionValue="@(c => c)"
+                          @bind-Value="_partnerFilter"
+                          @bind-Value:after="RefreshAsync"
+                          Width="200px" />
+        }
+        <FluentSelect TOption="string"
+                      Label="Status"
+                      Items="@_statusOptions"
+                      OptionText="@(s => string.IsNullOrEmpty(s) ? "All statuses" : s)"
+                      OptionValue="@(s => s)"
+                      @bind-Value="_statusFilter"
+                      @bind-Value:after="RefreshAsync"
+                      Width="180px" />
+        <FluentDatePicker Label="From" @bind-Value="_from" @bind-Value:after="RefreshAsync" />
+        <FluentDatePicker Label="To" @bind-Value="_to" @bind-Value:after="RefreshAsync" />
+        @if (_from is not null || _to is not null || !string.IsNullOrEmpty(_statusFilter) || !string.IsNullOrEmpty(_partnerFilter))
+        {
+            <FluentButton Appearance="Appearance.Lightweight" OnClick="ClearFiltersAsync">Clear filters</FluentButton>
+        }
+    </div>
+
+    <FluentDataGrid @ref="_grid" TGridItem="OrderSummaryDto" ItemsProvider="_provider" Pagination="_pagination"
+                    GridTemplateColumns="1.3fr 1.4fr 1.2fr 1fr 1.6fr 1fr 0.7fr" Style="width: 100%;">
+        <PropertyColumn Title="PO #" Property="@(o => o.PoNumber)" />
+        <PropertyColumn Title="Partner" Property="@(o => o.PartnerName)" />
+        <TemplateColumn Title="Ordered">@Fmt(context.OrderedAt)</TemplateColumn>
+        <TemplateColumn Title="Status">
+            <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
+        </TemplateColumn>
+        <TemplateColumn Title="Chain">
+            <div class="badge-row">
+                @foreach (var stage in new[] { "PO", "ACK", "ASN", "Invoice" })
+                {
+                    var present = context.Chain.Contains(stage);
+                    <FluentBadge Appearance="@(present ? Appearance.Accent : Appearance.Lightweight)">@stage</FluentBadge>
+                }
+            </div>
+        </TemplateColumn>
+        <TemplateColumn Title="Total" Align="Align.End">@Money(context.Total, context.Currency)</TemplateColumn>
+        <TemplateColumn Title="" Align="Align.End">
+            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => View(context.Id))">View</FluentButton>
+        </TemplateColumn>
+    </FluentDataGrid>
+
+    <FluentPaginator State="_pagination" />
+
+    @if (_loaded && _isEmpty)
+    {
+        <FluentCard>
+            <div class="empty-state">
+                <div class="empty-title">No orders</div>
+                <div class="empty-sub">No orders match the current filters for @State.SelectedTenant.Name.</div>
+            </div>
+        </FluentCard>
+    }
+}
+
+@code {
+    private List<OrgCatalogPartnerDto> _partners = new();
+    private List<string> _partnerOptions = new();     // "" (All) + partner codes
+    private string? _partnerFilter = string.Empty;    // "" = all partners
+    private string? _statusFilter = string.Empty;     // "" = all statuses
+    private DateTime? _from;
+    private DateTime? _to;
+
+    private readonly List<string> _statusOptions = new()
+    {
+        "", "Draft", "Submitted", "Acknowledged", "Processing", "PartiallyShipped",
+        "Shipped", "Delivered", "Completed", "Cancelled", "Failed"
+    };
+
+    private FluentDataGrid<OrderSummaryDto>? _grid;
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 50 };
+    private GridItemsProvider<OrderSummaryDto> _provider = default!;
+    private bool _loaded;
+    private bool _isEmpty;
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += OnStateChanged;
+        _provider = async request =>
+        {
+            if (State.SelectedTenant is null)
+                return GridItemsProviderResult.From(Array.Empty<OrderSummaryDto>(), 0);
+
+            var take = request.Count ?? _pagination.ItemsPerPage;
+            var page = await Api.GetOrdersAsync(
+                State.SelectedTenant.Id,
+                string.IsNullOrEmpty(_partnerFilter) ? null : _partnerFilter,
+                string.IsNullOrEmpty(_statusFilter) ? null : _statusFilter,
+                _from, ToEndOfDay(_to),
+                request.StartIndex, take, request.CancellationToken);
+
+            _loaded = true;
+            _isEmpty = page.Total == 0;
+            return GridItemsProviderResult.From(page.Items, page.Total);
+        };
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadPartnersAsync();
+
+    private async Task LoadPartnersAsync()
+    {
+        if (State.SelectedTenant is null)
+        {
+            _partners = new();
+            _partnerOptions = new();
+            return;
+        }
+        _partners = await Api.GetTenantPartnersAsync(State.SelectedTenant.Id);
+        _partnerOptions = new List<string> { string.Empty };
+        _partnerOptions.AddRange(_partners.Select(p => p.PartnerCode));
+        await RefreshGridAsync();
+    }
+
+    private void OnStateChanged() => _ = ReloadForTenantAsync();
+
+    private async Task ReloadForTenantAsync()
+    {
+        _partnerFilter = string.Empty;
+        _statusFilter = string.Empty;
+        _from = null;
+        _to = null;
+        await LoadPartnersAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _partnerFilter = string.Empty;
+        _statusFilter = string.Empty;
+        _from = null;
+        _to = null;
+        await RefreshGridAsync();
+    }
+
+    private async Task RefreshAsync() => await RefreshGridAsync();
+
+    private async Task RefreshGridAsync()
+    {
+        if (_grid is not null)
+            await _grid.RefreshDataAsync();
+    }
+
+    private void View(int id) => Navigation.NavigateTo($"/orders/{id}");
+
+    private string PartnerLabel(string code)
+    {
+        if (string.IsNullOrEmpty(code))
+            return "All partners";
+        return _partners.FirstOrDefault(p => p.PartnerCode == code)?.PartnerName ?? code;
+    }
+
+    private static DateTime? ToEndOfDay(DateTime? d) => d?.Date.AddDays(1).AddTicks(-1);
+
+    private static string Money(decimal value, string currency)
+        => value.ToString("C2") + (string.Equals(currency, "USD", StringComparison.OrdinalIgnoreCase) ? "" : $" {currency}");
+
+    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+
+    private static Appearance StatusAppearance(string status) => status switch
+    {
+        "Completed" or "Delivered" or "Shipped" => Appearance.Accent,
+        "Failed" or "Cancelled" => Appearance.Lightweight,
+        _ => Appearance.Neutral
+    };
+
+    void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
+}

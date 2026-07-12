@@ -33,6 +33,9 @@ public class OrgController : ControllerBase
     private readonly ISprPriceRecordRepository _priceRepository;
     private readonly ISupplierInventoryItemRepository _inventoryRepository;
     private readonly IDealerContentSubscriptionRepository _contentSubscriptionRepository;
+    private readonly IOrderRepository _orderRepository;
+    private readonly IDocumentCorrelationRepository _correlationRepository;
+    private readonly IActivityRepository _activityRepository;
     private readonly ILogger<OrgController> _logger;
 
     /// <summary>Default content locale for coverage/availability lookups.</summary>
@@ -50,6 +53,9 @@ public class OrgController : ControllerBase
         ISprPriceRecordRepository priceRepository,
         ISupplierInventoryItemRepository inventoryRepository,
         IDealerContentSubscriptionRepository contentSubscriptionRepository,
+        IOrderRepository orderRepository,
+        IDocumentCorrelationRepository correlationRepository,
+        IActivityRepository activityRepository,
         ILogger<OrgController> logger)
     {
         _authenticator = authenticator;
@@ -63,6 +69,9 @@ public class OrgController : ControllerBase
         _priceRepository = priceRepository;
         _inventoryRepository = inventoryRepository;
         _contentSubscriptionRepository = contentSubscriptionRepository;
+        _orderRepository = orderRepository;
+        _correlationRepository = correlationRepository;
+        _activityRepository = activityRepository;
         _logger = logger;
     }
 
@@ -692,6 +701,320 @@ public class OrgController : ControllerBase
         return Ok(new PagedResult<ContentRowDto>(items, page.Total, skip, take));
     }
 
+    // ============================================================================================
+    // Orders (read-only tracking) + Activity feed. Both are tenant-scoped and association-gated.
+    // tenantId is PC's internal Tenant.Id (== Order.TenantId).
+    // ============================================================================================
+
+    /// <summary>
+    /// Lists the tenant's orders (newest first), filterable by partner, status, and order-date
+    /// range, paged. Each row carries the document-chain stages present (PO/ACK/ASN) derived from the
+    /// order's own state — cheap and authoritative, no per-row document lookup. Returns 404 if the
+    /// tenant isn't the org's.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/orders")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetOrders(
+        int tenantId,
+        [FromQuery] string? partnerCode,
+        [FromQuery] string? status,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (tenant, tenantError) = await ResolveTenantAsync(org, tenantId, cancellationToken);
+        if (tenant is null)
+            return tenantError!;
+
+        // Resolve the optional partner filter to a trading-partner id via the tenant's connections.
+        int? tradingPartnerId = null;
+        if (!string.IsNullOrWhiteSpace(partnerCode))
+        {
+            var partners = await GetConnectedPartnersAsync(org.Id, tenantId, cancellationToken);
+            var match = partners.FirstOrDefault(p =>
+                string.Equals(p.TradingPartner!.Code, partnerCode, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+                return Ok(PagedResult<OrderSummaryDto>.Empty(skip, take)); // unknown/unconnected partner
+            tradingPartnerId = match.TradingPartnerId;
+        }
+
+        // Unknown status value → strictly empty (rather than silently ignoring the filter).
+        OrderStatus? statusFilter = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<OrderStatus>(status, ignoreCase: true, out var parsed))
+                return Ok(PagedResult<OrderSummaryDto>.Empty(skip, take));
+            statusFilter = parsed;
+        }
+
+        (skip, take) = NormalizePaging(skip, take);
+        var (items, total) = await _orderRepository.GetTenantOrderPageAsync(
+            tenantId, tradingPartnerId, statusFilter, from, to, skip, take, cancellationToken);
+
+        var dtos = items.Select(o => new OrderSummaryDto
+        {
+            Id = o.Id,
+            PoNumber = o.PoNumber,
+            PartnerCode = o.TradingPartner?.Code ?? string.Empty,
+            PartnerName = o.TradingPartner?.Name ?? $"Partner {o.TradingPartnerId}",
+            OrderedAt = o.OrderDate,
+            Status = o.Status.ToString(),
+            Chain = DeriveChain(o),
+            Total = o.TotalAmount,
+            Currency = o.Currency
+        }).ToList();
+
+        return Ok(new PagedResult<OrderSummaryDto>(dtos, total, skip, take));
+    }
+
+    /// <summary>
+    /// Full detail for one of the tenant's orders: header + line items + the assembled document
+    /// chain (PO → ACK → ASN → Invoice) and any exceptions. The chain is assembled from document
+    /// correlation (by PO number) and back-filled from the order's own lifecycle timestamps, so the
+    /// stepper is populated even before inbound partner documents are correlated. Returns 404 for a
+    /// tenant/order the org doesn't own.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/orders/{orderId:int}")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetOrder(int tenantId, int orderId, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (tenant, tenantError) = await ResolveTenantAsync(org, tenantId, cancellationToken);
+        if (tenant is null)
+            return tenantError!;
+
+        var order = await _orderRepository.GetByIdWithFullDetailsAsync(orderId, cancellationToken);
+        if (order is null || order.TenantId != tenantId)
+            return NotFound(new { error = $"Order '{orderId}' not found" });
+
+        var (documents, exceptions) = await AssembleDocumentChainAsync(order, tenantId, cancellationToken);
+
+        var dto = new OrderDetailDto
+        {
+            Id = order.Id,
+            PoNumber = order.PoNumber,
+            PartnerCode = order.TradingPartner?.Code ?? string.Empty,
+            PartnerName = order.TradingPartner?.Name ?? $"Partner {order.TradingPartnerId}",
+            OrderedAt = order.OrderDate,
+            Status = order.Status.ToString(),
+            Chain = documents.Select(d => d.Type).ToList(),
+            Total = order.TotalAmount,
+            Currency = order.Currency,
+            SubTotal = order.SubTotal,
+            TaxAmount = order.TaxAmount,
+            ShippingAmount = order.ShippingAmount,
+            PartnerOrderNumber = order.PartnerOrderNumber,
+            SubmittedAt = order.SubmittedAt,
+            AcknowledgedAt = order.AcknowledgedAt,
+            ShippedAt = order.ShippedAt,
+            CompletedAt = order.CompletedAt,
+            Notes = order.Notes,
+            Lines = order.Lines
+                .OrderBy(l => l.LineNumber)
+                .Select(l => new OrderLineDto
+                {
+                    LineNumber = l.LineNumber,
+                    Sku = l.Sku,
+                    VendorSku = l.VendorSku,
+                    Description = l.Description,
+                    Quantity = l.Quantity,
+                    UnitOfMeasure = l.UnitOfMeasure,
+                    UnitPrice = l.UnitPrice,
+                    LineTotal = l.LineTotal,
+                    Status = l.Status.ToString(),
+                    AcknowledgedQuantity = l.AcknowledgedQuantity,
+                    ShippedQuantity = l.ShippedQuantity,
+                    BackorderedQuantity = l.BackorderedQuantity
+                })
+                .ToList(),
+            Documents = documents,
+            Exceptions = exceptions
+        };
+
+        return Ok(dto);
+    }
+
+    /// <summary>
+    /// Unified, tenant-scoped activity feed (price-feed uploads, order status changes, connection
+    /// state, quarantined documents), filterable by type/level/date and paged. Returns 404 if the
+    /// tenant isn't the org's.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/activity")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetActivity(
+        int tenantId,
+        [FromQuery] string? type,
+        [FromQuery] string? level,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (tenant, tenantError) = await ResolveTenantAsync(org, tenantId, cancellationToken);
+        if (tenant is null)
+            return tenantError!;
+
+        (skip, take) = NormalizePaging(skip, take);
+        var (items, total) = await _activityRepository.GetTenantActivityPageAsync(
+            tenantId, type, level, from, to, skip, take, cancellationToken);
+
+        var dtos = items.Select(e => new ActivityEventDto
+        {
+            At = e.At,
+            Type = e.Type,
+            Level = e.Level,
+            Title = e.Title,
+            Detail = e.Detail,
+            CorrelationId = e.CorrelationId,
+            Link = e.Link
+        }).ToList();
+
+        return Ok(new PagedResult<ActivityEventDto>(dtos, total, skip, take));
+    }
+
+    /// <summary>Stage ordering for the document chain, so it always reads PO → ACK → ASN → Invoice.</summary>
+    private static int StageRank(string type) => type switch
+    {
+        "PO" => 0,
+        "ACK" => 1,
+        "ASN" => 2,
+        "Invoice" => 3,
+        _ => 99
+    };
+
+    /// <summary>
+    /// The chain stages present for an order, derived from its own lifecycle state (cheap, no
+    /// document lookup). PO is always present (the order is the PO); ACK/ASN follow the order's
+    /// acknowledgment/shipment signals. Invoice can't be derived from the order and is only surfaced
+    /// in the detail view (from correlated documents).
+    /// </summary>
+    private static List<string> DeriveChain(Order o)
+    {
+        var chain = new List<string> { "PO" };
+
+        var acknowledged = o.AcknowledgedAt.HasValue
+            || o.AcknowledgmentDocumentId.HasValue
+            || o.Status is OrderStatus.Acknowledged or OrderStatus.Processing
+                or OrderStatus.PartiallyShipped or OrderStatus.Shipped
+                or OrderStatus.Delivered or OrderStatus.Completed;
+        if (acknowledged)
+            chain.Add("ACK");
+
+        var shipped = o.ShippedAt.HasValue
+            || o.Status is OrderStatus.PartiallyShipped or OrderStatus.Shipped
+                or OrderStatus.Delivered or OrderStatus.Completed;
+        if (shipped)
+            chain.Add("ASN");
+
+        return chain;
+    }
+
+    /// <summary>
+    /// Assembles an order's document chain and exceptions. Real <see cref="PartnerDocument"/>s
+    /// correlated by PO number are the primary source (they carry Invoice + received-at + a
+    /// reference); the order's lifecycle timestamps back-fill any PO/ACK/ASN stage not yet present as
+    /// a correlated document. Exceptions are drawn from the order's own failure and from any
+    /// correlated document in a failed state. No document download URL is exposed (there is no
+    /// org-scoped document endpoint), so <c>ViewUrl</c> is null — metadata only.
+    /// </summary>
+    private async Task<(List<OrderDocumentDto> Documents, List<string> Exceptions)> AssembleDocumentChainAsync(
+        Order order, int tenantId, CancellationToken cancellationToken)
+    {
+        var byType = new Dictionary<string, OrderDocumentDto>(StringComparer.Ordinal);
+        var exceptions = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(order.PoNumber))
+        {
+            var chain = await _correlationRepository.GetCorrelationChainAsync(order.PoNumber, cancellationToken);
+            var partnerDocs = chain
+                .SelectMany(c => new[] { c.SourceDocument, c.TargetDocument })
+                .Where(d => d is not null)
+                .Select(d => d!)
+                .Where(d => d.TenantId is null || d.TenantId == tenantId)
+                .GroupBy(d => d.Id)
+                .Select(g => g.First())
+                .ToList();
+
+            foreach (var d in partnerDocs)
+            {
+                var type = MapDocType(d.DocumentType);
+                if (type is not null &&
+                    (!byType.TryGetValue(type, out var existing) || d.ReceivedAt < existing.ReceivedAt))
+                {
+                    byType[type] = new OrderDocumentDto
+                    {
+                        Type = type,
+                        ReceivedAt = d.ReceivedAt,
+                        Id = d.Id,
+                        Reference = d.ExternalReference,
+                        ViewUrl = null
+                    };
+                }
+
+                if (d.Status is DocumentStatus.Failed or DocumentStatus.FailedPermanent or DocumentStatus.ValidationFailed)
+                {
+                    var reason = d.ErrorDetails ?? d.LastErrorCode ?? "processing failed";
+                    exceptions.Add($"{MapDocType(d.DocumentType) ?? d.DocumentType.ToString()}: {reason}");
+                }
+            }
+        }
+
+        // Back-fill PO/ACK/ASN from the order's own lifecycle when no correlated document exists yet.
+        AddIfMissing(byType, "PO", order.SubmittedAt ?? order.OrderDate, order.EdiDocumentId, order.PoNumber);
+
+        if (order.AcknowledgedAt.HasValue || order.AcknowledgmentDocumentId.HasValue ||
+            order.Status is OrderStatus.Acknowledged or OrderStatus.Processing
+                or OrderStatus.PartiallyShipped or OrderStatus.Shipped
+                or OrderStatus.Delivered or OrderStatus.Completed)
+        {
+            AddIfMissing(byType, "ACK", order.AcknowledgedAt ?? order.OrderDate,
+                order.AcknowledgmentDocumentId, order.PartnerOrderNumber);
+        }
+
+        if (order.ShippedAt.HasValue ||
+            order.Status is OrderStatus.PartiallyShipped or OrderStatus.Shipped
+                or OrderStatus.Delivered or OrderStatus.Completed)
+        {
+            AddIfMissing(byType, "ASN", order.ShippedAt ?? order.OrderDate, null, null);
+        }
+
+        if (order.Status == OrderStatus.Failed && !string.IsNullOrWhiteSpace(order.ErrorMessage))
+            exceptions.Insert(0, order.ErrorMessage!);
+
+        var documents = byType.Values.OrderBy(d => StageRank(d.Type)).ToList();
+        return (documents, exceptions);
+    }
+
+    private static void AddIfMissing(Dictionary<string, OrderDocumentDto> byType, string type, DateTime? receivedAt, int? id, string? reference)
+    {
+        if (byType.ContainsKey(type))
+            return;
+        byType[type] = new OrderDocumentDto { Type = type, ReceivedAt = receivedAt, Id = id, Reference = reference, ViewUrl = null };
+    }
+
+    private static string? MapDocType(DocumentType type) => type switch
+    {
+        DocumentType.PurchaseOrder => "PO",
+        DocumentType.PurchaseOrderAcknowledgment => "ACK",
+        DocumentType.AdvanceShipNotice => "ASN",
+        DocumentType.Invoice => "Invoice",
+        _ => null
+    };
+
     /// <summary>Clamps paging to the documented bounds: skip ≥ 0, take in [1, 200] (default 50).</summary>
     private static (int Skip, int Take) NormalizePaging(int skip, int take)
     {
@@ -1145,4 +1468,92 @@ public class ContentRowDto
     public bool HasContent { get; set; }
     public string? Brand { get; set; }
     public string? Description { get; set; }
+}
+
+/// <summary>A row in the tenant's Orders list.</summary>
+public class OrderSummaryDto
+{
+    public int Id { get; set; }
+    public string PoNumber { get; set; } = string.Empty;
+    public string PartnerCode { get; set; } = string.Empty;
+    public string PartnerName { get; set; } = string.Empty;
+    public DateTime OrderedAt { get; set; }
+
+    /// <summary>Order status (Draft | Submitted | Acknowledged | … | Cancelled | Failed).</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>Document-chain stages present, e.g. ["PO","ACK"]. Ordered PO → ACK → ASN → Invoice.</summary>
+    public List<string> Chain { get; set; } = new();
+
+    public decimal Total { get; set; }
+    public string Currency { get; set; } = "USD";
+}
+
+/// <summary>Full order detail: summary + lines + assembled document chain + exceptions.</summary>
+public class OrderDetailDto : OrderSummaryDto
+{
+    public decimal SubTotal { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal ShippingAmount { get; set; }
+    public string? PartnerOrderNumber { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? AcknowledgedAt { get; set; }
+    public DateTime? ShippedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? Notes { get; set; }
+    public List<OrderLineDto> Lines { get; set; } = new();
+    public List<OrderDocumentDto> Documents { get; set; } = new();
+
+    /// <summary>Plain-language exceptions from failed order/document processing (empty when healthy).</summary>
+    public List<string> Exceptions { get; set; } = new();
+}
+
+public class OrderLineDto
+{
+    public int LineNumber { get; set; }
+    public string Sku { get; set; } = string.Empty;
+    public string? VendorSku { get; set; }
+    public string? Description { get; set; }
+    public decimal Quantity { get; set; }
+    public string UnitOfMeasure { get; set; } = "EA";
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public decimal? AcknowledgedQuantity { get; set; }
+    public decimal? ShippedQuantity { get; set; }
+    public decimal? BackorderedQuantity { get; set; }
+}
+
+/// <summary>A document in an order's chain. <see cref="ViewUrl"/> is null (metadata only) today.</summary>
+public class OrderDocumentDto
+{
+    /// <summary>PO | ACK | ASN | Invoice.</summary>
+    public string Type { get; set; } = string.Empty;
+    public DateTime? ReceivedAt { get; set; }
+
+    /// <summary>Underlying document id (PartnerDocument/EDI), when known.</summary>
+    public int? Id { get; set; }
+
+    /// <summary>Business reference (PO number, partner order number, etc.), when known.</summary>
+    public string? Reference { get; set; }
+
+    /// <summary>View/download URL when available; null exposes metadata only.</summary>
+    public string? ViewUrl { get; set; }
+}
+
+/// <summary>A single entry in the tenant activity feed.</summary>
+public class ActivityEventDto
+{
+    public DateTime At { get; set; }
+
+    /// <summary>PriceFeed | Order | Connection | Exception.</summary>
+    public string Type { get; set; } = string.Empty;
+
+    /// <summary>Info | Warning | Error.</summary>
+    public string Level { get; set; } = "Info";
+
+    public string Title { get; set; } = string.Empty;
+    public string? Detail { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? Link { get; set; }
 }

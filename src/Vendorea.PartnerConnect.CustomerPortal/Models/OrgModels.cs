@@ -284,3 +284,85 @@ public record StockCheckResult(bool Ok, string? Error, StockCheckResponse? Respo
     public static StockCheckResult Success(StockCheckResponse? r) => new(true, null, r);
     public static StockCheckResult Fail(string error) => new(false, error, null);
 }
+
+// ============================================================================================
+// Orders (increment 4) — tracking + document chain. Mirror the org API DTOs.
+// ============================================================================================
+
+/// <summary>A row in the Orders list (<c>GET /org/tenants/{id}/orders</c>).</summary>
+public class OrderSummaryDto
+{
+    public int Id { get; set; }
+    public string PoNumber { get; set; } = string.Empty;
+    public string PartnerCode { get; set; } = string.Empty;
+    public string PartnerName { get; set; } = string.Empty;
+    public DateTime OrderedAt { get; set; }
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>Document-chain stages present, ordered PO → ACK → ASN → Invoice.</summary>
+    public List<string> Chain { get; set; } = new();
+
+    public decimal Total { get; set; }
+    public string Currency { get; set; } = "USD";
+}
+
+/// <summary>Full order detail (<c>GET /org/tenants/{id}/orders/{id}</c>).</summary>
+public class OrderDetailDto : OrderSummaryDto
+{
+    public decimal SubTotal { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal ShippingAmount { get; set; }
+    public string? PartnerOrderNumber { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? AcknowledgedAt { get; set; }
+    public DateTime? ShippedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? Notes { get; set; }
+    public List<OrderLineDto> Lines { get; set; } = new();
+    public List<OrderDocumentDto> Documents { get; set; } = new();
+    public List<string> Exceptions { get; set; } = new();
+}
+
+public class OrderLineDto
+{
+    public int LineNumber { get; set; }
+    public string Sku { get; set; } = string.Empty;
+    public string? VendorSku { get; set; }
+    public string? Description { get; set; }
+    public decimal Quantity { get; set; }
+    public string UnitOfMeasure { get; set; } = "EA";
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public decimal? AcknowledgedQuantity { get; set; }
+    public decimal? ShippedQuantity { get; set; }
+    public decimal? BackorderedQuantity { get; set; }
+}
+
+/// <summary>A document in an order's chain. <see cref="ViewUrl"/> is null (metadata only) today.</summary>
+public class OrderDocumentDto
+{
+    /// <summary>PO | ACK | ASN | Invoice.</summary>
+    public string Type { get; set; } = string.Empty;
+    public DateTime? ReceivedAt { get; set; }
+    public int? Id { get; set; }
+    public string? Reference { get; set; }
+    public string? ViewUrl { get; set; }
+}
+
+/// <summary>A single entry in the tenant activity feed (<c>GET /org/tenants/{id}/activity</c>).</summary>
+public class ActivityEventDto
+{
+    public DateTime At { get; set; }
+
+    /// <summary>PriceFeed | Order | Connection | Exception.</summary>
+    public string Type { get; set; } = string.Empty;
+
+    /// <summary>Info | Warning | Error.</summary>
+    public string Level { get; set; } = "Info";
+
+    public string Title { get; set; } = string.Empty;
+    public string? Detail { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? Link { get; set; }
+}
