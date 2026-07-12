@@ -3,10 +3,32 @@ using Vendorea.PartnerConnect.Domain.Entities.Supplier;
 namespace Vendorea.PartnerConnect.Application.Interfaces;
 
 /// <summary>
+/// A SQL-paged page of the partner's current (latest applied snapshot) inventory items — with their
+/// per-location quantities loaded — plus the total matching count and the snapshot's freshness.
+/// Inventory is partner-level (not per-dealer): the same snapshot serves every connected tenant.
+/// </summary>
+public sealed record InventoryPage(
+    IReadOnlyList<SupplierInventoryItem> Items,
+    int Total,
+    DateTime? AsOf);
+
+/// <summary>
 /// Repository for SupplierInventoryItem entities.
 /// </summary>
 public interface ISupplierInventoryItemRepository
 {
+    /// <summary>
+    /// Returns a SQL-paged page of the partner's current inventory (latest applied snapshot), with
+    /// per-location quantities loaded, optionally filtered by a SKU/description search term. Includes
+    /// the total matching count and the snapshot's as-of timestamp.
+    /// </summary>
+    Task<InventoryPage> SearchCurrentInventoryAsync(
+        int tradingPartnerId,
+        string? search,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Gets item by ID.
     /// </summary>

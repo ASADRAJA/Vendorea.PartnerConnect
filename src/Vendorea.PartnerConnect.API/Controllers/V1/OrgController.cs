@@ -30,7 +30,13 @@ public class OrgController : ControllerBase
     private readonly ISprFreightService _freightService;
     private readonly IPartnerDistributionCenterRepository _distributionCenterRepository;
     private readonly ITenantRepository _tenantRepository;
+    private readonly ISprPriceRecordRepository _priceRepository;
+    private readonly ISupplierInventoryItemRepository _inventoryRepository;
+    private readonly IDealerContentSubscriptionRepository _contentSubscriptionRepository;
     private readonly ILogger<OrgController> _logger;
+
+    /// <summary>Default content locale for coverage/availability lookups.</summary>
+    private const string DefaultLocaleId = "EN_US";
 
     public OrgController(
         IOrgApiKeyAuthenticator authenticator,
@@ -41,6 +47,9 @@ public class OrgController : ControllerBase
         ISprFreightService freightService,
         IPartnerDistributionCenterRepository distributionCenterRepository,
         ITenantRepository tenantRepository,
+        ISprPriceRecordRepository priceRepository,
+        ISupplierInventoryItemRepository inventoryRepository,
+        IDealerContentSubscriptionRepository contentSubscriptionRepository,
         ILogger<OrgController> logger)
     {
         _authenticator = authenticator;
@@ -51,6 +60,9 @@ public class OrgController : ControllerBase
         _freightService = freightService;
         _distributionCenterRepository = distributionCenterRepository;
         _tenantRepository = tenantRepository;
+        _priceRepository = priceRepository;
+        _inventoryRepository = inventoryRepository;
+        _contentSubscriptionRepository = contentSubscriptionRepository;
         _logger = logger;
     }
 
@@ -429,6 +441,310 @@ public class OrgController : ControllerBase
         return true;
     }
 
+    // ============================================================================================
+    // Catalog (read-only, tenant-scoped): prices, inventory, content.
+    // tenantId is PC's internal Tenant.Id, which is also the DealerId on price/content records.
+    // Prices and content are per-dealer(tenant)+partner; inventory is partner-level (shared across
+    // the partner's connected tenants). Every tenantId is association-gated to the calling org.
+    // ============================================================================================
+
+    /// <summary>
+    /// Lists the partners the given tenant has an approved connection to. Drives the catalog pages'
+    /// partner selector. Returns 404 if the tenant isn't the org's.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/partners")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetTenantPartners(int tenantId, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (tenant, tenantError) = await ResolveTenantAsync(org, tenantId, cancellationToken);
+        if (tenant is null)
+            return tenantError!;
+
+        var partners = await GetConnectedPartnersAsync(org.Id, tenantId, cancellationToken);
+        return Ok(partners
+            .Select(p => new OrgCatalogPartnerDto
+            {
+                PartnerCode = p.TradingPartner!.Code,
+                PartnerName = p.TradingPartner.Name,
+                Capabilities = MapCapabilities(p.TradingPartner)
+            })
+            .ToList());
+    }
+
+    /// <summary>
+    /// Current prices for the tenant's connection with a partner (paged, searchable by SKU or
+    /// description). Cost/list/UOM come from the latest completed price feed for the tenant.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/prices")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetPrices(
+        int tenantId,
+        [FromQuery] string? partnerCode,
+        [FromQuery] string? search,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (connection, resolveError) = await ResolveTenantPartnerAsync(org, tenantId, partnerCode, cancellationToken);
+        if (resolveError is not null)
+            return resolveError;
+        if (connection is null)
+            return Ok(PagedResult<PriceRowDto>.Empty(skip, take)); // no connected partner → empty
+
+        (skip, take) = NormalizePaging(skip, take);
+        var page = await _priceRepository.GetCurrentPricePageAsync(
+            tenantId, connection.TradingPartner!.Code, search, skip, take, cancellationToken);
+
+        var items = page.Items.Select(r => new PriceRowDto
+        {
+            Sku = r.Sku,
+            Description = r.Description,
+            Cost = r.Cost,
+            ListPrice = r.ListPrice,
+            Uom = r.Uom,
+            EffectiveDate = r.EffectiveDate,
+            LastUpdatedAt = r.LastUpdatedAt
+        }).ToList();
+
+        return Ok(new PagedResult<PriceRowDto>(items, page.Total, skip, take));
+    }
+
+    /// <summary>
+    /// Price history for a single SKU: one point per completed price feed that contained it, newest
+    /// first. If the partner keeps only a single (current) feed, this returns just that record.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/prices/{sku}/history")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetPriceHistory(
+        int tenantId,
+        string sku,
+        [FromQuery] string? partnerCode,
+        CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (connection, resolveError) = await ResolveTenantPartnerAsync(org, tenantId, partnerCode, cancellationToken);
+        if (resolveError is not null)
+            return resolveError;
+        if (connection is null)
+            return Ok(new PriceHistoryDto { Sku = sku });
+
+        var history = await _priceRepository.GetPriceHistoryAsync(
+            tenantId, connection.TradingPartner!.Code, sku, 50, cancellationToken);
+
+        return Ok(new PriceHistoryDto
+        {
+            Sku = sku,
+            Points = history.Select(h => new PriceHistoryPointDto
+            {
+                Cost = h.Cost,
+                ListPrice = h.ListPrice,
+                Uom = h.Uom,
+                EffectiveDate = h.EffectiveDate,
+                EndDate = h.EndDate,
+                UpdatedAt = h.UploadedAt
+            }).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Stock by distribution center for the tenant's partner (paged, searchable). Inventory is
+    /// partner-level shared data — the same snapshot serves all the partner's connected tenants, so
+    /// the response is flagged <c>partnerLevel: true</c>.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/inventory")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetInventory(
+        int tenantId,
+        [FromQuery] string? partnerCode,
+        [FromQuery] string? search,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (connection, resolveError) = await ResolveTenantPartnerAsync(org, tenantId, partnerCode, cancellationToken);
+        if (resolveError is not null)
+            return resolveError;
+        if (connection is null)
+            return Ok(PagedResult<InventoryRowDto>.Empty(skip, take));
+
+        (skip, take) = NormalizePaging(skip, take);
+        var page = await _inventoryRepository.SearchCurrentInventoryAsync(
+            connection.TradingPartnerId, search, skip, take, cancellationToken);
+
+        var items = page.Items.Select(i => new InventoryRowDto
+        {
+            Sku = i.SupplierSku,
+            Description = i.Description,
+            Uom = i.UnitOfMeasure,
+            AsOf = page.AsOf,
+            ByDistributionCenter = i.LocationQuantities
+                .OrderBy(l => l.LocationCode)
+                .Select(l =>
+                {
+                    var onHand = l.QuantityOnHand ?? l.QuantityAvailable;
+                    return new InventoryDcDto
+                    {
+                        Dc = l.LocationCode,
+                        DcName = l.LocationName,
+                        OnHand = onHand,
+                        Status = onHand > 0 ? "InStock" : "OutOfStock"
+                    };
+                })
+                .ToList()
+        }).ToList();
+
+        return Ok(new PagedResult<InventoryRowDto>(items, page.Total, skip, take)
+        {
+            PartnerLevel = true
+        });
+    }
+
+    /// <summary>
+    /// Content coverage summary for the tenant + partner: how many of the tenant's catalog SKUs have
+    /// shared partner content, and the tenant's content subscription state (view-only).
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/content/summary")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetContentSummary(
+        int tenantId,
+        [FromQuery] string? partnerCode,
+        CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (connection, resolveError) = await ResolveTenantPartnerAsync(org, tenantId, partnerCode, cancellationToken);
+        if (resolveError is not null)
+            return resolveError;
+        if (connection is null)
+            return Ok(new ContentSummaryDto());
+
+        var coverage = await _priceRepository.GetContentCoverageAsync(
+            tenantId, connection.TradingPartner!.Code, DefaultLocaleId, cancellationToken);
+
+        var subscription = await _contentSubscriptionRepository.GetByDealerAndPartnerAsync(
+            tenantId, connection.TradingPartnerId, cancellationToken);
+
+        return Ok(new ContentSummaryDto
+        {
+            TotalSkus = coverage.TotalSkus,
+            WithContent = coverage.WithContent,
+            CoveragePct = coverage.TotalSkus > 0
+                ? Math.Round((decimal)coverage.WithContent * 100 / coverage.TotalSkus, 1)
+                : 0,
+            Subscribed = subscription?.IsEnhancedContentEnabled ?? false,
+            LastSyncAt = subscription?.LastFullRefreshAt
+        });
+    }
+
+    /// <summary>
+    /// Per-SKU content availability for the tenant's catalog (paged, searchable): whether each SKU
+    /// has shared partner content, with the brand/description when it does.
+    /// </summary>
+    [HttpGet("tenants/{tenantId:int}/content")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetContent(
+        int tenantId,
+        [FromQuery] string? partnerCode,
+        [FromQuery] string? search,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var (connection, resolveError) = await ResolveTenantPartnerAsync(org, tenantId, partnerCode, cancellationToken);
+        if (resolveError is not null)
+            return resolveError;
+        if (connection is null)
+            return Ok(PagedResult<ContentRowDto>.Empty(skip, take));
+
+        (skip, take) = NormalizePaging(skip, take);
+        var page = await _priceRepository.GetSkuContentPageAsync(
+            tenantId, connection.TradingPartner!.Code, DefaultLocaleId, search, skip, take, cancellationToken);
+
+        var items = page.Items.Select(r => new ContentRowDto
+        {
+            Sku = r.Sku,
+            HasContent = r.HasContent,
+            Brand = r.Brand,
+            Description = r.ContentDescription ?? r.Description
+        }).ToList();
+
+        return Ok(new PagedResult<ContentRowDto>(items, page.Total, skip, take));
+    }
+
+    /// <summary>Clamps paging to the documented bounds: skip ≥ 0, take in [1, 200] (default 50).</summary>
+    private static (int Skip, int Take) NormalizePaging(int skip, int take)
+    {
+        if (skip < 0) skip = 0;
+        if (take <= 0) take = 50;
+        if (take > 200) take = 200;
+        return (skip, take);
+    }
+
+    /// <summary>Resolves a tenant and association-gates it to the org (404 if not the org's).</summary>
+    private async Task<(Tenant? Tenant, IActionResult? Error)> ResolveTenantAsync(Organization org, int tenantId, CancellationToken cancellationToken)
+    {
+        var tenant = await _tenantRepository.GetByIdAsync(tenantId, cancellationToken);
+        if (tenant is null || tenant.OrganizationId != org.Id)
+            return (null, NotFound(new { error = $"Tenant '{tenantId}' not found" }));
+        return (tenant, null);
+    }
+
+    /// <summary>
+    /// Association-gates the tenant, then resolves the target partner connection: the tenant's
+    /// approved connection matching <paramref name="partnerCode"/> (or its first approved connection
+    /// when the code is omitted). Returns (null, null) when the tenant has no approved connection.
+    /// </summary>
+    private async Task<(TenantPartnerAccount? Connection, IActionResult? Error)> ResolveTenantPartnerAsync(
+        Organization org, int tenantId, string? partnerCode, CancellationToken cancellationToken)
+    {
+        var (tenant, tenantError) = await ResolveTenantAsync(org, tenantId, cancellationToken);
+        if (tenant is null)
+            return (null, tenantError);
+
+        var partners = await GetConnectedPartnersAsync(org.Id, tenantId, cancellationToken);
+
+        var connection = string.IsNullOrWhiteSpace(partnerCode)
+            ? partners.FirstOrDefault()
+            : partners.FirstOrDefault(c => string.Equals(c.TradingPartner!.Code, partnerCode, StringComparison.OrdinalIgnoreCase));
+
+        return (connection, null);
+    }
+
+    /// <summary>The tenant's approved connections (with TradingPartner loaded), one per partner.</summary>
+    private async Task<List<TenantPartnerAccount>> GetConnectedPartnersAsync(int organizationId, int tenantId, CancellationToken cancellationToken)
+    {
+        var connections = await _connectionRepository.GetConnectionsAsync(
+            organizationId, ConnectionApprovalStatus.Approved, cancellationToken);
+
+        return connections
+            .Where(c => c.TenantId == tenantId && c.TradingPartner is not null)
+            .GroupBy(c => c.TradingPartnerId)
+            .Select(g => g.First())
+            .OrderBy(c => c.TradingPartner!.Name)
+            .ToList();
+    }
+
     /// <summary>Resolves the calling org from its X-Api-Key, or returns a 401 result.</summary>
     private async Task<(Organization? Org, IActionResult? Error)> ResolveOrgAsync(CancellationToken cancellationToken)
     {
@@ -731,4 +1047,102 @@ public class UpdateOrgConnectionRequest
     /// this is accepted for forward-compatibility but not applied today.
     /// </summary>
     public string? TransportPassword { get; set; }
+}
+
+/// <summary>A generic paged list envelope: <c>{ items, total, skip, take }</c>.</summary>
+public class PagedResult<T>
+{
+    public PagedResult() { }
+
+    public PagedResult(IReadOnlyList<T> items, int total, int skip, int take)
+    {
+        Items = items;
+        Total = total;
+        Skip = skip;
+        Take = take;
+    }
+
+    public IReadOnlyList<T> Items { get; set; } = new List<T>();
+    public int Total { get; set; }
+    public int Skip { get; set; }
+    public int Take { get; set; }
+
+    /// <summary>True when the rows are partner-level shared data (not per-tenant), e.g. inventory.</summary>
+    public bool PartnerLevel { get; set; }
+
+    public static PagedResult<T> Empty(int skip, int take) => new(new List<T>(), 0, skip, take);
+}
+
+/// <summary>A partner the tenant is connected to — drives the catalog partner selector.</summary>
+public class OrgCatalogPartnerDto
+{
+    public string PartnerCode { get; set; } = string.Empty;
+    public string PartnerName { get; set; } = string.Empty;
+    public List<string> Capabilities { get; set; } = new();
+}
+
+/// <summary>A current-price row for a tenant + partner.</summary>
+public class PriceRowDto
+{
+    public string Sku { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public decimal Cost { get; set; }
+    public decimal ListPrice { get; set; }
+    public string? Uom { get; set; }
+    public DateTime? EffectiveDate { get; set; }
+    public DateTime? LastUpdatedAt { get; set; }
+}
+
+/// <summary>Price history for a SKU (empty <see cref="Points"/> if no history is available).</summary>
+public class PriceHistoryDto
+{
+    public string Sku { get; set; } = string.Empty;
+    public List<PriceHistoryPointDto> Points { get; set; } = new();
+}
+
+public class PriceHistoryPointDto
+{
+    public decimal Cost { get; set; }
+    public decimal ListPrice { get; set; }
+    public string? Uom { get; set; }
+    public DateTime? EffectiveDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>Stock-by-DC for a SKU. Inventory is partner-level shared data (see PagedResult.PartnerLevel).</summary>
+public class InventoryRowDto
+{
+    public string Sku { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? Uom { get; set; }
+    public DateTime? AsOf { get; set; }
+    public List<InventoryDcDto> ByDistributionCenter { get; set; } = new();
+}
+
+public class InventoryDcDto
+{
+    public string Dc { get; set; } = string.Empty;
+    public string? DcName { get; set; }
+    public int OnHand { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+/// <summary>Content coverage + subscription state for a tenant + partner (view-only).</summary>
+public class ContentSummaryDto
+{
+    public int TotalSkus { get; set; }
+    public int WithContent { get; set; }
+    public decimal CoveragePct { get; set; }
+    public bool Subscribed { get; set; }
+    public DateTime? LastSyncAt { get; set; }
+}
+
+/// <summary>Per-SKU content availability for a tenant's catalog.</summary>
+public class ContentRowDto
+{
+    public string Sku { get; set; } = string.Empty;
+    public bool HasContent { get; set; }
+    public string? Brand { get; set; }
+    public string? Description { get; set; }
 }

@@ -83,6 +83,54 @@ html, body {
     color: var(--neutral-foreground-hint, #616161);
 }
 
+/* Command bar (page-level actions) */
+.command-bar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Catalog toolbar: partner selector + search */
+.catalog-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+}
+
+.page-message {
+    margin-bottom: 1rem;
+}
+
+/* Live SKU lookup card */
+.lookup-card {
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.lookup-result {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+/* Price history panel */
+.history-panel {
+    padding: 1rem 1.25rem;
+    margin-top: 1.25rem;
+}
+
+/* Row of badges (e.g. per-DC stock) */
+.badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
 /* Empty state */
 .empty-state {
     padding: 2rem;

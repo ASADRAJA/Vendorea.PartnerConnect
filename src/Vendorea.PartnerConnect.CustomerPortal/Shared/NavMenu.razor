@@ -1,11 +1,16 @@
-@* Primary navigation rail. Dashboard + Connections are live (increment 1); the remaining
-   entries are rendered but disabled ("coming soon") until later increments. *@
+@* Primary navigation rail. Dashboard + Connections (increment 1-2) and Catalog (increment 3)
+   are live; the remaining entries are rendered but disabled ("coming soon") until later increments. *@
 
 <FluentNavMenu Width="240" Collapsible="true" Title="Navigation" @bind-Expanded="_expanded">
     <FluentNavLink Href="/" Match="NavLinkMatch.All">Dashboard</FluentNavLink>
     <FluentNavLink Href="/connections">Connections</FluentNavLink>
 
-    <FluentNavLink Disabled="true">Catalog</FluentNavLink>
+    <FluentNavGroup Title="Catalog" Expanded="true">
+        <FluentNavLink Href="/catalog/prices">Prices</FluentNavLink>
+        <FluentNavLink Href="/catalog/inventory">Inventory</FluentNavLink>
+        <FluentNavLink Href="/catalog/content">Content</FluentNavLink>
+    </FluentNavGroup>
+
     <FluentNavLink Disabled="true">Orders</FluentNavLink>
     <FluentNavLink Disabled="true">Activity</FluentNavLink>
 

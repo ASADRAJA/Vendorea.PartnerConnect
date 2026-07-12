@@ -1,0 +1,249 @@
+@page "/catalog/inventory"
+@attribute [Authorize]
+@implements IDisposable
+@inject ApiClient Api
+@inject PortalState State
+
+<PageTitle>Inventory — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Inventory</h1>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Stealth" Disabled="@(_selectedPartnerCode is null)" OnClick="RefreshAsync">Refresh</FluentButton>
+    </div>
+</div>
+
+@if (State.SelectedTenant is null)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">Select a tenant</div>
+            <div class="empty-sub">Choose a tenant from the switcher above to view inventory.</div>
+        </div>
+    </FluentCard>
+}
+else if (!_partnersLoaded)
+{
+    <FluentProgressRing />
+}
+else if (_partners.Count == 0)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">No connected partners</div>
+            <div class="empty-sub">@State.SelectedTenant.Name has no approved partner connections yet.</div>
+        </div>
+    </FluentCard>
+}
+else
+{
+    <div class="catalog-toolbar">
+        @if (_partners.Count > 1)
+        {
+            <FluentSelect TOption="OrgCatalogPartnerDto"
+                          Label="Partner"
+                          Items="@_partners"
+                          OptionText="@(p => p.PartnerName)"
+                          OptionValue="@(p => p.PartnerCode)"
+                          @bind-Value="_selectedPartnerCode"
+                          @bind-Value:after="OnPartnerChanged"
+                          Width="220px" />
+        }
+        <FluentSearch @bind-Value="_search"
+                      @bind-Value:after="OnSearchAsync"
+                      Placeholder="Search SKU or description"
+                      Style="width: 320px;" />
+    </div>
+
+    <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false" Class="page-message">
+        Inventory is <strong>partner-level</strong> shared data — the same distribution-center stock serves
+        every tenant connected to this partner.
+    </FluentMessageBar>
+
+    @* Live SKU lookup — reuses POST /org/stock-check for real-time stock + dealer pricing. *@
+    <FluentCard Class="lookup-card">
+        <div class="tile-label">Live SKU lookup</div>
+        <div class="tile-sub muted">Real-time stock &amp; dealer price straight from the partner.</div>
+        <div class="catalog-toolbar">
+            <FluentTextField @bind-Value="_lookupItem" Placeholder="Item number (e.g. SPR + stock #)" Style="width: 280px;" />
+            <FluentButton Appearance="Appearance.Accent" Disabled="@(_lookupBusy || string.IsNullOrWhiteSpace(_lookupItem))"
+                          OnClick="RunLookupAsync">Check stock</FluentButton>
+        </div>
+
+        @if (_lookupError is not null)
+        {
+            <FluentMessageBar Intent="MessageIntent.Error" AllowDismiss="true" OnDismiss="@(() => _lookupError = null)">
+                @_lookupError
+            </FluentMessageBar>
+        }
+        else if (_lookupBusy)
+        {
+            <FluentProgressRing />
+        }
+        else if (_lookup is not null)
+        {
+            @if (!_lookup.Success)
+            {
+                <FluentMessageBar Intent="MessageIntent.Warning" AllowDismiss="false">
+                    @(_lookup.Message ?? "The partner returned no result for that item.")
+                </FluentMessageBar>
+            }
+            else
+            {
+                <div class="lookup-result">
+                    <div class="tile-value">@(_lookup.Description ?? _lookup.ItemNumber)</div>
+                    <div class="tile-sub">Item: @_lookup.ItemNumber &middot; UOM: @Dash(_lookup.UnitOfMeasure) &middot; Status: @Dash(_lookup.ItemStatus)</div>
+                    <div class="tile-sub">
+                        Retail: @Money(_lookup.RetailPrice)
+                        @if (_lookup.PricingIncluded)
+                        {
+                            <span> &middot; <strong>Dealer: @Money(_lookup.DealerPrice)</strong></span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_lookup.HazmatMessage))
+                    {
+                        <div class="tile-sub">Hazmat: @_lookup.HazmatMessage</div>
+                    }
+                    @if (_lookup.DistributionCenters.Count > 0)
+                    {
+                        <FluentDataGrid Items="@_lookup.DistributionCenters.AsQueryable()" TGridItem="DcAvailabilityDto"
+                                        GridTemplateColumns="1fr 2fr 1fr 0.8fr 1fr" Style="width: 100%;">
+                            <PropertyColumn Title="DC" Property="@(d => d.DcNumber)" />
+                            <PropertyColumn Title="Name" Property="@(d => d.DcName)" />
+                            <PropertyColumn Title="Available" Property="@(d => d.Available)" Align="Align.End" />
+                            <PropertyColumn Title="UOM" Property="@(d => d.UnitOfMeasure)" />
+                            <TemplateColumn Title="Expected">@Dash(context.Expected)</TemplateColumn>
+                        </FluentDataGrid>
+                    }
+                </div>
+            }
+        }
+    </FluentCard>
+
+    <FluentDataGrid @ref="_grid" TGridItem="InventoryRowDto" ItemsProvider="_provider" Pagination="_pagination"
+                    GridTemplateColumns="1.2fr 3fr 0.8fr 3fr 1.4fr" Style="width: 100%;">
+        <PropertyColumn Title="SKU" Property="@(i => i.Sku)" />
+        <PropertyColumn Title="Description" Property="@(i => i.Description)" />
+        <PropertyColumn Title="On hand" Property="@(i => i.TotalOnHand)" Align="Align.End" />
+        <TemplateColumn Title="By distribution center">
+            @if (context.ByDistributionCenter.Count == 0)
+            {
+                <span class="muted">—</span>
+            }
+            else
+            {
+                <div class="badge-row">
+                    @foreach (var dc in context.ByDistributionCenter)
+                    {
+                        <FluentBadge Appearance="@(dc.OnHand > 0 ? Appearance.Accent : Appearance.Lightweight)"
+                                     title="@(dc.DcName ?? dc.Dc)">
+                            @dc.Dc: @dc.OnHand
+                        </FluentBadge>
+                    }
+                </div>
+            }
+        </TemplateColumn>
+        <TemplateColumn Title="As of">@Fmt(context.AsOf)</TemplateColumn>
+    </FluentDataGrid>
+
+    <FluentPaginator State="_pagination" />
+}
+
+@code {
+    private bool _partnersLoaded;
+    private List<OrgCatalogPartnerDto> _partners = new();
+    private string? _selectedPartnerCode;
+    private string _search = string.Empty;
+
+    private FluentDataGrid<InventoryRowDto>? _grid;
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 50 };
+    private GridItemsProvider<InventoryRowDto> _provider = default!;
+
+    private string _lookupItem = string.Empty;
+    private bool _lookupBusy;
+    private string? _lookupError;
+    private StockCheckResponse? _lookup;
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += OnStateChanged;
+        _provider = async request =>
+        {
+            if (State.SelectedTenant is null || _selectedPartnerCode is null)
+                return GridItemsProviderResult.From(Array.Empty<InventoryRowDto>(), 0);
+
+            var take = request.Count ?? _pagination.ItemsPerPage;
+            var page = await Api.GetInventoryAsync(
+                State.SelectedTenant.Id, _selectedPartnerCode, _search, request.StartIndex, take, request.CancellationToken);
+            return GridItemsProviderResult.From(page.Items, page.Total);
+        };
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadPartnersAsync();
+
+    private async Task LoadPartnersAsync()
+    {
+        _partnersLoaded = false;
+        _lookup = null;
+        _lookupError = null;
+        if (State.SelectedTenant is null)
+        {
+            _partners = new();
+            _partnersLoaded = true;
+            return;
+        }
+
+        _partners = await Api.GetTenantPartnersAsync(State.SelectedTenant.Id);
+        _selectedPartnerCode = _partners.FirstOrDefault()?.PartnerCode;
+        _partnersLoaded = true;
+        await RefreshGridAsync();
+    }
+
+    private void OnStateChanged() => _ = ReloadForTenantAsync();
+
+    private async Task ReloadForTenantAsync()
+    {
+        await LoadPartnersAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnPartnerChanged() => await RefreshGridAsync();
+    private async Task OnSearchAsync() => await RefreshGridAsync();
+    private async Task RefreshAsync() => await RefreshGridAsync();
+
+    private async Task RefreshGridAsync()
+    {
+        if (_grid is not null)
+            await _grid.RefreshDataAsync();
+    }
+
+    private async Task RunLookupAsync()
+    {
+        if (State.SelectedTenant is null || string.IsNullOrWhiteSpace(_lookupItem))
+            return;
+
+        _lookupBusy = true;
+        _lookupError = null;
+        _lookup = null;
+
+        var request = new StockCheckRequest
+        {
+            ExternalTenantId = State.SelectedTenant.ExternalId ?? string.Empty,
+            ItemNumber = _lookupItem.Trim(),
+            AvailableOnly = false
+        };
+        var result = await Api.StockCheckAsync(request);
+        _lookupBusy = false;
+
+        if (result.Ok)
+            _lookup = result.Response;
+        else
+            _lookupError = result.Error;
+    }
+
+    private static string Money(decimal? value) => value is { } v ? v.ToString("C2") : "—";
+    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s!;
+
+    void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
+}

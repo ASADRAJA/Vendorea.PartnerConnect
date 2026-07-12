@@ -183,6 +183,161 @@ public class ApiClient
         }
     }
 
+    // ========================================================================================
+    // Catalog (increment 3): prices, inventory, content — all tenant-scoped and read-only.
+    // ========================================================================================
+
+    /// <summary>The partners the tenant is connected to (drives the catalog partner selector).</summary>
+    public async Task<List<OrgCatalogPartnerDto>> GetTenantPartnersAsync(int tenantId, CancellationToken cancellationToken = default)
+        => await GetListAsync<OrgCatalogPartnerDto>($"/api/v1/org/tenants/{tenantId}/partners", cancellationToken);
+
+    /// <summary>Current prices for a tenant + partner (paged, searchable).</summary>
+    public async Task<PagedResult<PriceRowDto>> GetPricesAsync(
+        int tenantId, string? partnerCode, string? search, int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(("partnerCode", partnerCode), ("search", search), ("skip", skip.ToString()), ("take", take.ToString()));
+        return await GetPagedAsync<PriceRowDto>($"/api/v1/org/tenants/{tenantId}/prices{query}", cancellationToken);
+    }
+
+    /// <summary>Price history for a single SKU (empty Points when no history is tracked).</summary>
+    public async Task<PriceHistoryDto?> GetPriceHistoryAsync(
+        int tenantId, string sku, string? partnerCode, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(("partnerCode", partnerCode));
+        return await GetJsonAsync<PriceHistoryDto>(
+            $"/api/v1/org/tenants/{tenantId}/prices/{Uri.EscapeDataString(sku)}/history{query}", cancellationToken);
+    }
+
+    /// <summary>Partner-level inventory (stock by DC) for a tenant's partner (paged, searchable).</summary>
+    public async Task<PagedResult<InventoryRowDto>> GetInventoryAsync(
+        int tenantId, string? partnerCode, string? search, int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(("partnerCode", partnerCode), ("search", search), ("skip", skip.ToString()), ("take", take.ToString()));
+        return await GetPagedAsync<InventoryRowDto>($"/api/v1/org/tenants/{tenantId}/inventory{query}", cancellationToken);
+    }
+
+    /// <summary>Content coverage + subscription summary for a tenant + partner.</summary>
+    public async Task<ContentSummaryDto?> GetContentSummaryAsync(
+        int tenantId, string? partnerCode, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(("partnerCode", partnerCode));
+        return await GetJsonAsync<ContentSummaryDto>($"/api/v1/org/tenants/{tenantId}/content/summary{query}", cancellationToken);
+    }
+
+    /// <summary>Per-SKU content availability for a tenant + partner (paged, searchable).</summary>
+    public async Task<PagedResult<ContentRowDto>> GetContentAsync(
+        int tenantId, string? partnerCode, string? search, int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(("partnerCode", partnerCode), ("search", search), ("skip", skip.ToString()), ("take", take.ToString()));
+        return await GetPagedAsync<ContentRowDto>($"/api/v1/org/tenants/{tenantId}/content{query}", cancellationToken);
+    }
+
+    /// <summary>Live SPR stock/price lookup. Distinguishes no-connection / not-configured from data.</summary>
+    public async Task<StockCheckResult> StockCheckAsync(StockCheckRequest body, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Post, "/api/v1/org/stock-check");
+            request.Content = JsonContent.Create(body);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var payload = await response.Content.ReadFromJsonAsync<StockCheckResponse>(cancellationToken: cancellationToken);
+                return StockCheckResult.Success(payload);
+            }
+
+            string? message = null;
+            try
+            {
+                using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+                if (doc.RootElement.TryGetProperty("error", out var err) && err.ValueKind == System.Text.Json.JsonValueKind.String)
+                    message = err.GetString();
+            }
+            catch { /* non-JSON body */ }
+
+            return StockCheckResult.Fail(message ?? $"Stock check failed ({(int)response.StatusCode}).");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Stock check failed for tenant {ExternalTenantId}", body.ExternalTenantId);
+            return StockCheckResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>GETs a paged result; returns an empty page on any non-success/transport error.</summary>
+    private async Task<PagedResult<T>> GetPagedAsync<T>(string requestUri, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Get, requestUri);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("GET {Uri} returned {StatusCode}", requestUri, (int)response.StatusCode);
+                return new PagedResult<T>();
+            }
+            return await response.Content.ReadFromJsonAsync<PagedResult<T>>(cancellationToken: cancellationToken) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed GET {Uri}", requestUri);
+            return new PagedResult<T>();
+        }
+    }
+
+    /// <summary>GETs a JSON object; returns null on any non-success/transport error.</summary>
+    private async Task<T?> GetJsonAsync<T>(string requestUri, CancellationToken cancellationToken) where T : class
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Get, requestUri);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("GET {Uri} returned {StatusCode}", requestUri, (int)response.StatusCode);
+                return null;
+            }
+            return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed GET {Uri}", requestUri);
+            return null;
+        }
+    }
+
+    /// <summary>GETs a JSON array; returns an empty list on any non-success/transport error.</summary>
+    private async Task<List<T>> GetListAsync<T>(string requestUri, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Get, requestUri);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("GET {Uri} returned {StatusCode}", requestUri, (int)response.StatusCode);
+                return new();
+            }
+            return await response.Content.ReadFromJsonAsync<List<T>>(cancellationToken: cancellationToken) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed GET {Uri}", requestUri);
+            return new();
+        }
+    }
+
+    /// <summary>Builds a <c>?a=b&amp;c=d</c> query string from non-empty pairs (values URL-encoded).</summary>
+    private static string BuildQuery(params (string Key, string? Value)[] pairs)
+    {
+        var parts = pairs
+            .Where(p => !string.IsNullOrWhiteSpace(p.Value))
+            .Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value!)}");
+        var query = string.Join("&", parts);
+        return string.IsNullOrEmpty(query) ? string.Empty : $"?{query}";
+    }
+
     /// <summary>Maps a mutation response to a result, extracting the API's <c>{ error }</c> message on failure.</summary>
     private static async Task<ConnectionActionResult> ToActionResultAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
