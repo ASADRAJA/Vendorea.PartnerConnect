@@ -92,6 +92,119 @@ public class ApiClient
         }
     }
 
+    /// <summary>Connection detail. Returns null on any non-success/transport error.</summary>
+    public async Task<OrgConnectionDetailDto?> GetConnectionAsync(int id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Get, $"/api/v1/org/connections/{id}");
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("GET /org/connections/{Id} returned {StatusCode}", id, (int)response.StatusCode);
+                return null;
+            }
+            return await response.Content.ReadFromJsonAsync<OrgConnectionDetailDto>(cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get connection {Id}", id);
+            return null;
+        }
+    }
+
+    /// <summary>Updates a connection's editable configuration.</summary>
+    public async Task<ConnectionActionResult> UpdateConnectionAsync(int id, UpdateOrgConnectionRequest body, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Put, $"/api/v1/org/connections/{id}");
+            request.Content = JsonContent.Create(body);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            return await ToActionResultAsync(response, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update connection {Id}", id);
+            return ConnectionActionResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>Suspends an approved connection.</summary>
+    public async Task<ConnectionActionResult> SuspendConnectionAsync(int id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Post, $"/api/v1/org/connections/{id}/suspend");
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            return await ToActionResultAsync(response, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to suspend connection {Id}", id);
+            return ConnectionActionResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>Disconnects (cancels/unsubscribes) a connection.</summary>
+    public async Task<ConnectionActionResult> DisconnectConnectionAsync(int id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Delete, $"/api/v1/org/connections/{id}");
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            return await ToActionResultAsync(response, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to disconnect connection {Id}", id);
+            return ConnectionActionResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>A partner's distribution centers. Returns an empty list on any non-success/transport error.</summary>
+    public async Task<List<OrgDistributionCenterDto>> GetPartnerDistributionCentersAsync(string partnerCode, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Get, $"/api/v1/org/partners/{Uri.EscapeDataString(partnerCode)}/distribution-centers");
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("GET /org/partners/{Code}/distribution-centers returned {StatusCode}", partnerCode, (int)response.StatusCode);
+                return new();
+            }
+            return await response.Content.ReadFromJsonAsync<List<OrgDistributionCenterDto>>(cancellationToken: cancellationToken) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get distribution centers for {Code}", partnerCode);
+            return new();
+        }
+    }
+
+    /// <summary>Maps a mutation response to a result, extracting the API's <c>{ error }</c> message on failure.</summary>
+    private static async Task<ConnectionActionResult> ToActionResultAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadFromJsonAsync<OrgConnectionDetailDto>(cancellationToken: cancellationToken);
+            return ConnectionActionResult.Ok(detail);
+        }
+
+        string? message = null;
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.ValueKind == System.Text.Json.JsonValueKind.String)
+                message = err.GetString();
+        }
+        catch { /* non-JSON body */ }
+
+        return ConnectionActionResult.Fail(message ?? $"Request failed ({(int)response.StatusCode}).");
+    }
+
     /// <summary>Builds a request with the current user's org API key attached as X-Api-Key.</summary>
     private HttpRequestMessage BuildRequest(HttpMethod method, string requestUri)
     {

@@ -1,25 +1,373 @@
 @page "/connections/{Code}"
 @attribute [Authorize]
+@inject ApiClient Api
+@inject PortalState State
+@inject IDialogService DialogService
 @inject NavigationManager Navigation
 
-<PageTitle>Connection @Code — PartnerConnect</PageTitle>
+<PageTitle>@(_connection?.PartnerName ?? "Connection") — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Connection @Code</h1>
-    <FluentButton Appearance="Appearance.Stealth" OnClick="@(() => Navigation.NavigateTo("/connections"))">Back to connections</FluentButton>
+    <div>
+        <FluentAnchor Href="/connections" Appearance="Appearance.Hypertext">← Connections</FluentAnchor>
+        <h1 class="page-title">
+            @(_connection?.PartnerName ?? $"Connection {Code}")
+            @if (_connection is not null)
+            {
+                <FluentBadge Appearance="@BadgeAppearance(_connection.Status)" Class="status-badge">@_connection.Status</FluentBadge>
+            }
+        </h1>
+    </div>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Accent"
+                      Disabled="@(_busy || !CanEditConfig)"
+                      OnClick="SaveAsync">Save</FluentButton>
+        <FluentButton Appearance="Appearance.Outline"
+                      Disabled="@(_busy || !CanSuspend)"
+                      OnClick="SuspendAsync">Suspend</FluentButton>
+        <FluentButton Appearance="Appearance.Outline"
+                      Disabled="@(_busy || !CanDisconnect)"
+                      OnClick="ConfirmDisconnectAsync">Disconnect</FluentButton>
+    </div>
 </div>
 
-<FluentCard>
-    <div class="tile">
-        <div class="tile-label">Connection</div>
-        <div class="tile-value">@Code</div>
-        <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false">
-            Detail coming in the next increment.
-        </FluentMessageBar>
-    </div>
-</FluentCard>
+@if (_message is not null)
+{
+    <FluentMessageBar Intent="@_messageIntent" AllowDismiss="true" OnDismiss="@(() => _message = null)" Class="page-message">
+        @_message
+    </FluentMessageBar>
+}
+
+@if (!_loaded)
+{
+    <FluentProgressRing />
+}
+else if (_connection is null)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">Connection not found</div>
+            <div class="empty-sub">This connection doesn't exist or isn't available to your organization.</div>
+        </div>
+    </FluentCard>
+}
+else
+{
+    <FluentTabs @bind-ActiveTabId="_activeTab">
+        <FluentTab Label="Status" Id="tab-status">
+            <div class="detail-grid">
+                <FluentCard>
+                    <div class="tile">
+                        <div class="tile-label">Approval</div>
+                        <div class="tile-value">@_connection.Status</div>
+                        <div class="tile-sub">Approval state: @_connection.ApprovalStatus</div>
+                        @if (!string.IsNullOrWhiteSpace(_connection.DecisionReason))
+                        {
+                            <div class="tile-sub">Reason: @_connection.DecisionReason</div>
+                        }
+                    </div>
+                </FluentCard>
+
+                <FluentCard>
+                    <div class="tile">
+                        <div class="tile-label">Timeline</div>
+                        <div class="tile-sub">Requested: @Fmt(_connection.RequestedAt)</div>
+                        <div class="tile-sub">Approved: @Fmt(_connection.ApprovedAt)</div>
+                        <div class="tile-sub">Last decision: @Fmt(_connection.DecidedAt)</div>
+                    </div>
+                </FluentCard>
+
+                <FluentCard>
+                    <div class="tile">
+                        <div class="tile-label">Health</div>
+                        <div class="tile-sub">Last sync: @Fmt(_connection.Health.LastSyncAt)</div>
+                        <div class="tile-sub">
+                            Last error:
+                            @if (string.IsNullOrWhiteSpace(_connection.Health.LastError))
+                            {
+                                <span>None</span>
+                            }
+                            else
+                            {
+                                <span class="error-text">@_connection.Health.LastError</span>
+                            }
+                        </div>
+                    </div>
+                </FluentCard>
+
+                <FluentCard>
+                    <div class="tile">
+                        <div class="tile-label">Capabilities</div>
+                        @if (_connection.Capabilities.Count == 0)
+                        {
+                            <div class="tile-sub muted">None published</div>
+                        }
+                        else
+                        {
+                            <div class="badge-row">
+                                @foreach (var cap in _connection.Capabilities)
+                                {
+                                    <FluentBadge Appearance="Appearance.Neutral">@cap</FluentBadge>
+                                }
+                            </div>
+                        }
+                    </div>
+                </FluentCard>
+            </div>
+        </FluentTab>
+
+        <FluentTab Label="Configuration" Id="tab-config">
+            <div class="config-form">
+                @if (!CanEditConfig)
+                {
+                    <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false">
+                        This connection is @_connection.Status.ToLowerInvariant() and its configuration is read-only.
+                    </FluentMessageBar>
+                }
+
+                <FluentTextField @bind-Value="_form.PartnerAccountNumber" Label="Partner account number"
+                                 Disabled="@(!CanEditConfig)" Style="width: 320px;" />
+
+                <FluentTextField @bind-Value="_form.DisplayName" Label="Display name (optional)"
+                                 Disabled="@(!CanEditConfig)" Style="width: 320px;" />
+
+                <div class="field-group">
+                    <label class="field-label">Distribution centers</label>
+                    @if (_dcLoading)
+                    {
+                        <FluentProgressRing />
+                    }
+                    else if (_distributionCenters.Count == 0)
+                    {
+                        <div class="tile-sub muted">No distribution centers published for this partner.</div>
+                    }
+                    else
+                    {
+                        <div class="dc-list">
+                            @foreach (var dc in _distributionCenters)
+                            {
+                                <FluentCheckbox Value="@_selectedDcs.Contains(dc.Code)"
+                                                ValueChanged="@(v => ToggleDc(dc.Code, v))"
+                                                Disabled="@(!CanEditConfig)"
+                                                Label="@dc.DisplayLabel" />
+                            }
+                        </div>
+                    }
+                </div>
+
+                <FluentTextField @bind-Value="_form.OrderType" Label="Default order type (preference)"
+                                 Disabled="@(!CanEditConfig)" Style="width: 200px;" />
+
+                <FluentCheckbox @bind-Value="_form.ContentSubscribed" Label="Subscribed to product content"
+                                Disabled="@(!CanEditConfig)" />
+
+                <FluentDivider Class="section-divider" />
+
+                <div class="field-group">
+                    <label class="field-label">Transport</label>
+                    <FluentBadge Appearance="Appearance.Lightweight">Managed by operator</FluentBadge>
+                    <div class="tile-sub">Type: @Dash(_connection.Config.Transport.Type)</div>
+                    <div class="tile-sub">Host: @Dash(_connection.Config.Transport.Host)</div>
+                    <div class="tile-sub">Username: @Dash(_connection.Config.Transport.Username)</div>
+                    <div class="tile-sub">
+                        Password: @(_connection.Config.Transport.HasPassword ? "Set" : "Not set")
+                    </div>
+                    <div class="tile-sub muted">
+                        Transport credentials are shared partner-level settings and are configured by
+                        PartnerConnect operators.
+                    </div>
+                </div>
+            </div>
+        </FluentTab>
+
+        <FluentTab Label="Activity" Id="tab-activity">
+            <div class="tile">
+                <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
+                <div class="tile-sub">A per-connection activity feed will appear here in a later release.</div>
+            </div>
+        </FluentTab>
+    </FluentTabs>
+}
 
 @code {
     [Parameter]
     public string Code { get; set; } = string.Empty;
+
+    private bool _loaded;
+    private bool _busy;
+    private bool _dcLoading;
+    private string _activeTab = "tab-status";
+
+    private OrgConnectionDetailDto? _connection;
+    private List<OrgDistributionCenterDto> _distributionCenters = new();
+    private HashSet<string> _selectedDcs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConfigForm _form = new();
+
+    private string? _message;
+    private MessageIntent _messageIntent = MessageIntent.Success;
+
+    private int ConnectionId => int.TryParse(Code, out var id) ? id : 0;
+
+    // Terminal states are read-only; Pending/Active/Suspended can still be edited.
+    private bool CanEditConfig => _connection is { Status: "Pending" or "Active" or "Suspended" };
+    private bool CanSuspend => _connection is { Status: "Active" };
+    private bool CanDisconnect => _connection is { Status: "Pending" or "Active" or "Suspended" };
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loaded = false;
+        _connection = ConnectionId > 0 ? await Api.GetConnectionAsync(ConnectionId) : null;
+        _loaded = true;
+
+        if (_connection is not null)
+        {
+            _form.PartnerAccountNumber = _connection.Config.PartnerAccountNumber;
+            _form.DisplayName = _connection.Config.DisplayName;
+            _form.OrderType = _connection.Config.Preferences.OrderType;
+            _form.ContentSubscribed = _connection.Config.Preferences.ContentSubscribed ?? false;
+            _selectedDcs = new HashSet<string>(_connection.Config.SelectedDistributionCenters, StringComparer.OrdinalIgnoreCase);
+
+            await LoadDistributionCentersAsync(_connection.PartnerCode);
+        }
+    }
+
+    private async Task LoadDistributionCentersAsync(string partnerCode)
+    {
+        if (string.IsNullOrWhiteSpace(partnerCode))
+            return;
+
+        _dcLoading = true;
+        _distributionCenters = await Api.GetPartnerDistributionCentersAsync(partnerCode);
+        _dcLoading = false;
+    }
+
+    private void ToggleDc(string code, bool selected)
+    {
+        if (selected) _selectedDcs.Add(code);
+        else _selectedDcs.Remove(code);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_connection is null || !CanEditConfig)
+            return;
+
+        _busy = true;
+        _message = null;
+
+        var request = new UpdateOrgConnectionRequest
+        {
+            PartnerAccountNumber = _form.PartnerAccountNumber,
+            DisplayName = _form.DisplayName ?? string.Empty,
+            SelectedDistributionCenters = _selectedDcs.ToList(),
+            Preferences = new OrgConnectionPreferencesDto
+            {
+                OrderType = _form.OrderType,
+                ContentSubscribed = _form.ContentSubscribed
+            }
+        };
+
+        var result = await Api.UpdateConnectionAsync(_connection.Id, request);
+        _busy = false;
+
+        if (result.Success)
+        {
+            ApplyResult(result.Connection);
+            ShowMessage("Configuration saved.", MessageIntent.Success);
+        }
+        else
+        {
+            ShowMessage(result.Error ?? "Couldn't save the configuration.", MessageIntent.Error);
+        }
+    }
+
+    private async Task SuspendAsync()
+    {
+        if (_connection is null || !CanSuspend)
+            return;
+
+        _busy = true;
+        _message = null;
+        var result = await Api.SuspendConnectionAsync(_connection.Id);
+        _busy = false;
+
+        if (result.Success)
+        {
+            ApplyResult(result.Connection);
+            ShowMessage("Connection suspended.", MessageIntent.Success);
+        }
+        else
+        {
+            ShowMessage(result.Error ?? "Couldn't suspend the connection.", MessageIntent.Error);
+        }
+    }
+
+    private async Task ConfirmDisconnectAsync()
+    {
+        if (_connection is null || !CanDisconnect)
+            return;
+
+        var dialog = await DialogService.ShowConfirmationAsync(
+            $"Disconnect from {_connection.PartnerName}? This disables the connection and stops data exchange. This can't be undone from the portal.",
+            "Disconnect",
+            "Cancel",
+            "Disconnect connection?");
+        var result = await dialog.Result;
+        if (result.Cancelled)
+            return;
+
+        _busy = true;
+        _message = null;
+        var actionResult = await Api.DisconnectConnectionAsync(_connection.Id);
+        _busy = false;
+
+        if (actionResult.Success)
+        {
+            ApplyResult(actionResult.Connection);
+            ShowMessage("Connection disconnected.", MessageIntent.Success);
+        }
+        else
+        {
+            ShowMessage(actionResult.Error ?? "Couldn't disconnect the connection.", MessageIntent.Error);
+        }
+    }
+
+    private void ApplyResult(OrgConnectionDetailDto? updated)
+    {
+        if (updated is null)
+            return;
+        _connection = updated;
+        _form.PartnerAccountNumber = updated.Config.PartnerAccountNumber;
+        _form.DisplayName = updated.Config.DisplayName;
+        _form.OrderType = updated.Config.Preferences.OrderType;
+        _form.ContentSubscribed = updated.Config.Preferences.ContentSubscribed ?? false;
+        _selectedDcs = new HashSet<string>(updated.Config.SelectedDistributionCenters, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void ShowMessage(string message, MessageIntent intent)
+    {
+        _message = message;
+        _messageIntent = intent;
+    }
+
+    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s!;
+
+    private static Appearance BadgeAppearance(string status) => status.ToLowerInvariant() switch
+    {
+        "active" => Appearance.Accent,
+        "pending" => Appearance.Neutral,
+        "suspended" => Appearance.Neutral,
+        _ => Appearance.Lightweight
+    };
+
+    private sealed class ConfigForm
+    {
+        public string? PartnerAccountNumber { get; set; }
+        public string? DisplayName { get; set; }
+        public string? OrderType { get; set; }
+        public bool ContentSubscribed { get; set; }
+    }
 }
