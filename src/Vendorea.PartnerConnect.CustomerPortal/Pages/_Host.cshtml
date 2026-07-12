@@ -6,4 +6,6 @@
     Layout = "_Layout";
 }
 
-<component type="typeof(App)" render-mode="ServerPrerendered" />
+@* Server (not ServerPrerendered): Fluent UI Blazor components (e.g. FluentMenu/providers)
+   fail during the static prerender pass; interactive-only rendering avoids that class of error. *@
+<component type="typeof(App)" render-mode="Server" />
