@@ -1,0 +1,9 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@namespace Vendorea.PartnerConnect.CustomerPortal.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = "_Layout";
+}
+
+<component type="typeof(App)" render-mode="ServerPrerendered" />

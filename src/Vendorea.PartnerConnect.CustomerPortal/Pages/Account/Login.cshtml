@@ -1,0 +1,80 @@
+@page
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@model Vendorea.PartnerConnect.CustomerPortal.Pages.Account.LoginModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign in — PartnerConnect</title>
+    <base href="~/" />
+    <style>
+        :root {
+            --accent: #0f6cbd;
+            --neutral-bg: #faf9f8;
+            --border: #e1dfdd;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Segoe UI", "Segoe UI Web (West European)", system-ui, -apple-system, sans-serif;
+            background: var(--neutral-bg);
+            margin: 0;
+            color: #242424;
+        }
+        .wrap { display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 1rem; }
+        .card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 1.6px 3.6px rgba(0,0,0,.13), 0 .3px .9px rgba(0,0,0,.11);
+            width: 100%;
+            max-width: 400px;
+            padding: 2rem;
+        }
+        .brand { font-size: 1.4rem; font-weight: 600; text-align: center; margin-bottom: .25rem; }
+        .brand .dot { color: var(--accent); }
+        .subtitle { color: #616161; text-align: center; font-size: .9rem; margin-bottom: 1.5rem; }
+        label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: .35rem; }
+        input[type=password], input[type=text] {
+            width: 100%; padding: .55rem .6rem; border: 1px solid #605e5c;
+            border-radius: 4px; font-size: .95rem; margin-bottom: 1rem;
+        }
+        input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+        button {
+            width: 100%; padding: .6rem; background: var(--accent); color: #fff; border: none;
+            border-radius: 4px; font-size: .95rem; font-weight: 600; cursor: pointer;
+        }
+        button:hover { background: #115ea3; }
+        .error {
+            background: #fdf3f4; border: 1px solid #eeacb2; color: #a4262c;
+            border-radius: 4px; padding: .6rem .75rem; font-size: .85rem; margin-bottom: 1rem;
+        }
+        .hint { color: #616161; font-size: .8rem; margin-top: 1rem; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="card">
+            <div class="brand">Partner<span class="dot">Connect</span></div>
+            <div class="subtitle">Sign in with your organization API key</div>
+
+            @if (!string.IsNullOrEmpty(Model.Error))
+            {
+                <div class="error">@Model.Error</div>
+            }
+
+            <form method="post">
+                <input type="hidden" asp-for="ReturnUrl" />
+                <label asp-for="ApiKey">Organization API key</label>
+                <input type="password" asp-for="ApiKey" autofocus autocomplete="off" placeholder="Paste your key" />
+                <button type="submit">Sign in</button>
+            </form>
+
+            <div class="hint">The key authenticates your organization to the PartnerConnect API.</div>
+        </div>
+    </div>
+</body>
+</html>

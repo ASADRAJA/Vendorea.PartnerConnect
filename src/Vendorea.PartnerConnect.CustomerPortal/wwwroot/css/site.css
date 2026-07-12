@@ -1,0 +1,99 @@
+/* Customer portal chrome. Fluent UI handles component styling; this covers layout + tiles. */
+
+html, body {
+    margin: 0;
+    font-family: "Segoe UI", "Segoe UI Web (West European)", system-ui, -apple-system, sans-serif;
+}
+
+/* Header wordmark */
+.wordmark {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--neutral-foreground-rest, #fff);
+    padding-left: 4px;
+}
+.wordmark-accent {
+    opacity: 0.85;
+}
+.org-name {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    padding-right: 4px;
+    white-space: nowrap;
+}
+
+/* Layout body */
+.main {
+    align-items: stretch;
+    min-height: calc(100vh - 50px);
+}
+.body-content {
+    width: 100%;
+}
+.content {
+    padding: 1.5rem 2rem;
+}
+
+/* Page headers */
+.page-title {
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin: 0 0 1rem 0;
+}
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.page-header .page-title {
+    margin: 0;
+}
+
+/* Dashboard tiles */
+.tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+.tile {
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-height: 96px;
+}
+.tile-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--neutral-foreground-hint, #616161);
+}
+.tile-value {
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+.tile-value.muted {
+    color: var(--neutral-foreground-hint, #a0a0a0);
+}
+.tile-sub {
+    font-size: 0.85rem;
+    color: var(--neutral-foreground-hint, #616161);
+}
+
+/* Empty state */
+.empty-state {
+    padding: 2rem;
+    text-align: center;
+}
+.empty-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+.empty-sub {
+    color: var(--neutral-foreground-hint, #616161);
+    font-size: 0.9rem;
+}

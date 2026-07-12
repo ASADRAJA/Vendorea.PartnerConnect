@@ -1,0 +1,21 @@
+@* Primary navigation rail. Dashboard + Connections are live (increment 1); the remaining
+   entries are rendered but disabled ("coming soon") until later increments. *@
+
+<FluentNavMenu Width="240" Collapsible="true" Title="Navigation" @bind-Expanded="_expanded">
+    <FluentNavLink Href="/" Match="NavLinkMatch.All">Dashboard</FluentNavLink>
+    <FluentNavLink Href="/connections">Connections</FluentNavLink>
+
+    <FluentNavLink Disabled="true">Catalog</FluentNavLink>
+    <FluentNavLink Disabled="true">Orders</FluentNavLink>
+    <FluentNavLink Disabled="true">Activity</FluentNavLink>
+
+    <FluentNavGroup Title="Organization" Disabled="true">
+        <FluentNavLink Disabled="true">Tenants</FluentNavLink>
+        <FluentNavLink Disabled="true">Users</FluentNavLink>
+        <FluentNavLink Disabled="true">Settings</FluentNavLink>
+    </FluentNavGroup>
+</FluentNavMenu>
+
+@code {
+    private bool _expanded = true;
+}

@@ -1,0 +1,25 @@
+@page "/connections/{Code}"
+@attribute [Authorize]
+@inject NavigationManager Navigation
+
+<PageTitle>Connection @Code — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Connection @Code</h1>
+    <FluentButton Appearance="Appearance.Stealth" OnClick="@(() => Navigation.NavigateTo("/connections"))">Back to connections</FluentButton>
+</div>
+
+<FluentCard>
+    <div class="tile">
+        <div class="tile-label">Connection</div>
+        <div class="tile-value">@Code</div>
+        <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false">
+            Detail coming in the next increment.
+        </FluentMessageBar>
+    </div>
+</FluentCard>
+
+@code {
+    [Parameter]
+    public string Code { get; set; } = string.Empty;
+}

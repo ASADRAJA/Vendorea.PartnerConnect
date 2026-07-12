@@ -1,0 +1,96 @@
+@page "/"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject PortalState State
+
+<PageTitle>Dashboard — PartnerConnect</PageTitle>
+
+<h1 class="page-title">Dashboard</h1>
+
+@if (State.Loaded && State.Context is null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error" Title="Couldn't load your organization">
+        We couldn't load your organization context. Your session may have expired — try signing out and back in.
+    </FluentMessageBar>
+}
+
+<div class="tile-grid">
+    <FluentCard>
+        <div class="tile">
+            <div class="tile-label">Welcome</div>
+            @if (State.Context is not null)
+            {
+                <div class="tile-value">@State.Context.Organization.Name</div>
+                <div class="tile-sub">
+                    Status: @State.Context.Organization.Status &middot;
+                    @State.Tenants.Count tenant@(State.Tenants.Count == 1 ? "" : "s")
+                </div>
+                @if (State.SelectedTenant is not null)
+                {
+                    <div class="tile-sub">Viewing: <strong>@State.SelectedTenant.Name</strong></div>
+                }
+            }
+            else
+            {
+                <FluentSkeleton Width="180px" Height="24px" />
+            }
+        </div>
+    </FluentCard>
+
+    <FluentCard>
+        <div class="tile">
+            <div class="tile-label">Connections</div>
+            @if (_connectionsLoaded)
+            {
+                <div class="tile-value">@_activeCount active</div>
+                <div class="tile-sub">@_pendingCount pending &middot; @_totalCount total</div>
+                <FluentAnchor Href="/connections" Appearance="Appearance.Hypertext">View connections</FluentAnchor>
+            }
+            else
+            {
+                <FluentSkeleton Width="120px" Height="24px" />
+            }
+        </div>
+    </FluentCard>
+
+    <FluentCard>
+        <div class="tile">
+            <div class="tile-label">Last price sync</div>
+            <div class="tile-value muted">—</div>
+            <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
+        </div>
+    </FluentCard>
+
+    <FluentCard>
+        <div class="tile">
+            <div class="tile-label">Last content sync</div>
+            <div class="tile-value muted">—</div>
+            <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
+        </div>
+    </FluentCard>
+
+    <FluentCard>
+        <div class="tile">
+            <div class="tile-label">Open errors</div>
+            <div class="tile-value muted">—</div>
+            <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
+        </div>
+    </FluentCard>
+</div>
+
+@code {
+    private bool _connectionsLoaded;
+    private int _activeCount;
+    private int _pendingCount;
+    private int _totalCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var connections = await Api.GetConnectionsAsync();
+        _totalCount = connections.Count;
+        _activeCount = connections.Count(c => c.IsActive);
+        _pendingCount = connections.Count(c =>
+            string.Equals(c.ApprovalStatus, "Pending", StringComparison.OrdinalIgnoreCase));
+        _connectionsLoaded = true;
+    }
+}

@@ -29,6 +29,7 @@ public class OrgController : ControllerBase
     private readonly ISprStockCheckService _stockCheckService;
     private readonly ISprFreightService _freightService;
     private readonly IPartnerDistributionCenterRepository _distributionCenterRepository;
+    private readonly ITenantRepository _tenantRepository;
     private readonly ILogger<OrgController> _logger;
 
     public OrgController(
@@ -39,6 +40,7 @@ public class OrgController : ControllerBase
         ISprStockCheckService stockCheckService,
         ISprFreightService freightService,
         IPartnerDistributionCenterRepository distributionCenterRepository,
+        ITenantRepository tenantRepository,
         ILogger<OrgController> logger)
     {
         _authenticator = authenticator;
@@ -48,7 +50,54 @@ public class OrgController : ControllerBase
         _stockCheckService = stockCheckService;
         _freightService = freightService;
         _distributionCenterRepository = distributionCenterRepository;
+        _tenantRepository = tenantRepository;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Current org + user context: org profile, the tenants the caller can access, role, and
+    /// capabilities. Drives the customer portal's tenant switcher and nav gating. User identity
+    /// and per-user capabilities are placeholders until the org user model lands (later increment).
+    /// </summary>
+    [HttpGet("me")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetContext(CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var tenants = await _tenantRepository.GetByOrganizationIdAsync(org.Id, cancellationToken);
+
+        var dto = new OrgContextDto
+        {
+            Organization = new OrgContextOrganizationDto
+            {
+                Id = org.Id,
+                Name = org.Name,
+                Status = org.Status.ToString()
+            },
+            // Per-user identity is a later increment; return a static OrgAdmin placeholder.
+            User = new OrgContextUserDto
+            {
+                Id = null,
+                DisplayName = null,
+                Role = "OrgAdmin"
+            },
+            Tenants = tenants
+                .OrderBy(t => t.Name)
+                .Select(t => new OrgTenantDto
+                {
+                    Id = t.Id,
+                    Name = t.Name,
+                    ExternalId = t.ExternalId,
+                    Status = t.Status.ToString()
+                })
+                .ToList(),
+            Capabilities = new List<string> { "connections.read", "connections.write", "orders.read" }
+        };
+
+        return Ok(dto);
     }
 
     /// <summary>
@@ -289,4 +338,35 @@ public class OrgConnectionDto
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? DecidedAt { get; set; }
+}
+
+/// <summary>Current org + user context returned by <c>GET /api/v1/org/me</c>.</summary>
+public class OrgContextDto
+{
+    public OrgContextOrganizationDto Organization { get; set; } = new();
+    public OrgContextUserDto User { get; set; } = new();
+    public List<OrgTenantDto> Tenants { get; set; } = new();
+    public List<string> Capabilities { get; set; } = new();
+}
+
+public class OrgContextOrganizationDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+}
+
+public class OrgContextUserDto
+{
+    public int? Id { get; set; }
+    public string? DisplayName { get; set; }
+    public string Role { get; set; } = "OrgAdmin";
+}
+
+public class OrgTenantDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? ExternalId { get; set; }
+    public string Status { get; set; } = string.Empty;
 }

@@ -1,0 +1,42 @@
+@using Microsoft.AspNetCore.Components.Web
+@namespace Vendorea.PartnerConnect.CustomerPortal.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PartnerConnect</title>
+    <base href="~/" />
+
+    @* Fluent UI Blazor v4 static assets. The web-components bundle itself is auto-loaded by the
+       library's Blazor JS initializer (initializersLoader.webview.js) — no manual <script> for it.
+       reboot.css normalizes the base styles; loading-theme.js registers the <loading-theme> element
+       used below to apply the persisted theme early (avoids a flash of unstyled content). *@
+    <link rel="stylesheet" href="_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css" />
+    <link href="css/site.css" rel="stylesheet" />
+    <link href="Vendorea.PartnerConnect.CustomerPortal.styles.css" rel="stylesheet" />
+    <script src="_content/Microsoft.FluentUI.AspNetCore.Components/js/loading-theme.js" type="text/javascript"></script>
+
+    <component type="typeof(HeadOutlet)" render-mode="ServerPrerendered" />
+</head>
+<body>
+    <loading-theme storage-name="theme-mode" use-system-theme="false">
+        @RenderBody()
+    </loading-theme>
+
+    <div id="blazor-error-ui">
+        <environment include="Staging,Production">
+            An error has occurred. This application may no longer respond until reloaded.
+        </environment>
+        <environment include="Development">
+            An unhandled exception has occurred. See browser dev tools for details.
+        </environment>
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">X</a>
+    </div>
+
+    <script src="_framework/blazor.server.js"></script>
+</body>
+</html>
