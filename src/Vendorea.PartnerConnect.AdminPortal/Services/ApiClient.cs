@@ -873,6 +873,54 @@ public class ApiClient
         }
     }
 
+    // --- Self-service org registration queue ---
+
+    public async Task<OrgRegistrationListResult> GetOrgRegistrationsAsync(string? status = "Pending")
+    {
+        try
+        {
+            var url = "/api/v1/admin/org-registrations";
+            if (!string.IsNullOrEmpty(status))
+                url += $"?status={status}";
+            return await _httpClient.GetFromJsonAsync<OrgRegistrationListResult>(url) ?? new OrgRegistrationListResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get org registrations");
+            return new OrgRegistrationListResult();
+        }
+    }
+
+    public async Task<(bool Success, string? Message)> ApproveOrgRegistrationAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/v1/admin/org-registrations/{id}/approve", null);
+            var body = await response.Content.ReadAsStringAsync();
+            return (response.IsSuccessStatusCode, ExtractError(body));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to approve org registration {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Success, string? Message)> DenyOrgRegistrationAsync(int id, string? reason)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"/api/v1/admin/org-registrations/{id}/deny", new { Reason = reason });
+            var body = await response.Content.ReadAsStringAsync();
+            return (response.IsSuccessStatusCode, ExtractError(body));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deny org registration {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
     // --- Tenant-partner connections ---
 
     public async Task<TenantConnectionListResult> GetConnectionsAsync(int? organizationId = null, string? status = null)

@@ -106,6 +106,83 @@ public class ApiClient
         }
     }
 
+    /// <summary>
+    /// Lists selectable billing plans (anonymous — <c>GET /api/v1/public/plans</c>) to populate the
+    /// public Register form. Returns an empty list on any transport error.
+    /// </summary>
+    public async Task<List<PublicPlanDto>> GetPublicPlansAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/public/plans");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return new List<PublicPlanDto>();
+            return await response.Content.ReadFromJsonAsync<List<PublicPlanDto>>(cancellationToken: cancellationToken)
+                   ?? new List<PublicPlanDto>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch public plans");
+            return new List<PublicPlanDto>();
+        }
+    }
+
+    /// <summary>
+    /// Submits a self-service org registration (anonymous — <c>POST /api/v1/public/org-registrations</c>).
+    /// No auth cookie/bearer token is attached. Returns the API's "pending review" message on success
+    /// (202), or its error message on failure.
+    /// </summary>
+    public async Task<RegistrationResult> RegisterOrganizationAsync(
+        string organizationName, string planCode, string adminDisplayName, string adminEmail,
+        string? contactPhone, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/public/org-registrations")
+            {
+                Content = JsonContent.Create(new
+                {
+                    organizationName,
+                    planCode,
+                    adminDisplayName,
+                    adminEmail,
+                    contactPhone
+                })
+            };
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var message = await ReadMessageAsync(response,
+                    "Thanks — your registration is under review. You'll get an email when it's approved.",
+                    cancellationToken);
+                return RegistrationResult.Ok(message);
+            }
+            return RegistrationResult.Fail(await ReadErrorAsync(response, "We couldn't submit your registration. Please try again.", cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to submit org registration");
+            return RegistrationResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>Extracts the API's <c>{ message }</c> from a success response, or a fallback.</summary>
+    private static async Task<string> ReadMessageAsync(HttpResponseMessage response, string fallback, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+            if (doc.RootElement.TryGetProperty("message", out var msg) && msg.ValueKind == System.Text.Json.JsonValueKind.String)
+                return msg.GetString() ?? fallback;
+        }
+        catch { /* non-JSON body */ }
+        return fallback;
+    }
+
     /// <summary>Extracts the API's <c>{ error }</c> message from a failure response, or a fallback.</summary>
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response, string fallback, CancellationToken cancellationToken)
     {

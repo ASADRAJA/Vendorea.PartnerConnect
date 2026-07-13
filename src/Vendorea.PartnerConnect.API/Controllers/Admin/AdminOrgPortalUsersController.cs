@@ -14,32 +14,23 @@ namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 [Route("api/v1/admin/organizations/{orgId:int}/portal-users")]
 public class AdminOrgPortalUsersController : ControllerBase
 {
-    /// <summary>How long an activation link stays valid.</summary>
-    private static readonly TimeSpan ActivationLifetime = TimeSpan.FromDays(7);
-
     private readonly IOrgPortalUserRepository _users;
     private readonly IOrganizationRepository _organizations;
     private readonly ITenantRepository _tenants;
-    private readonly IOrgPortalUserTokenService _activationTokens;
-    private readonly IEmailSender _email;
-    private readonly IConfiguration _configuration;
+    private readonly IOrgPortalUserInvitationService _invitations;
     private readonly ILogger<AdminOrgPortalUsersController> _logger;
 
     public AdminOrgPortalUsersController(
         IOrgPortalUserRepository users,
         IOrganizationRepository organizations,
         ITenantRepository tenants,
-        IOrgPortalUserTokenService activationTokens,
-        IEmailSender email,
-        IConfiguration configuration,
+        IOrgPortalUserInvitationService invitations,
         ILogger<AdminOrgPortalUsersController> logger)
     {
         _users = users;
         _organizations = organizations;
         _tenants = tenants;
-        _activationTokens = activationTokens;
-        _email = email;
-        _configuration = configuration;
+        _invitations = invitations;
         _logger = logger;
     }
 
@@ -76,31 +67,13 @@ public class AdminOrgPortalUsersController : ControllerBase
             }
         }
 
-        var user = new OrgPortalUser
-        {
-            OrganizationId = orgId,
-            Email = email,
-            DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? email : request.DisplayName.Trim(),
-            Role = role,
-            AllTenants = request.AllTenants,
-            IsActive = true,
-            Status = OrgPortalUserStatus.Invited,
-            // No password: the user sets their own via the activation link. Empty hash → login denied
-            // until activated (PortalPasswordHasher.Verify returns false for an empty stored hash).
-            PasswordHash = string.Empty
-        };
+        // Create the Invited user (no password) and email the activation link via the shared invite
+        // path — the same path used by self-service registration approval.
+        var user = await _invitations.InviteAsync(
+            org, email, request.DisplayName, role, request.AllTenants, tenantIds, cancellationToken);
 
-        if (!request.AllTenants)
-        {
-            foreach (var tenantId in tenantIds)
-                user.Tenants.Add(new OrgPortalUserTenant { OrgPortalUserId = user.Id, TenantId = tenantId });
-        }
-
-        await _users.AddAsync(user, cancellationToken);
         _logger.LogInformation("Invited org portal user {UserId} ({Email}) for org {OrgId} ({Role})",
             user.Id, user.Email, orgId, user.Role);
-
-        await SendActivationEmailAsync(user, org, cancellationToken);
 
         return Ok(ToDto(user));
     }
@@ -123,35 +96,10 @@ public class AdminOrgPortalUsersController : ControllerBase
         if (user.Status != OrgPortalUserStatus.Invited)
             return Conflict(new { error = "This user has already activated their account." });
 
-        await SendActivationEmailAsync(user, org, cancellationToken);
+        await _invitations.SendActivationEmailAsync(user, org, cancellationToken);
         _logger.LogInformation("Re-sent activation invite to org portal user {UserId} ({Email})", user.Id, user.Email);
 
         return Ok(new { message = $"Activation email re-sent to {user.Email}." });
-    }
-
-    /// <summary>Issues a fresh activation token and emails the set-your-password link.</summary>
-    private async Task SendActivationEmailAsync(OrgPortalUser user, Organization org, CancellationToken cancellationToken)
-    {
-        var rawToken = await _activationTokens.IssueAsync(
-            user.Id, OrgPortalUserTokenPurpose.Activation, ActivationLifetime, cancellationToken);
-
-        var baseUrl = (_configuration["CustomerPortalBaseUrl"] ?? "http://localhost:5030").TrimEnd('/');
-        var link = $"{baseUrl}/Account/Activate?token={Uri.EscapeDataString(rawToken)}";
-
-        var html =
-            $"<p>Hello {System.Net.WebUtility.HtmlEncode(user.DisplayName)},</p>" +
-            $"<p>You've been invited to the <strong>{System.Net.WebUtility.HtmlEncode(org.Name)}</strong> PartnerConnect portal. " +
-            "Click the link below to set your password and activate your account:</p>" +
-            $"<p><a href=\"{link}\">Activate your account</a></p>" +
-            "<p>This link expires in 7 days. If you didn't expect this, you can ignore this email.</p>";
-
-        var text =
-            $"Hello {user.DisplayName},\n\n" +
-            $"You've been invited to the {org.Name} PartnerConnect portal. " +
-            $"Set your password and activate your account here:\n{link}\n\n" +
-            "This link expires in 7 days. If you didn't expect this, you can ignore this email.";
-
-        await _email.SendAsync(user.Email, "Activate your PartnerConnect account", html, text, cancellationToken);
     }
 
     private static bool TryParseRole(string? value, out OrgPortalRole role) =>

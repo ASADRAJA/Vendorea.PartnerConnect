@@ -47,6 +47,10 @@ public static class ServiceCollectionExtensions
         // Customer-portal activation / password-reset tokens (single-use, hashed at rest).
         services.AddScoped<IOrgPortalUserTokenService, OrgPortalUserTokenService>();
 
+        // Shared "invite an org portal user + email activation link" path (admin bootstrap +
+        // self-service registration approval both use it).
+        services.AddScoped<IOrgPortalUserInvitationService, OrgPortalUserInvitationService>();
+
         // Scheduled jobs (cron framework) + job handlers.
         services.AddScoped<IScheduledJobService, ScheduledJobService>();
         services.AddScoped<IScheduledJobHandler, SprInventoryImportJobHandler>();

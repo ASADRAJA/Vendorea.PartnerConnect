@@ -66,6 +66,32 @@ public class ActivationResult
     public static ActivationResult Fail(string error) => new() { Success = false, Error = error };
 }
 
+/// <summary>A selectable plan from <c>GET /api/v1/public/plans</c> (public Register form).</summary>
+public class PublicPlanDto
+{
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? Blurb { get; set; }
+    public long MonthlyPriceCents { get; set; }
+    public string Currency { get; set; } = "USD";
+
+    /// <summary>Human-friendly monthly price for display (e.g. "$99/mo", "Free").</summary>
+    public string PriceDisplay => MonthlyPriceCents <= 0
+        ? "Free"
+        : $"{Currency} {MonthlyPriceCents / 100m:0.##}/mo";
+}
+
+/// <summary>Outcome of the public org-registration submit, with a display message.</summary>
+public class RegistrationResult
+{
+    public bool Success { get; init; }
+    public string? Message { get; init; }
+    public string? Error { get; init; }
+
+    public static RegistrationResult Ok(string? message) => new() { Success = true, Message = message };
+    public static RegistrationResult Fail(string error) => new() { Success = false, Error = error };
+}
+
 public class OrgTenantDto
 {
     public int Id { get; set; }
