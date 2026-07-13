@@ -20,13 +20,16 @@
     </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Accent"
-                      Disabled="@(_busy || !CanEditConfig)"
+                      Disabled="@(_busy || !CanWrite || !CanEditConfig)"
+                      title="@WriteTip"
                       OnClick="SaveAsync">Save</FluentButton>
         <FluentButton Appearance="Appearance.Outline"
-                      Disabled="@(_busy || !CanSuspend)"
+                      Disabled="@(_busy || !CanWrite || !CanSuspend)"
+                      title="@WriteTip"
                       OnClick="SuspendAsync">Suspend</FluentButton>
         <FluentButton Appearance="Appearance.Outline"
-                      Disabled="@(_busy || !CanDisconnect)"
+                      Disabled="@(_busy || !CanWrite || !CanDisconnect)"
+                      title="@WriteTip"
                       OnClick="ConfirmDisconnectAsync">Disconnect</FluentButton>
     </div>
 </div>
@@ -118,7 +121,13 @@ else
 
         <FluentTab Label="Configuration" Id="tab-config">
             <div class="config-form">
-                @if (!CanEditConfig)
+                @if (!CanWrite)
+                {
+                    <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false">
+                        You have read-only access. Configuration changes require an Org Admin or Tenant Manager.
+                    </FluentMessageBar>
+                }
+                else if (!CanEditConfig)
                 {
                     <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false">
                         This connection is @_connection.Status.ToLowerInvariant() and its configuration is read-only.
@@ -126,10 +135,10 @@ else
                 }
 
                 <FluentTextField @bind-Value="_form.PartnerAccountNumber" Label="Partner account number"
-                                 Disabled="@(!CanEditConfig)" Style="width: 320px;" />
+                                 Disabled="@(!CanEdit)" Style="width: 320px;" />
 
                 <FluentTextField @bind-Value="_form.DisplayName" Label="Display name (optional)"
-                                 Disabled="@(!CanEditConfig)" Style="width: 320px;" />
+                                 Disabled="@(!CanEdit)" Style="width: 320px;" />
 
                 <div class="field-group">
                     <label class="field-label">Distribution centers</label>
@@ -148,7 +157,7 @@ else
                             {
                                 <FluentCheckbox Value="@_selectedDcs.Contains(dc.Code)"
                                                 ValueChanged="@(v => ToggleDc(dc.Code, v))"
-                                                Disabled="@(!CanEditConfig)"
+                                                Disabled="@(!CanEdit)"
                                                 Label="@dc.DisplayLabel" />
                             }
                         </div>
@@ -156,10 +165,10 @@ else
                 </div>
 
                 <FluentTextField @bind-Value="_form.OrderType" Label="Default order type (preference)"
-                                 Disabled="@(!CanEditConfig)" Style="width: 200px;" />
+                                 Disabled="@(!CanEdit)" Style="width: 200px;" />
 
                 <FluentCheckbox @bind-Value="_form.ContentSubscribed" Label="Subscribed to product content"
-                                Disabled="@(!CanEditConfig)" />
+                                Disabled="@(!CanEdit)" />
 
                 <FluentDivider Class="section-divider" />
 
@@ -208,6 +217,14 @@ else
 
     private int ConnectionId => int.TryParse(Code, out var id) ? id : 0;
 
+    // RBAC: a read-only Viewer has no connections.write capability, so all mutations are disabled.
+    // This reflects the server-side rule (the API rejects a Viewer's writes regardless).
+    private bool CanWrite => State.Can("connections.write");
+    private string? WriteTip => CanWrite ? null : "Read-only access";
+
+    // Fields are editable only when the connection state allows it AND the user has write access.
+    private bool CanEdit => CanEditConfig && CanWrite;
+
     // Terminal states are read-only; Pending/Active/Suspended can still be edited.
     private bool CanEditConfig => _connection is { Status: "Pending" or "Active" or "Suspended" };
     private bool CanSuspend => _connection is { Status: "Active" };
@@ -251,7 +268,7 @@ else
 
     private async Task SaveAsync()
     {
-        if (_connection is null || !CanEditConfig)
+        if (_connection is null || !CanEdit)
             return;
 
         _busy = true;
@@ -285,7 +302,7 @@ else
 
     private async Task SuspendAsync()
     {
-        if (_connection is null || !CanSuspend)
+        if (_connection is null || !CanWrite || !CanSuspend)
             return;
 
         _busy = true;
@@ -306,7 +323,7 @@ else
 
     private async Task ConfirmDisconnectAsync()
     {
-        if (_connection is null || !CanDisconnect)
+        if (_connection is null || !CanWrite || !CanDisconnect)
             return;
 
         var dialog = await DialogService.ShowConfirmationAsync(

@@ -86,8 +86,7 @@
         ?? State.Context?.Organization.Name
         ?? "—";
 
-    private bool IsOrgAdmin =>
-        string.Equals(State.Context?.User.Role, "OrgAdmin", StringComparison.OrdinalIgnoreCase);
+    private bool IsOrgAdmin => State.IsOrgAdmin;
 
     private string UserDisplay =>
         State.Context?.User.DisplayName

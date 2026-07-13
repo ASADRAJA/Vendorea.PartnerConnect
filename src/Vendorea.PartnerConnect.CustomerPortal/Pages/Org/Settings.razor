@@ -1,6 +1,7 @@
 @page "/org/settings"
 @attribute [Authorize]
 @inject ApiClient Api
+@inject PortalState State
 
 <PageTitle>Settings — PartnerConnect</PageTitle>
 
@@ -10,11 +11,21 @@
         <p class="page-subtitle">Your organization profile and contact details.</p>
     </div>
     <div class="command-bar">
-        <FluentButton Appearance="Appearance.Accent" Disabled="@(_settings is null || _saving)" OnClick="SaveAsync">
+        <FluentButton Appearance="Appearance.Accent" Disabled="@(_settings is null || _saving || !CanWrite)"
+                      title="@(CanWrite ? null : "Org Admin access required")" OnClick="SaveAsync">
             @(_saving ? "Saving…" : "Save")
         </FluentButton>
     </div>
 </div>
+
+@if (!CanWrite)
+{
+    @* Organization settings are org-admin only. Non-admins are gated here (and the API rejects the
+       write with org:admin), so this is an honest "not available", not a broken Save. *@
+    <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false" Class="page-message">
+        Organization settings are managed by your Org Admin. You have read-only access to this page.
+    </FluentMessageBar>
+}
 
 @if (_message is not null)
 {
@@ -79,9 +90,13 @@ else
         _loaded = true;
     }
 
+    // Writing the org profile requires the settings.write capability (OrgAdmin). Mirrors the API's
+    // org:admin gate on PUT /org/settings.
+    private bool CanWrite => State.Can("settings.write");
+
     private async Task SaveAsync()
     {
-        if (_settings is null)
+        if (_settings is null || !CanWrite)
             return;
 
         _saving = true;

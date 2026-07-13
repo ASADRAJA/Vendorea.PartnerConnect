@@ -117,6 +117,7 @@ public class OrgController : ControllerBase
         }
         else
         {
+            // Org-API-key (integration) path: no per-user identity → full org-admin access, as today.
             userDto = new OrgContextUserDto
             {
                 Id = null,
@@ -124,7 +125,7 @@ public class OrgController : ControllerBase
                 Email = null,
                 Role = "OrgAdmin"
             };
-            capabilities = new List<string> { "connections.read", "connections.write", "orders.read" };
+            capabilities = CapabilitiesForRole(OrgPortalRole.OrgAdmin);
         }
 
         var dto = new OrgContextDto
@@ -929,7 +930,7 @@ public class OrgController : ControllerBase
     /// mapping (ExternalId) and a cheap connection roll-up for the Organization → Tenants screen.
     /// </summary>
     [HttpGet("tenants")]
-    [RequireScope(ApiScopes.ConnectionsRead)]
+    [RequireScope(ApiScopes.OrgAdmin)] // Org-admin-only: the tenant admin roll-up (Organization → Tenants).
     public async Task<IActionResult> GetTenants(CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -976,7 +977,7 @@ public class OrgController : ControllerBase
     /// are not modeled yet — the customer portal surfaces that as a note, not a fake control.
     /// </summary>
     [HttpGet("settings")]
-    [RequireScope(ApiScopes.ConnectionsRead)]
+    [RequireScope(ApiScopes.OrgAdmin)] // Org-admin-only: the editable org profile.
     public async Task<IActionResult> GetSettings(CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -992,7 +993,7 @@ public class OrgController : ControllerBase
     /// field leaves the stored value unchanged; an empty string clears an optional field.
     /// </summary>
     [HttpPut("settings")]
-    [RequireScope(ApiScopes.ConnectionsWrite)]
+    [RequireScope(ApiScopes.OrgAdmin)] // Org-admin-only: writing the org profile.
     public async Task<IActionResult> UpdateSettings([FromBody] UpdateOrgSettingsRequest request, CancellationToken cancellationToken)
     {
         var (org, error) = await ResolveOrgAsync(cancellationToken);
@@ -1263,12 +1264,24 @@ public class OrgController : ControllerBase
         return (skip, take);
     }
 
-    /// <summary>Resolves a tenant and association-gates it to the org (404 if not the org's).</summary>
+    /// <summary>
+    /// Resolves a tenant, association-gating it to the org AND to the calling user's tenant scope.
+    /// Returns 404 (no enumeration) when the tenant isn't the org's, or when a scoped portal user
+    /// (TenantManager/Viewer without AllTenants) asks for a tenant outside their assigned set. The
+    /// org-key/integration path has no per-user scope (<see cref="_resolvedUser"/> is null) → full
+    /// org access, unchanged. Every <c>/tenants/{id}/…</c> endpoint routes through here (directly or
+    /// via <see cref="ResolveTenantPartnerAsync"/>), so this is the single tenant-scope choke point.
+    /// </summary>
     private async Task<(Tenant? Tenant, IActionResult? Error)> ResolveTenantAsync(Organization org, int tenantId, CancellationToken cancellationToken)
     {
         var tenant = await _tenantRepository.GetByIdAsync(tenantId, cancellationToken);
         if (tenant is null || tenant.OrganizationId != org.Id)
             return (null, NotFound(new { error = $"Tenant '{tenantId}' not found" }));
+
+        // Per-user tenant scope (only when authenticated as a scoped portal user).
+        if (_resolvedUser is { AllTenants: false } user && !user.ScopedTenantIds.Contains(tenantId))
+            return (null, NotFound(new { error = $"Tenant '{tenantId}' not found" }));
+
         return (tenant, null);
     }
 
@@ -1388,12 +1401,17 @@ public class OrgController : ControllerBase
         return new OrgUserContext(userId, displayName, email, role, allTenants, scopedTenantIds);
     }
 
-    /// <summary>Portal capabilities surfaced in <c>/org/me</c> for a role (per-endpoint RBAC is Auth-2).</summary>
+    /// <summary>
+    /// Portal capabilities surfaced in <c>/org/me</c> for a role — the UI gates nav + action buttons
+    /// off these. They mirror the server-side RBAC: OrgAdmin gets the org-admin capabilities
+    /// (<c>settings.write</c>, <c>users.manage</c>, <c>org.admin</c>) that TenantManager/Viewer never
+    /// see, and Viewer gets read-only.
+    /// </summary>
     private static List<string> CapabilitiesForRole(OrgPortalRole role) => role switch
     {
         OrgPortalRole.OrgAdmin => new List<string>
         {
-            "connections.read", "connections.write", "orders.read", "users.manage", "settings.write"
+            "connections.read", "connections.write", "orders.read", "users.manage", "settings.write", "org.admin"
         },
         OrgPortalRole.TenantManager => new List<string>
         {

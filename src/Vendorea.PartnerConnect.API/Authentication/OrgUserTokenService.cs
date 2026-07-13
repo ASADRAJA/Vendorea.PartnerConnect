@@ -92,15 +92,20 @@ public class OrgUserTokenService : IOrgUserTokenService
     /// <summary>The API scopes granted for a portal role.</summary>
     public static IEnumerable<string> ScopesForRole(OrgPortalRole role)
     {
-        // Viewer: read-only — keep only the non-write scopes from the org default set.
-        if (role == OrgPortalRole.Viewer)
-        {
-            return ApiScopes.OrganizationDefault
-                .Where(s => !s.EndsWith(":write", StringComparison.OrdinalIgnoreCase)
-                            && !s.Equals(ApiScopes.OrdersWrite, StringComparison.OrdinalIgnoreCase));
-        }
+        // OrgAdmin: the full org surface (read + write) INCLUDING the org-admin-only scope.
+        if (role == OrgPortalRole.OrgAdmin)
+            return ApiScopes.OrganizationDefault;
 
-        // OrgAdmin / TenantManager: same surface as the org API key (read + write).
-        return ApiScopes.OrganizationDefault;
+        // TenantManager: read + write across their scoped tenants, but NO org-admin operations
+        // (org settings write, tenant/user admin). Drop only org:admin.
+        if (role == OrgPortalRole.TenantManager)
+            return ApiScopes.OrganizationDefault
+                .Where(s => !s.Equals(ApiScopes.OrgAdmin, StringComparison.OrdinalIgnoreCase));
+
+        // Viewer: read-only — drop every write scope AND the org-admin scope.
+        return ApiScopes.OrganizationDefault
+            .Where(s => !s.EndsWith(":write", StringComparison.OrdinalIgnoreCase)
+                        && !s.Equals(ApiScopes.OrdersWrite, StringComparison.OrdinalIgnoreCase)
+                        && !s.Equals(ApiScopes.OrgAdmin, StringComparison.OrdinalIgnoreCase));
     }
 }

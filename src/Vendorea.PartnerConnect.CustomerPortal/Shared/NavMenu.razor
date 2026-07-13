@@ -73,10 +73,9 @@
 </nav>
 
 @code {
-    // The Organization group is org-admin only. Role comes from /org/me (the "OrgAdmin" placeholder
-    // today), so it shows for the current key; it will tighten when per-user identity lands.
-    private bool _isOrgAdmin =>
-        string.Equals(State.Context?.User.Role, "OrgAdmin", StringComparison.OrdinalIgnoreCase);
+    // The Organization group is org-admin only. Role comes from /org/me; the org-key/integration
+    // path reports OrgAdmin (full access), a per-user token reports the user's actual role.
+    private bool _isOrgAdmin => State.IsOrgAdmin;
 
     protected override void OnInitialized() => State.OnChange += OnStateChanged;
 
