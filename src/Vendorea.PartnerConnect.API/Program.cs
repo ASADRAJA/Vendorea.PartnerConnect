@@ -139,10 +139,10 @@ builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Services.IOrganizationOnb
 // Transactional email (activation links etc). SMTP-backed, bound from the "Email" config section;
 // degrades gracefully (logs, never throws) and — in Development — logs the message + link so the
 // activation flow is testable with no SMTP sink running.
+// IEmailSender is registered in AddPartnerConnectServices (shared with the workers host). Bind
+// EmailOptions from THIS host's config so the API's Email settings apply (workers use defaults).
 builder.Services.Configure<Vendorea.PartnerConnect.Infrastructure.Services.EmailOptions>(
     builder.Configuration.GetSection(Vendorea.PartnerConnect.Infrastructure.Services.EmailOptions.SectionName));
-builder.Services.AddScoped<Vendorea.PartnerConnect.Application.Interfaces.IEmailSender,
-    Vendorea.PartnerConnect.Infrastructure.Services.SmtpEmailSender>();
 
 var jwtSettings = builder.Configuration
     .GetSection(Vendorea.PartnerConnect.Api.Authentication.JwtSettings.SectionName)

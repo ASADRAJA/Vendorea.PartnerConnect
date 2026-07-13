@@ -51,6 +51,13 @@ public static class ServiceCollectionExtensions
         // self-service registration approval both use it).
         services.AddScoped<IOrgPortalUserInvitationService, OrgPortalUserInvitationService>();
 
+        // Email sender for invitation/activation/reset mails. Registered here (not in a single
+        // host's Program.cs) so EVERY consumer of the invitation service — API and workers — can
+        // resolve IEmailSender. EmailOptions binds from config when available; defaults otherwise.
+        if (configuration is not null)
+            services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
+
         // Scheduled jobs (cron framework) + job handlers.
         services.AddScoped<IScheduledJobService, ScheduledJobService>();
         services.AddScoped<IScheduledJobHandler, SprInventoryImportJobHandler>();
