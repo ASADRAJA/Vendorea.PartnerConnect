@@ -47,6 +47,25 @@ public class OrgLoginOrganizationDto
     public string Name { get; set; } = string.Empty;
 }
 
+/// <summary>Response of <c>GET /api/v1/org/auth/activation</c> — context for the set-password page.</summary>
+public class ActivationInfoDto
+{
+    public string Email { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string OrganizationName { get; set; } = string.Empty;
+}
+
+/// <summary>Outcome of an activation call (validate or set-password), with a display message on failure.</summary>
+public class ActivationResult
+{
+    public bool Success { get; init; }
+    public string? Error { get; init; }
+    public ActivationInfoDto? Info { get; init; }
+
+    public static ActivationResult Ok(ActivationInfoDto? info = null) => new() { Success = true, Info = info };
+    public static ActivationResult Fail(string error) => new() { Success = false, Error = error };
+}
+
 public class OrgTenantDto
 {
     public int Id { get; set; }

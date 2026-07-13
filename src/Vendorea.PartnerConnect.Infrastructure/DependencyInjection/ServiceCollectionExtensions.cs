@@ -44,6 +44,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITenantConnectionService, TenantConnectionService>();
         services.AddScoped<IOrgApiKeyAuthenticator, OrgApiKeyAuthenticator>();
 
+        // Customer-portal activation / password-reset tokens (single-use, hashed at rest).
+        services.AddScoped<IOrgPortalUserTokenService, OrgPortalUserTokenService>();
+
         // Scheduled jobs (cron framework) + job handlers.
         services.AddScoped<IScheduledJobService, ScheduledJobService>();
         services.AddScoped<IScheduledJobHandler, SprInventoryImportJobHandler>();

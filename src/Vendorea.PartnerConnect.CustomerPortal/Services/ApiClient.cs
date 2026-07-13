@@ -54,6 +54,72 @@ public class ApiClient
         }
     }
 
+    /// <summary>
+    /// Fetches activation context for a link (anonymous — <c>GET /api/v1/org/auth/activation</c>). No
+    /// bearer token is attached; the activation page is public. Returns the invitee's email/org on a
+    /// valid token, or a failure with the API's generic error message.
+    /// </summary>
+    public async Task<ActivationResult> GetActivationInfoAsync(string token, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get, $"/api/v1/org/auth/activation?token={Uri.EscapeDataString(token)}");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var info = await response.Content.ReadFromJsonAsync<ActivationInfoDto>(cancellationToken: cancellationToken);
+                return ActivationResult.Ok(info);
+            }
+            return ActivationResult.Fail(await ReadErrorAsync(response, "This activation link is invalid or has expired.", cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch activation info");
+            return ActivationResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>
+    /// Redeems an activation token by setting the user's password (anonymous —
+    /// <c>POST /api/v1/org/auth/activate</c>). Returns success, or the API's error message on failure.
+    /// </summary>
+    public async Task<ActivationResult> ActivateAsync(string token, string password, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/org/auth/activate")
+            {
+                Content = JsonContent.Create(new { token, password })
+            };
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return ActivationResult.Ok();
+            return ActivationResult.Fail(await ReadErrorAsync(response, "Couldn't set your password. The link may have expired.", cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to activate account");
+            return ActivationResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>Extracts the API's <c>{ error }</c> message from a failure response, or a fallback.</summary>
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response, string fallback, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.ValueKind == System.Text.Json.JsonValueKind.String)
+                return err.GetString() ?? fallback;
+        }
+        catch { /* non-JSON body */ }
+        return fallback;
+    }
+
     /// <summary>Current org + user context. Returns null on any non-success/transport error.</summary>
     public async Task<OrgContextDto?> GetOrgContextAsync(CancellationToken cancellationToken = default)
     {

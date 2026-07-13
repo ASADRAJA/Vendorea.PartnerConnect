@@ -24,6 +24,10 @@ public class LoginModel : PageModel
     [BindProperty(SupportsGet = true)]
     public string? ReturnUrl { get; set; }
 
+    /// <summary>Optional one-off notice (e.g. shown right after activating an account).</summary>
+    [BindProperty(SupportsGet = true)]
+    public string? Message { get; set; }
+
     public string? Error { get; set; }
 
     public void OnGet()

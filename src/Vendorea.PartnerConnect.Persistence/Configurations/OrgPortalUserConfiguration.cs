@@ -33,6 +33,13 @@ public class OrgPortalUserConfiguration : IEntityTypeConfiguration<OrgPortalUser
             .HasMaxLength(20)
             .HasConversion<string>();
 
+        // Lifecycle status, stored as its string name. New rows default to Invited.
+        builder.Property(u => u.Status)
+            .IsRequired()
+            .HasMaxLength(20)
+            .HasConversion<string>()
+            .HasDefaultValue(OrgPortalUserStatus.Invited);
+
         builder.Property(u => u.AllTenants)
             .HasDefaultValue(true);
 
@@ -58,5 +65,36 @@ public class OrgPortalUserTenantConfiguration : IEntityTypeConfiguration<OrgPort
         builder.ToTable("OrgPortalUserTenants");
 
         builder.HasKey(t => new { t.OrgPortalUserId, t.TenantId });
+    }
+}
+
+public class OrgPortalUserTokenConfiguration : IEntityTypeConfiguration<OrgPortalUserToken>
+{
+    public void Configure(EntityTypeBuilder<OrgPortalUserToken> builder)
+    {
+        builder.ToTable("OrgPortalUserTokens");
+
+        builder.HasKey(t => t.Id);
+
+        // Lookup is always by the SHA-256 hash of the raw token.
+        builder.Property(t => t.TokenHash)
+            .IsRequired()
+            .HasMaxLength(64);
+
+        builder.HasIndex(t => t.TokenHash);
+
+        // Store the purpose enum as its string name for readability/stability.
+        builder.Property(t => t.Purpose)
+            .IsRequired()
+            .HasMaxLength(20)
+            .HasConversion<string>();
+
+        builder.Property(t => t.ExpiresAt).IsRequired();
+        builder.Property(t => t.CreatedAt).IsRequired();
+
+        builder.HasOne(t => t.OrgPortalUser)
+            .WithMany()
+            .HasForeignKey(t => t.OrgPortalUserId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
