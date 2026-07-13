@@ -1,27 +1,349 @@
 @page "/org/users"
 @attribute [Authorize]
+@inject ApiClient Api
+@inject IDialogService DialogService
+@inject PortalState State
 
 <PageTitle>Users — PartnerConnect</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Users</h1>
+    <div>
+        <h1 class="page-title">Users</h1>
+        <p class="page-subtitle">Invite teammates, assign roles and tenant scope, and review join requests.</p>
+    </div>
+    <div class="command-bar">
+        @if (_isAdmin)
+        {
+            <FluentButton Appearance="Appearance.Accent" OnClick="OpenInviteAsync">Invite user</FluentButton>
+        }
+        <FluentButton Appearance="Appearance.Stealth" OnClick="LoadAsync">Refresh</FluentButton>
+    </div>
 </div>
 
-@* Per-user identity isn't wired to the org portal yet: the portal authenticates with the org API
-   key, and the user model associates users to a dealer/tenant rather than to an organization. So
-   there's no org-scoped user list to show today — this is an honest placeholder, not a fake CRUD. *@
-<FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false" Class="page-message">
-    Per-user access management arrives with single sign-on.
-</FluentMessageBar>
+@if (!_isAdmin)
+{
+    @* User management is org-admin only; the API also enforces this with the org:admin scope, so this
+       is an honest gate rather than the enforcement. *@
+    <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false" Class="page-message">
+        Org Admin access is required to manage users.
+    </FluentMessageBar>
+}
+else
+{
+    @if (_message is not null)
+    {
+        <FluentMessageBar Intent="@_messageIntent" AllowDismiss="true" OnDismiss="@(() => _message = null)" Class="page-message">
+            @_message
+        </FluentMessageBar>
+    }
 
-<FluentCard>
-    <div class="empty-state">
-        <div class="empty-title">User management is coming with SSO</div>
-        <div class="empty-sub">
-            Today your organization signs in with a shared organization key, so there are no individual
-            user accounts to manage here yet. Once single sign-on is enabled you'll be able to invite
-            teammates, assign roles (Org Admin, Tenant Manager, Viewer), and scope them to specific
-            tenants from this screen.
-        </div>
-    </div>
-</FluentCard>
+    <FluentTabs @bind-ActiveTabId="_activeTab">
+        <FluentTab Label="Users" Id="tab-users">
+            @if (!_loaded)
+            {
+                <FluentProgressRing />
+            }
+            else if (_users.Count == 0)
+            {
+                <FluentCard>
+                    <div class="empty-state">
+                        <div class="empty-title">No users yet</div>
+                        <div class="empty-sub">Invite your first teammate to give them portal access.</div>
+                    </div>
+                </FluentCard>
+            }
+            else
+            {
+                <div class="grid-card">
+                    <FluentDataGrid Items="@_users.AsQueryable()" TGridItem="OrgUserRowDto"
+                                    GridTemplateColumns="1.6fr 1.2fr 1fr 0.9fr 1fr 1fr 1.4fr" Style="width: 100%;">
+                        <PropertyColumn Title="Email" Property="@(u => u.Email)" Sortable="true" />
+                        <PropertyColumn Title="Name" Property="@(u => u.DisplayName)" Sortable="true" />
+                        <TemplateColumn Title="Role">
+                            <FluentBadge Appearance="Appearance.Neutral">@context.Role</FluentBadge>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Status">
+                            <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Scope">
+                            <span title="@string.Join(", ", context.TenantNames)">@context.ScopeSummary</span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Last login">
+                            @(context.LastLoginAt is null ? (MarkupString)"<span class=\"muted\">Never</span>"
+                                : (MarkupString)System.Net.WebUtility.HtmlEncode(context.LastLoginAt.Value.ToLocalTime().ToString("g")))
+                        </TemplateColumn>
+                        <TemplateColumn Title="Actions" Align="Align.End">
+                            <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => OpenEditAsync(context))">Edit</FluentButton>
+                            @if (string.Equals(context.Status, "Invited", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => ResendAsync(context))">Resend</FluentButton>
+                            }
+                            @if (string.Equals(context.Status, "Disabled", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => ReactivateAsync(context))">Reactivate</FluentButton>
+                            }
+                            else if (string.Equals(context.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => DeactivateAsync(context))">Deactivate</FluentButton>
+                            }
+                        </TemplateColumn>
+                    </FluentDataGrid>
+                </div>
+            }
+        </FluentTab>
+
+        <FluentTab Label="@RequestsTabLabel" Id="tab-requests">
+            @if (!_loaded)
+            {
+                <FluentProgressRing />
+            }
+            else if (_requests.Count == 0)
+            {
+                <FluentCard>
+                    <div class="empty-state">
+                        <div class="empty-title">No pending join requests</div>
+                        <div class="empty-sub">
+                            When someone requests to join your organization, their request appears here for review.
+                        </div>
+                    </div>
+                </FluentCard>
+            }
+            else
+            {
+                <div class="grid-card">
+                    <FluentDataGrid Items="@_requests.AsQueryable()" TGridItem="OrgAccessRequestDto"
+                                    GridTemplateColumns="1.4fr 1.2fr 2fr 1fr 1.2fr" Style="width: 100%;">
+                        <PropertyColumn Title="Email" Property="@(r => r.Email)" Sortable="true" />
+                        <PropertyColumn Title="Name" Property="@(r => r.DisplayName)" Sortable="true" />
+                        <TemplateColumn Title="Message">
+                            @(string.IsNullOrWhiteSpace(context.Message)
+                                ? (MarkupString)"<span class=\"muted\">—</span>"
+                                : (MarkupString)System.Net.WebUtility.HtmlEncode(context.Message))
+                        </TemplateColumn>
+                        <TemplateColumn Title="Requested">
+                            @context.CreatedAt.ToLocalTime().ToString("g")
+                        </TemplateColumn>
+                        <TemplateColumn Title="Actions" Align="Align.End">
+                            <FluentButton Appearance="Appearance.Accent" OnClick="@(() => ApproveAsync(context))">Approve</FluentButton>
+                            <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => DenyAsync(context))">Deny</FluentButton>
+                        </TemplateColumn>
+                    </FluentDataGrid>
+                </div>
+            }
+        </FluentTab>
+    </FluentTabs>
+}
+
+@code {
+    private bool _loaded;
+    private string _activeTab = "tab-users";
+    private List<OrgUserRowDto> _users = new();
+    private List<OrgAccessRequestDto> _requests = new();
+    private List<UserDialogTenant> _tenantOptions = new();
+    private string? _message;
+    private MessageIntent _messageIntent = MessageIntent.Success;
+
+    private bool _isAdmin => State.IsOrgAdmin;
+
+    private string RequestsTabLabel => _requests.Count > 0 ? $"Join Requests ({_requests.Count})" : "Join Requests";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_isAdmin)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loaded = false;
+        var tenants = await Api.GetTenantsAsync();
+        _tenantOptions = tenants.Select(t => new UserDialogTenant(t.Id, t.Name)).ToList();
+        _users = await Api.GetUsersAsync();
+        _requests = await Api.GetAccessRequestsAsync("Pending");
+        _loaded = true;
+    }
+
+    private async Task OpenInviteAsync()
+    {
+        var model = new UserDialogModel
+        {
+            EmailEditable = true,
+            NameEditable = true,
+            ShowStatus = false,
+            AllTenants = true,
+            Role = "Viewer",
+            Tenants = _tenantOptions
+        };
+
+        var result = await ShowUserDialogAsync(model, "Invite user", "Send invite");
+        if (result is null)
+            return;
+
+        var action = await Api.CreateUserAsync(new OrgUserWriteRequest
+        {
+            Email = result.Email.Trim(),
+            DisplayName = string.IsNullOrWhiteSpace(result.DisplayName) ? null : result.DisplayName.Trim(),
+            Role = result.Role,
+            AllTenants = result.AllTenants,
+            TenantIds = result.AllTenants ? new List<int>() : result.SelectedTenantIds.ToList()
+        });
+
+        await ApplyActionAsync(action, $"Invitation sent to {result.Email}.");
+    }
+
+    private async Task OpenEditAsync(OrgUserRowDto user)
+    {
+        var model = new UserDialogModel
+        {
+            Id = user.Id,
+            Email = user.Email,
+            DisplayName = user.DisplayName,
+            Role = user.Role,
+            Status = string.Equals(user.Status, "Disabled", StringComparison.OrdinalIgnoreCase) ? "Disabled" : "Active",
+            AllTenants = user.AllTenants,
+            SelectedTenantIds = new HashSet<int>(user.TenantIds),
+            EmailEditable = false,
+            NameEditable = false,
+            // Only offer status here once the user has activated; an Invited user is toggled via Resend.
+            ShowStatus = !string.Equals(user.Status, "Invited", StringComparison.OrdinalIgnoreCase),
+            Tenants = _tenantOptions
+        };
+
+        var result = await ShowUserDialogAsync(model, $"Edit {user.Email}", "Save");
+        if (result is null)
+            return;
+
+        var action = await Api.UpdateUserAsync(user.Id, new OrgUserUpdateRequest
+        {
+            Role = result.Role,
+            AllTenants = result.AllTenants,
+            TenantIds = result.AllTenants ? new List<int>() : result.SelectedTenantIds.ToList(),
+            Status = result.ShowStatus ? result.Status : null
+        });
+
+        await ApplyActionAsync(action, "User updated.");
+    }
+
+    private async Task ResendAsync(OrgUserRowDto user)
+    {
+        var action = await Api.ResendInviteAsync(user.Id);
+        await ApplyActionAsync(action, $"Activation email re-sent to {user.Email}.");
+    }
+
+    private async Task DeactivateAsync(OrgUserRowDto user)
+    {
+        var confirm = await DialogService.ShowConfirmationAsync(
+            $"Deactivate {user.Email}? They will no longer be able to sign in.",
+            "Deactivate", "Cancel", "Deactivate user?");
+        if ((await confirm.Result).Cancelled)
+            return;
+
+        var action = await Api.DeactivateUserAsync(user.Id);
+        await ApplyActionAsync(action, $"{user.Email} deactivated.");
+    }
+
+    private async Task ReactivateAsync(OrgUserRowDto user)
+    {
+        var action = await Api.ReactivateUserAsync(user.Id);
+        await ApplyActionAsync(action, $"{user.Email} reactivated.");
+    }
+
+    private async Task ApproveAsync(OrgAccessRequestDto request)
+    {
+        var model = new UserDialogModel
+        {
+            Email = request.Email,
+            DisplayName = request.DisplayName,
+            Role = "Viewer",
+            AllTenants = true,
+            EmailEditable = false,
+            NameEditable = false,
+            ShowStatus = false,
+            Tenants = _tenantOptions
+        };
+
+        var result = await ShowUserDialogAsync(model, $"Approve {request.Email}", "Approve & invite");
+        if (result is null)
+            return;
+
+        var action = await Api.ApproveAccessRequestAsync(request.Id, new OrgUserWriteRequest
+        {
+            Email = request.Email,
+            DisplayName = request.DisplayName,
+            Role = result.Role,
+            AllTenants = result.AllTenants,
+            TenantIds = result.AllTenants ? new List<int>() : result.SelectedTenantIds.ToList()
+        });
+
+        await ApplyActionAsync(action, $"Approved — invitation sent to {request.Email}.");
+    }
+
+    private async Task DenyAsync(OrgAccessRequestDto request)
+    {
+        var model = new DenyDialogModel
+        {
+            RequestId = request.Id,
+            Email = request.Email,
+            DisplayName = request.DisplayName
+        };
+
+        var parameters = new DialogParameters
+        {
+            Title = "Deny join request",
+            PrimaryAction = "Deny",
+            SecondaryAction = "Cancel",
+            Width = "480px"
+        };
+
+        var dialog = await DialogService.ShowDialogAsync<DenyRequestDialog>(model, parameters);
+        var dialogResult = await dialog.Result;
+        if (dialogResult.Cancelled || dialogResult.Data is not DenyDialogModel denied)
+            return;
+
+        var action = await Api.DenyAccessRequestAsync(request.Id, denied.Reason);
+        await ApplyActionAsync(action, $"Request from {request.Email} denied.");
+    }
+
+    /// <summary>Opens the shared user dialog and returns the mutated model, or null if cancelled.</summary>
+    private async Task<UserDialogModel?> ShowUserDialogAsync(UserDialogModel model, string title, string primary)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = title,
+            PrimaryAction = primary,
+            SecondaryAction = "Cancel",
+            Width = "480px"
+        };
+
+        var dialog = await DialogService.ShowDialogAsync<UserDialog>(model, parameters);
+        var result = await dialog.Result;
+        return result.Cancelled || result.Data is not UserDialogModel updated ? null : updated;
+    }
+
+    private async Task ApplyActionAsync(OrgUserActionResult action, string successMessage)
+    {
+        if (action.Success)
+        {
+            await LoadAsync();
+            ShowMessage(successMessage, MessageIntent.Success);
+        }
+        else
+        {
+            ShowMessage(action.Error ?? "Something went wrong.", MessageIntent.Error);
+        }
+    }
+
+    private void ShowMessage(string message, MessageIntent intent)
+    {
+        _message = message;
+        _messageIntent = intent;
+    }
+
+    private static Appearance StatusAppearance(string status) => status.ToLowerInvariant() switch
+    {
+        "active" => Appearance.Accent,
+        "invited" => Appearance.Neutral,
+        "disabled" => Appearance.Lightweight,
+        _ => Appearance.Lightweight
+    };
+}

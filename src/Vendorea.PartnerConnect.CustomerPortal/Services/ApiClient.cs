@@ -499,6 +499,91 @@ public class ApiClient
     public async Task<TenantSummaryDto?> GetTenantSummaryAsync(int tenantId, CancellationToken cancellationToken = default)
         => await GetJsonAsync<TenantSummaryDto>($"/api/v1/org/tenants/{tenantId}/summary", cancellationToken);
 
+    // ========================================================================================
+    // Org users + join requests (Phase 5) — OrgAdmin only.
+    // ========================================================================================
+
+    /// <summary>The org's portal users. Empty list on any non-success/transport error.</summary>
+    public async Task<List<OrgUserRowDto>> GetUsersAsync(CancellationToken cancellationToken = default)
+        => await GetListAsync<OrgUserRowDto>("/api/v1/org/users", cancellationToken);
+
+    /// <summary>Invites a new portal user (creates Invited + emails activation link).</summary>
+    public async Task<OrgUserActionResult> CreateUserAsync(OrgUserWriteRequest body, CancellationToken cancellationToken = default)
+        => await UserActionAsync(HttpMethod.Post, "/api/v1/org/users", body, cancellationToken);
+
+    /// <summary>Updates a user's role, tenant scope, and status.</summary>
+    public async Task<OrgUserActionResult> UpdateUserAsync(Guid id, OrgUserUpdateRequest body, CancellationToken cancellationToken = default)
+        => await UserActionAsync(HttpMethod.Put, $"/api/v1/org/users/{id}", body, cancellationToken);
+
+    /// <summary>Deactivates a user (Disabled — can no longer sign in).</summary>
+    public async Task<OrgUserActionResult> DeactivateUserAsync(Guid id, CancellationToken cancellationToken = default)
+        => await UserActionAsync(HttpMethod.Post, $"/api/v1/org/users/{id}/deactivate", null, cancellationToken);
+
+    /// <summary>Reactivates a disabled user (back to Active).</summary>
+    public async Task<OrgUserActionResult> ReactivateUserAsync(Guid id, CancellationToken cancellationToken = default)
+        => await UserActionAsync(HttpMethod.Post, $"/api/v1/org/users/{id}/reactivate", null, cancellationToken);
+
+    /// <summary>Re-sends the activation invite for an Invited user. Returns success + the API's message.</summary>
+    public async Task<OrgUserActionResult> ResendInviteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = BuildRequest(HttpMethod.Post, $"/api/v1/org/users/{id}/resend-invite");
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return OrgUserActionResult.Ok(null);
+            return OrgUserActionResult.Fail(await ReadErrorAsync(response, "Couldn't resend the invite.", cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resend invite for user {Id}", id);
+            return OrgUserActionResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>The org's join requests, optionally filtered by status. Empty list on error.</summary>
+    public async Task<List<OrgAccessRequestDto>> GetAccessRequestsAsync(string? status = null, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(("status", status));
+        return await GetListAsync<OrgAccessRequestDto>($"/api/v1/org/access-requests{query}", cancellationToken);
+    }
+
+    /// <summary>Approves a join request: invites the requester with the chosen role/scope.</summary>
+    public async Task<OrgUserActionResult> ApproveAccessRequestAsync(Guid id, OrgUserWriteRequest body, CancellationToken cancellationToken = default)
+        => await UserActionAsync(HttpMethod.Post, $"/api/v1/org/access-requests/{id}/approve", body, cancellationToken);
+
+    /// <summary>Denies a join request (records the reason and notifies the requester).</summary>
+    public async Task<OrgUserActionResult> DenyAccessRequestAsync(Guid id, string? reason, CancellationToken cancellationToken = default)
+        => await UserActionAsync(HttpMethod.Post, $"/api/v1/org/access-requests/{id}/deny", new { reason }, cancellationToken);
+
+    /// <summary>Sends a user mutation and maps it to a result, extracting the API's error message on failure.</summary>
+    private async Task<OrgUserActionResult> UserActionAsync(HttpMethod method, string uri, object? body, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = BuildRequest(method, uri);
+            if (body is not null)
+                request.Content = JsonContent.Create(body);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                OrgUserRowDto? user = null;
+                if (response.Content.Headers.ContentType?.MediaType == "application/json")
+                {
+                    try { user = await response.Content.ReadFromJsonAsync<OrgUserRowDto>(cancellationToken: cancellationToken); }
+                    catch { /* message-only bodies (e.g. resend/deny) aren't a user */ }
+                }
+                return OrgUserActionResult.Ok(user);
+            }
+            return OrgUserActionResult.Fail(await ReadErrorAsync(response, $"Request failed ({(int)response.StatusCode}).", cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed {Method} {Uri}", method, uri);
+            return OrgUserActionResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
     /// <summary>GETs a paged result; returns an empty page on any non-success/transport error.</summary>
     private async Task<PagedResult<T>> GetPagedAsync<T>(string requestUri, CancellationToken cancellationToken)
     {

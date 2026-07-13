@@ -1,0 +1,17 @@
+@implements IDialogContentComponent<DenyDialogModel>
+
+@* Deny-a-join-request dialog. The reason is optional and is emailed to the requester on deny. The
+   primary/secondary buttons come from DialogParameters, so closing returns the mutated Content. *@
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="12">
+    <p>
+        Deny the request from <strong>@Content.DisplayName</strong>
+        (@Content.Email)?
+    </p>
+    <FluentTextArea @bind-Value="Content.Reason" Label="Reason (optional, shared with the requester)"
+                    Rows="3" Style="width: 100%;" />
+</FluentStack>
+
+@code {
+    [Parameter] public DenyDialogModel Content { get; set; } = default!;
+}

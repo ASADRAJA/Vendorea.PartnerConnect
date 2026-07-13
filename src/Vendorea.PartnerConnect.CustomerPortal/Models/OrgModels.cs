@@ -515,3 +515,102 @@ public record SettingsSaveResult(bool Success, string? Error, OrgSettingsDto? Se
     public static SettingsSaveResult Ok(OrgSettingsDto? s) => new(true, null, s);
     public static SettingsSaveResult Fail(string error) => new(false, error, null);
 }
+
+// ============================================================================================
+// Org users + join requests (Phase 5). Mirror the OrgUsersController DTOs.
+// ============================================================================================
+
+/// <summary>A row in the org's Users screen (<c>GET /org/users</c>).</summary>
+public class OrgUserRowDto
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+
+    /// <summary>Invited | Active | Disabled.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public bool AllTenants { get; set; }
+    public List<int> TenantIds { get; set; } = new();
+    public List<string> TenantNames { get; set; } = new();
+    public DateTime? LastLoginAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>Short scope label for the grid, e.g. "All tenants" or "3 tenants".</summary>
+    public string ScopeSummary => AllTenants
+        ? "All tenants"
+        : TenantIds.Count == 0 ? "No tenants" : $"{TenantIds.Count} tenant{(TenantIds.Count == 1 ? "" : "s")}";
+}
+
+/// <summary>Body of <c>POST /org/users</c> and <c>POST /org/access-requests/{id}/approve</c>.</summary>
+public class OrgUserWriteRequest
+{
+    public string Email { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string Role { get; set; } = "Viewer";
+    public bool AllTenants { get; set; } = true;
+    public List<int> TenantIds { get; set; } = new();
+}
+
+/// <summary>Body of <c>PUT /org/users/{id}</c> — role + scope + optional status.</summary>
+public class OrgUserUpdateRequest
+{
+    public string Role { get; set; } = "Viewer";
+    public bool AllTenants { get; set; } = true;
+    public List<int> TenantIds { get; set; } = new();
+    public string? Status { get; set; }
+}
+
+/// <summary>A join request in the OrgAdmin queue (<c>GET /org/access-requests</c>).</summary>
+public class OrgAccessRequestDto
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string? Message { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? DecisionAt { get; set; }
+    public string? DecisionReason { get; set; }
+}
+
+/// <summary>Outcome of a user mutation (create/update/resend/deactivate/approve), with a display message.</summary>
+public record OrgUserActionResult(bool Success, string? Error, OrgUserRowDto? User)
+{
+    public static OrgUserActionResult Ok(OrgUserRowDto? u) => new(true, null, u);
+    public static OrgUserActionResult Fail(string error) => new(false, error, null);
+}
+
+/// <summary>The tenant scope model backing the invite/edit/approve dialog's multi-select.</summary>
+public record UserDialogTenant(int Id, string Name);
+
+/// <summary>Backing model for the shared invite/edit/approve user dialog.</summary>
+public class UserDialogModel
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Role { get; set; } = "Viewer";
+    public bool AllTenants { get; set; } = true;
+    public HashSet<int> SelectedTenantIds { get; set; } = new();
+
+    /// <summary>Active | Disabled (only used when <see cref="ShowStatus"/> is true).</summary>
+    public string Status { get; set; } = "Active";
+
+    // UI flags: invite lets you type email+name; edit shows status; approve is role/scope only.
+    public bool EmailEditable { get; set; }
+    public bool NameEditable { get; set; }
+    public bool ShowStatus { get; set; }
+
+    public List<UserDialogTenant> Tenants { get; set; } = new();
+}
+
+/// <summary>Backing model for the deny-join-request dialog.</summary>
+public class DenyDialogModel
+{
+    public Guid RequestId { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}

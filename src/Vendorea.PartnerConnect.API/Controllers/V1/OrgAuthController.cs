@@ -100,7 +100,9 @@ public class OrgAuthController : ControllerBase
             return Unauthorized(new { error = GenericError });
         }
 
-        if (!user.IsActive || !orgActive)
+        // Only fully-Active users may sign in. Disabled users are blocked (deactivation also clears
+        // IsActive), and an Invited user has no password so never reaches here anyway.
+        if (!user.IsActive || user.Status != OrgPortalUserStatus.Active || !orgActive)
             return Unauthorized(new { error = GenericError });
 
         // Success: clear the failure state and record the login.

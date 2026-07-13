@@ -18,10 +18,22 @@ public interface IOrgPortalUserRepository
     /// <summary>Finds a user by id, including its tenant scope.</summary>
     Task<OrgPortalUser?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>All portal users for an organization (each with its tenant scope loaded), newest first.</summary>
+    Task<IReadOnlyList<OrgPortalUser>> GetByOrganizationIdAsync(int organizationId, CancellationToken cancellationToken = default);
+
     /// <summary>True if a user with this email already exists for the org.</summary>
     Task<bool> ExistsAsync(int organizationId, string email, CancellationToken cancellationToken = default);
 
     Task<OrgPortalUser> AddAsync(OrgPortalUser user, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(OrgPortalUser user, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists a <b>tracked</b> user (from <see cref="GetByIdAsync"/>) after reconciling its explicit
+    /// tenant scope to <paramref name="tenantIds"/> (added/removed <see cref="OrgPortalUserTenant"/>
+    /// rows). When <paramref name="allTenants"/> is true the explicit scope is cleared. Use this for
+    /// role/scope edits; scalar-only changes can use <see cref="UpdateAsync"/>.
+    /// </summary>
+    Task UpdateWithTenantScopeAsync(
+        OrgPortalUser user, bool allTenants, IReadOnlyCollection<int>? tenantIds, CancellationToken cancellationToken = default);
 }
