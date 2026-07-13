@@ -77,19 +77,17 @@ public class OrgPortalUserInvitationService : IOrgPortalUserInvitationService
         var baseUrl = (_configuration["CustomerPortalBaseUrl"] ?? DefaultPortalBaseUrl).TrimEnd('/');
         var link = $"{baseUrl}/Account/Activate?token={Uri.EscapeDataString(rawToken)}";
 
-        var html =
-            $"<p>Hello {System.Net.WebUtility.HtmlEncode(user.DisplayName)},</p>" +
-            $"<p>You've been invited to the <strong>{System.Net.WebUtility.HtmlEncode(organization.Name)}</strong> PartnerConnect portal. " +
-            "Click the link below to set your password and activate your account:</p>" +
-            $"<p><a href=\"{link}\">Activate your account</a></p>" +
-            "<p>This link expires in 7 days. If you didn't expect this, you can ignore this email.</p>";
+        var body = EmailTemplates.Build(
+            user.DisplayName,
+            new[]
+            {
+                $"You've been invited to the {organization.Name} PartnerConnect portal. " +
+                "Use the button below to set your password and activate your account."
+            },
+            buttonText: "Activate your account",
+            buttonUrl: link,
+            footerNote: "This link expires in 7 days. If you didn't expect this, you can ignore this email.");
 
-        var text =
-            $"Hello {user.DisplayName},\n\n" +
-            $"You've been invited to the {organization.Name} PartnerConnect portal. " +
-            $"Set your password and activate your account here:\n{link}\n\n" +
-            "This link expires in 7 days. If you didn't expect this, you can ignore this email.";
-
-        await _email.SendAsync(user.Email, "Activate your PartnerConnect account", html, text, cancellationToken);
+        await _email.SendAsync(user.Email, "Activate your PartnerConnect account", body.Html, body.Text, cancellationToken);
     }
 }

@@ -107,6 +107,85 @@ public class ApiClient
     }
 
     /// <summary>
+    /// Starts a password reset (anonymous — <c>POST /api/v1/org/auth/forgot-password</c>). No bearer
+    /// token is attached. The API always returns 200 with a generic message (no account enumeration);
+    /// this returns that message and never surfaces an error — even on a transport failure.
+    /// </summary>
+    public async Task<string> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
+    {
+        const string generic = "If an account exists for that email, a password reset link has been sent.";
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/org/auth/forgot-password")
+            {
+                Content = JsonContent.Create(new { email })
+            };
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode
+                ? await ReadMessageAsync(response, generic, cancellationToken)
+                : generic;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Forgot-password request failed");
+            return generic;
+        }
+    }
+
+    /// <summary>
+    /// Validates a password-reset link (anonymous — <c>GET /api/v1/org/auth/reset-password</c>). No
+    /// bearer token is attached. Returns the account email (in <see cref="ActivationInfoDto.Email"/>)
+    /// on a valid token, or a failure with the API's generic message.
+    /// </summary>
+    public async Task<ActivationResult> GetResetPasswordInfoAsync(string token, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get, $"/api/v1/org/auth/reset-password?token={Uri.EscapeDataString(token)}");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var info = await response.Content.ReadFromJsonAsync<ActivationInfoDto>(cancellationToken: cancellationToken);
+                return ActivationResult.Ok(info);
+            }
+            return ActivationResult.Fail(await ReadErrorAsync(response, "This password reset link is invalid or has expired.", cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch password-reset info");
+            return ActivationResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>
+    /// Redeems a password-reset token by setting a new password (anonymous —
+    /// <c>POST /api/v1/org/auth/reset-password</c>). Returns success, or the API's error on failure.
+    /// </summary>
+    public async Task<ActivationResult> ResetPasswordAsync(string token, string password, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/org/auth/reset-password")
+            {
+                Content = JsonContent.Create(new { token, password })
+            };
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return ActivationResult.Ok();
+            return ActivationResult.Fail(await ReadErrorAsync(response, "Couldn't reset your password. The link may have expired.", cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reset password");
+            return ActivationResult.Fail("Couldn't reach the server. Please try again.");
+        }
+    }
+
+    /// <summary>
     /// Lists selectable billing plans (anonymous — <c>GET /api/v1/public/plans</c>) to populate the
     /// public Register form. Returns an empty list on any transport error.
     /// </summary>

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Vendorea.PartnerConnect.Api.RateLimiting;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 
@@ -45,6 +47,7 @@ public class PublicAccessRequestsController : ControllerBase
     /// user of the org. Always returns the same 202 so callers can't enumerate orgs or members.
     /// </summary>
     [HttpPost("access-requests")]
+    [EnableRateLimiting(RateLimitPolicies.PublicAuth)]
     public async Task<IActionResult> RequestAccess([FromBody] PublicAccessRequest request, CancellationToken cancellationToken)
     {
         if (request is null)

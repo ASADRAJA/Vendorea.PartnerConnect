@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Vendorea.PartnerConnect.Api.Services;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Application.Services;
 using Vendorea.PartnerConnect.Domain.Entities;
+using Vendorea.PartnerConnect.Infrastructure.Services;
 
 namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
 
@@ -19,6 +21,7 @@ public class AdminOrgRegistrationsController : ControllerBase
     private readonly IOrganizationRepository _organizations;
     private readonly IOrganizationOnboardingService _onboarding;
     private readonly IEmailSender _email;
+    private readonly IAuditService _audit;
     private readonly ILogger<AdminOrgRegistrationsController> _logger;
 
     public AdminOrgRegistrationsController(
@@ -26,12 +29,14 @@ public class AdminOrgRegistrationsController : ControllerBase
         IOrganizationRepository organizations,
         IOrganizationOnboardingService onboarding,
         IEmailSender email,
+        IAuditService audit,
         ILogger<AdminOrgRegistrationsController> logger)
     {
         _registrations = registrations;
         _organizations = organizations;
         _onboarding = onboarding;
         _email = email;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -90,6 +95,12 @@ public class AdminOrgRegistrationsController : ControllerBase
         registration.DecisionByAdmin = User.Identity?.Name;
         await _registrations.UpdateAsync(registration, cancellationToken);
 
+        await _audit.LogAsync(
+            AuditAction.Update, "Organization", org.Id.ToString(),
+            newValues: new { org.Name, Status = "Active", registration.AdminEmail, registration.PlanCode },
+            notes: $"Registration {id} approved; org onboarded and OrgAdmin invited.",
+            cancellationToken: cancellationToken);
+
         _logger.LogInformation("Approved registration {RegistrationId} → org {OrgId} ({OrgCode}) activated",
             id, org.Id, org.Code);
 
@@ -129,32 +140,32 @@ public class AdminOrgRegistrationsController : ControllerBase
 
         await SendDenialEmailAsync(registration, reason, cancellationToken);
 
+        await _audit.LogAsync(
+            AuditAction.Update, "Organization", registration.OrganizationId.ToString(),
+            newValues: new { registration.OrganizationName, Status = "Rejected", Reason = reason },
+            notes: $"Registration {id} denied.",
+            cancellationToken: cancellationToken);
+
         _logger.LogInformation("Denied registration {RegistrationId} for '{OrgName}'", id, registration.OrganizationName);
         return Ok(new { message = $"Registration for {registration.OrganizationName} was denied and the applicant was notified." });
     }
 
     private async Task SendDenialEmailAsync(OrgRegistrationRequest registration, string? reason, CancellationToken cancellationToken)
     {
-        var reasonHtml = string.IsNullOrWhiteSpace(reason)
-            ? string.Empty
-            : $"<p>Reason: {System.Net.WebUtility.HtmlEncode(reason)}</p>";
-        var reasonText = string.IsNullOrWhiteSpace(reason) ? string.Empty : $"Reason: {reason}\n\n";
-
-        var html =
-            $"<p>Hello {System.Net.WebUtility.HtmlEncode(registration.AdminDisplayName)},</p>" +
-            $"<p>Thank you for your interest in PartnerConnect. After reviewing your registration for " +
-            $"<strong>{System.Net.WebUtility.HtmlEncode(registration.OrganizationName)}</strong>, we're unable to approve it at this time.</p>" +
-            reasonHtml +
-            "<p>If you believe this was a mistake or would like to discuss further, please reply to this email or contact our team.</p>";
-
-        var text =
-            $"Hello {registration.AdminDisplayName},\n\n" +
+        var paragraphs = new List<string>
+        {
             $"Thank you for your interest in PartnerConnect. After reviewing your registration for " +
-            $"{registration.OrganizationName}, we're unable to approve it at this time.\n\n" +
-            reasonText +
-            "If you believe this was a mistake or would like to discuss further, please reply to this email or contact our team.";
+            $"{registration.OrganizationName}, we're unable to approve it at this time."
+        };
+        if (!string.IsNullOrWhiteSpace(reason))
+            paragraphs.Add($"Reason: {reason}");
 
-        await _email.SendAsync(registration.AdminEmail, "About your PartnerConnect registration", html, text, cancellationToken);
+        var body = EmailTemplates.Build(
+            registration.AdminDisplayName,
+            paragraphs,
+            footerNote: "If you believe this was a mistake or would like to discuss further, please contact our team.");
+
+        await _email.SendAsync(registration.AdminEmail, "About your PartnerConnect registration", body.Html, body.Text, cancellationToken);
     }
 
     private static OrgRegistrationDto ToDto(OrgRegistrationRequest r) => new()

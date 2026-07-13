@@ -3,6 +3,7 @@ using Serilog;
 using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 using Vendorea.PartnerConnect.Api.Authentication;
 using Vendorea.PartnerConnect.Api.Authorization;
+using Vendorea.PartnerConnect.Api.RateLimiting;
 using Vendorea.PartnerConnect.Billing;
 using Vendorea.PartnerConnect.Infrastructure.DependencyInjection;
 using Vendorea.PartnerConnect.Infrastructure.Middleware;
@@ -213,6 +214,11 @@ builder.Services.Configure<Microsoft.AspNetCore.Authorization.AuthorizationOptio
 builder.Services.Configure<Microsoft.Extensions.Hosting.HostOptions>(o =>
     o.BackgroundServiceExceptionBehavior = Microsoft.Extensions.Hosting.BackgroundServiceExceptionBehavior.Ignore);
 
+// Rate limiting for the public/anonymous auth surface (register, access-request, forgot-password,
+// login). Opt-in via [EnableRateLimiting(...)] on those endpoints only — the authenticated app/API
+// surface is never throttled.
+builder.Services.AddPublicRateLimiting();
+
 // Health checks
 builder.Services.AddHealthChecks();
 
@@ -314,6 +320,9 @@ app.UseCors("Default");
 app.UsePartnerConnectMiddleware();
 app.UseAuthentication();
 app.UseAuthorization();
+// Must follow routing/auth so per-endpoint [EnableRateLimiting] policies resolve; only decorated
+// (public/anonymous) endpoints are throttled.
+app.UseRateLimiter();
 app.UseSerilogRequestLogging();
 
 app.MapControllers();

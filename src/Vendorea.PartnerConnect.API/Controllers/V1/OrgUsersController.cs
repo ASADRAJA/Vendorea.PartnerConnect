@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vendorea.PartnerConnect.Api.Authorization;
 using Vendorea.PartnerConnect.Application.Interfaces;
+using Vendorea.PartnerConnect.Application.Services;
 using Vendorea.PartnerConnect.Domain.Entities;
+using Vendorea.PartnerConnect.Infrastructure.Services;
 
 namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 
@@ -25,6 +27,7 @@ public class OrgUsersController : ControllerBase
     private readonly IOrgPortalUserInvitationService _invitations;
     private readonly IOrgAccessRequestRepository _accessRequests;
     private readonly IEmailSender _email;
+    private readonly IAuditService _audit;
     private readonly ILogger<OrgUsersController> _logger;
 
     public OrgUsersController(
@@ -34,6 +37,7 @@ public class OrgUsersController : ControllerBase
         IOrgPortalUserInvitationService invitations,
         IOrgAccessRequestRepository accessRequests,
         IEmailSender email,
+        IAuditService audit,
         ILogger<OrgUsersController> logger)
     {
         _users = users;
@@ -42,6 +46,7 @@ public class OrgUsersController : ControllerBase
         _invitations = invitations;
         _accessRequests = accessRequests;
         _email = email;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -91,6 +96,11 @@ public class OrgUsersController : ControllerBase
         var user = await _invitations.InviteAsync(
             org, email, request.DisplayName, role, request.AllTenants, tenantIds, cancellationToken);
 
+        await _audit.LogAsync(
+            AuditAction.Create, "OrgPortalUser", user.Id.ToString(),
+            newValues: new { user.Email, Role = user.Role.ToString(), user.AllTenants, TenantIds = tenantIds },
+            notes: $"User invited to org {org.Id}.", cancellationToken: cancellationToken);
+
         _logger.LogInformation("OrgAdmin invited portal user {UserId} ({Email}) to org {OrgId} as {Role}",
             user.Id, user.Email, org.Id, user.Role);
 
@@ -139,12 +149,20 @@ public class OrgUsersController : ControllerBase
         if (await WouldRemoveLastActiveAdminAsync(org.Id, user, role, newStatus, newIsActive, cancellationToken))
             return Conflict(new { error = "Cannot remove the last active Org Admin. Assign another Org Admin first." });
 
+        var previous = new { Role = user.Role.ToString(), Status = user.Status.ToString(), user.AllTenants };
+
         user.Role = role;
         user.Status = newStatus;
         user.IsActive = newIsActive;
         user.AllTenants = request.AllTenants;
 
         await _users.UpdateWithTenantScopeAsync(user, request.AllTenants, tenantIds, cancellationToken);
+
+        await _audit.LogAsync(
+            AuditAction.Update, "OrgPortalUser", user.Id.ToString(),
+            oldValues: previous,
+            newValues: new { Role = user.Role.ToString(), Status = user.Status.ToString(), user.AllTenants, TenantIds = tenantIds },
+            notes: $"User role/status/scope changed in org {org.Id}.", cancellationToken: cancellationToken);
 
         _logger.LogInformation("OrgAdmin updated portal user {UserId} in org {OrgId} (role {Role}, status {Status})",
             user.Id, org.Id, user.Role, user.Status);
@@ -206,6 +224,12 @@ public class OrgUsersController : ControllerBase
         user.Status = newStatus;
         user.IsActive = active;
         await _users.UpdateAsync(user, cancellationToken);
+
+        await _audit.LogAsync(
+            AuditAction.Update, "OrgPortalUser", user.Id.ToString(),
+            newValues: new { Status = newStatus.ToString(), user.IsActive },
+            notes: $"User {(active ? "reactivated" : "deactivated")} in org {org.Id}.",
+            cancellationToken: cancellationToken);
 
         _logger.LogInformation("OrgAdmin {Action} portal user {UserId} in org {OrgId}",
             active ? "reactivated" : "deactivated", user.Id, org.Id);
@@ -275,6 +299,11 @@ public class OrgUsersController : ControllerBase
         accessRequest.DecisionByUserId = CurrentUserId();
         await _accessRequests.UpdateAsync(accessRequest, cancellationToken);
 
+        await _audit.LogAsync(
+            AuditAction.Update, "OrgAccessRequest", accessRequest.Id.ToString(),
+            newValues: new { Status = "Approved", accessRequest.Email, Role = role.ToString(), InvitedUserId = user.Id },
+            notes: $"Access request approved; user invited to org {org.Id}.", cancellationToken: cancellationToken);
+
         _logger.LogInformation("OrgAdmin approved access request {RequestId} → invited user {UserId} ({Email}) to org {OrgId}",
             accessRequest.Id, user.Id, user.Email, org.Id);
 
@@ -304,6 +333,11 @@ public class OrgUsersController : ControllerBase
         await _accessRequests.UpdateAsync(accessRequest, cancellationToken);
 
         await SendDenyEmailAsync(accessRequest, org, cancellationToken);
+
+        await _audit.LogAsync(
+            AuditAction.Update, "OrgAccessRequest", accessRequest.Id.ToString(),
+            newValues: new { Status = "Denied", accessRequest.Email, accessRequest.DecisionReason },
+            notes: $"Access request denied for org {org.Id}.", cancellationToken: cancellationToken);
 
         _logger.LogInformation("OrgAdmin denied access request {RequestId} for org {OrgId}", accessRequest.Id, org.Id);
 
@@ -397,26 +431,19 @@ public class OrgUsersController : ControllerBase
 
     private async Task SendDenyEmailAsync(OrgAccessRequest request, Organization org, CancellationToken cancellationToken)
     {
-        var reason = string.IsNullOrWhiteSpace(request.DecisionReason)
-            ? string.Empty
-            : $"<p>Reason: {System.Net.WebUtility.HtmlEncode(request.DecisionReason)}</p>";
-        var reasonText = string.IsNullOrWhiteSpace(request.DecisionReason)
-            ? string.Empty
-            : $"Reason: {request.DecisionReason}\n\n";
+        var paragraphs = new List<string>
+        {
+            $"Your request to join the {org.Name} PartnerConnect portal was not approved at this time."
+        };
+        if (!string.IsNullOrWhiteSpace(request.DecisionReason))
+            paragraphs.Add($"Reason: {request.DecisionReason}");
 
-        var html =
-            $"<p>Hello {System.Net.WebUtility.HtmlEncode(request.DisplayName)},</p>" +
-            $"<p>Your request to join the <strong>{System.Net.WebUtility.HtmlEncode(org.Name)}</strong> " +
-            "PartnerConnect portal was not approved at this time.</p>" + reason +
-            "<p>If you believe this was a mistake, please contact your organization's administrator.</p>";
+        var body = EmailTemplates.Build(
+            request.DisplayName,
+            paragraphs,
+            footerNote: "If you believe this was a mistake, please contact your organization's administrator.");
 
-        var text =
-            $"Hello {request.DisplayName},\n\n" +
-            $"Your request to join the {org.Name} PartnerConnect portal was not approved at this time.\n\n" +
-            reasonText +
-            "If you believe this was a mistake, please contact your organization's administrator.";
-
-        await _email.SendAsync(request.Email, "Your PartnerConnect access request", html, text, cancellationToken);
+        await _email.SendAsync(request.Email, "Your PartnerConnect access request", body.Html, body.Text, cancellationToken);
     }
 
     private static bool TryParseRole(string? value, out OrgPortalRole role) =>

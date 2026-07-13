@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Vendorea.PartnerConnect.Api.RateLimiting;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Billing.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
@@ -62,6 +64,7 @@ public class PublicOrgRegistrationsController : ControllerBase
     /// (no user/token creation, no email) so the endpoint is cheap and abuse-resistant.
     /// </summary>
     [HttpPost("org-registrations")]
+    [EnableRateLimiting(RateLimitPolicies.PublicAuth)]
     public async Task<IActionResult> Register([FromBody] PublicOrgRegistrationRequest request, CancellationToken cancellationToken)
     {
         if (request is null)
