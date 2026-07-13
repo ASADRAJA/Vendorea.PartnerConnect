@@ -598,6 +598,24 @@ public class UpdateOrganizationRequest
     public List<int> TradingPartnerIds { get; set; } = new();
 }
 
+// Operator-led org onboarding (create + activate + subscribe + invite first admin in one step)
+public class OnboardOrganizationRequest
+{
+    public string OrganizationName { get; set; } = string.Empty;
+    public string PlanCode { get; set; } = string.Empty;
+    public string AdminDisplayName { get; set; } = string.Empty;
+    public string AdminEmail { get; set; } = string.Empty;
+    public string? ContactPhone { get; set; }
+}
+
+public class OnboardOrganizationResult
+{
+    public OrganizationDto Organization { get; set; } = new();
+    public string InvitedAdminEmail { get; set; } = string.Empty;
+    public string InvitedAdminStatus { get; set; } = string.Empty;
+    public bool SubscriptionCreated { get; set; }
+}
+
 // Tenant-partner connection models
 public class TenantConnectionDto
 {

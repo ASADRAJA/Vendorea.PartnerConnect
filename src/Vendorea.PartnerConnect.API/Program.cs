@@ -129,6 +129,12 @@ builder.Services.Configure<Vendorea.PartnerConnect.Api.Authentication.JwtSetting
 builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Authentication.IOrgUserTokenService,
     Vendorea.PartnerConnect.Api.Authentication.OrgUserTokenService>();
 
+// Shared org-onboarding path (activate + subscribe + invite first OrgAdmin). Used by both the
+// registration-approval flow and the operator-led onboarding endpoint. Lives in the API project
+// because it depends on IBillingService.
+builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Services.IOrganizationOnboardingService,
+    Vendorea.PartnerConnect.Api.Services.OrganizationOnboardingService>();
+
 // Transactional email (activation links etc). SMTP-backed, bound from the "Email" config section;
 // degrades gracefully (logs, never throws) and — in Development — logs the message + link so the
 // activation flow is testable with no SMTP sink running.

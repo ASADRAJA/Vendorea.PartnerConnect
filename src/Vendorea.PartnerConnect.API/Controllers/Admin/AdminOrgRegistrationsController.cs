@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Vendorea.PartnerConnect.Api.Services;
 using Vendorea.PartnerConnect.Application.Interfaces;
-using Vendorea.PartnerConnect.Billing.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
 
 namespace Vendorea.PartnerConnect.Api.Controllers.Admin;
@@ -17,26 +17,20 @@ public class AdminOrgRegistrationsController : ControllerBase
 {
     private readonly IOrgRegistrationRequestRepository _registrations;
     private readonly IOrganizationRepository _organizations;
-    private readonly IOrgPortalUserRepository _users;
-    private readonly IOrgPortalUserInvitationService _invitations;
-    private readonly IBillingService _billing;
+    private readonly IOrganizationOnboardingService _onboarding;
     private readonly IEmailSender _email;
     private readonly ILogger<AdminOrgRegistrationsController> _logger;
 
     public AdminOrgRegistrationsController(
         IOrgRegistrationRequestRepository registrations,
         IOrganizationRepository organizations,
-        IOrgPortalUserRepository users,
-        IOrgPortalUserInvitationService invitations,
-        IBillingService billing,
+        IOrganizationOnboardingService onboarding,
         IEmailSender email,
         ILogger<AdminOrgRegistrationsController> logger)
     {
         _registrations = registrations;
         _organizations = organizations;
-        _users = users;
-        _invitations = invitations;
-        _billing = billing;
+        _onboarding = onboarding;
         _email = email;
         _logger = logger;
     }
@@ -86,41 +80,11 @@ public class AdminOrgRegistrationsController : ControllerBase
         if (org is null)
             return NotFound(new { error = $"The organization for registration {id} no longer exists." });
 
-        // 1) Activate the organization.
-        org.Status = OrganizationStatus.Active;
-        org.ActivatedAt = DateTime.UtcNow;
-        org.SuspendedAt = null;
-        org.SuspensionReason = null;
-        org.RejectionReason = null;
-        await _organizations.UpdateAsync(org, cancellationToken);
+        // Activate the org, create its subscription, and invite the first OrgAdmin (shared path).
+        await _onboarding.OnboardOrganizationAsync(
+            org, registration.BillingPlanId, registration.AdminEmail, registration.AdminDisplayName, cancellationToken);
 
-        // 2) Create the plan subscription (org is the billing subject). Don't fail the approval if the
-        // billing step hiccups (e.g. a subscription already exists) — activation + invite are the point.
-        try
-        {
-            await _billing.CreateSubscriptionAsync(org.Id, registration.BillingPlanId, cancellationToken: cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Approved org {OrgId} but could not create a subscription for plan {PlanId}. Continuing.",
-                org.Id, registration.BillingPlanId);
-        }
-
-        // 3) Invite the first OrgAdmin (Invited + activation email) unless one already exists.
-        if (!await _users.ExistsAsync(org.Id, registration.AdminEmail, cancellationToken))
-        {
-            await _invitations.InviteAsync(
-                org, registration.AdminEmail, registration.AdminDisplayName,
-                OrgPortalRole.OrgAdmin, allTenants: true, tenantIds: null, cancellationToken);
-        }
-        else
-        {
-            _logger.LogWarning("OrgAdmin {Email} already exists for org {OrgId}; skipped invite.",
-                registration.AdminEmail, org.Id);
-        }
-
-        // 4) Record the decision.
+        // Record the decision.
         registration.Status = OrgRegistrationStatus.Approved;
         registration.DecisionAt = DateTime.UtcNow;
         registration.DecisionByAdmin = User.Identity?.Name;

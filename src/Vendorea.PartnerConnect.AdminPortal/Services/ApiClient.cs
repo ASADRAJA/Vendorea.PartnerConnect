@@ -873,6 +873,28 @@ public class ApiClient
         }
     }
 
+    /// <summary>
+    /// Operator-led onboarding: creates an organization and stands it up in one step (activate +
+    /// subscribe + invite first admin). Returns (result, error) — error surfaces validation/conflicts.
+    /// </summary>
+    public async Task<(OnboardOrganizationResult? Result, string? Error)> OnboardOrganizationAsync(OnboardOrganizationRequest request)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/api/v1/admin/organizations/onboard", request);
+            if (response.IsSuccessStatusCode)
+                return (await response.Content.ReadFromJsonAsync<OnboardOrganizationResult>(), null);
+
+            var body = await response.Content.ReadAsStringAsync();
+            return (null, ExtractError(body) ?? $"Request failed ({(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to onboard organization");
+            return (null, ex.Message);
+        }
+    }
+
     // --- Self-service org registration queue ---
 
     public async Task<OrgRegistrationListResult> GetOrgRegistrationsAsync(string? status = "Pending")

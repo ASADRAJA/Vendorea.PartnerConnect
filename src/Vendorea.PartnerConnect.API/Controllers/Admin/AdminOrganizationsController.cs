@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vendorea.PartnerConnect.Api.Services;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Application.Security;
 using Vendorea.PartnerConnect.Billing.Interfaces;
@@ -19,6 +20,7 @@ public class AdminOrganizationsController : ControllerBase
     private readonly ITenantRepository _tenantRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly IBillingPlanRepository _billingPlanRepository;
+    private readonly IOrganizationOnboardingService _onboarding;
     private readonly ICredentialProtector _credentialProtector;
     private readonly ILogger<AdminOrganizationsController> _logger;
 
@@ -27,6 +29,7 @@ public class AdminOrganizationsController : ControllerBase
         ITenantRepository tenantRepository,
         ITradingPartnerRepository partnerRepository,
         IBillingPlanRepository billingPlanRepository,
+        IOrganizationOnboardingService onboarding,
         ICredentialProtector credentialProtector,
         ILogger<AdminOrganizationsController> logger)
     {
@@ -34,6 +37,7 @@ public class AdminOrganizationsController : ControllerBase
         _tenantRepository = tenantRepository;
         _partnerRepository = partnerRepository;
         _billingPlanRepository = billingPlanRepository;
+        _onboarding = onboarding;
         _credentialProtector = credentialProtector;
         _logger = logger;
     }
@@ -143,6 +147,71 @@ public class AdminOrganizationsController : ControllerBase
 
         var created = await _organizationRepository.GetByIdWithPartnersAsync(organization.Id, cancellationToken);
         return CreatedAtAction(nameof(GetOrganization), new { id = organization.Id }, MapToDto(created!, 0));
+    }
+
+    /// <summary>
+    /// Operator-led org onboarding: create an organization and immediately stand it up in one step —
+    /// activate it, create its plan subscription, and invite the first OrgAdmin (activation email).
+    /// Mirrors the self-service register + approve flow, but skips the pending queue. Admin-key protected
+    /// via the global fallback policy. Absolute route since this controller's base is /api/admin/...
+    /// </summary>
+    [HttpPost("~/api/v1/admin/organizations/onboard")]
+    public async Task<IActionResult> OnboardOrganization([FromBody] OnboardOrganizationRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null)
+            return BadRequest(new { error = "An onboarding payload is required." });
+
+        var orgName = request.OrganizationName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(orgName))
+            return BadRequest(new { error = "Organization name is required." });
+
+        var adminName = request.AdminDisplayName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(adminName))
+            return BadRequest(new { error = "Administrator name is required." });
+
+        var adminEmail = request.AdminEmail?.Trim() ?? string.Empty;
+        if (!IsValidEmail(adminEmail))
+            return BadRequest(new { error = "A valid administrator email is required." });
+
+        if (string.IsNullOrWhiteSpace(request.PlanCode))
+            return BadRequest(new { error = "A plan selection is required." });
+
+        var plan = await _billingPlanRepository.GetByCodeAsync(request.PlanCode.Trim(), cancellationToken);
+        if (plan is null || !plan.IsActive)
+            return BadRequest(new { error = $"Plan '{request.PlanCode}' is not available." });
+
+        // Reject a duplicate of an already-active organization (case-insensitive).
+        var activeOrgs = await _organizationRepository.GetByStatusAsync(OrganizationStatus.Active, cancellationToken);
+        if (activeOrgs.Any(o => string.Equals(o.Name, orgName, StringComparison.OrdinalIgnoreCase)))
+            return Conflict(new { error = "An organization with this name already exists." });
+
+        // Create the org shell (Active is set by the onboarding service).
+        var organization = new Organization
+        {
+            Code = await _organizationRepository.GenerateNextCodeAsync(cancellationToken),
+            Name = orgName,
+            ContactEmail = adminEmail,
+            ContactPhone = request.ContactPhone?.Trim(),
+            BillingPlanId = plan.Id.ToString(),
+            Status = OrganizationStatus.Pending,
+            CreatedAt = DateTime.UtcNow
+        };
+        await _organizationRepository.AddAsync(organization, cancellationToken);
+
+        var result = await _onboarding.OnboardOrganizationAsync(
+            organization, plan.Id, adminEmail, adminName, cancellationToken);
+
+        _logger.LogInformation("Operator onboarded organization {OrgId} ({OrgCode}) on plan {PlanCode}",
+            organization.Id, organization.Code, plan.Code);
+
+        var tenants = await _tenantRepository.GetByOrganizationIdAsync(organization.Id, cancellationToken);
+        return Ok(new OnboardOrganizationResult
+        {
+            Organization = MapToDto(organization, tenants.Count),
+            InvitedAdminEmail = result.AdminEmail,
+            InvitedAdminStatus = result.AdminInviteStatus,
+            SubscriptionCreated = result.SubscriptionCreated
+        });
     }
 
     /// <summary>
@@ -256,6 +325,21 @@ public class AdminOrganizationsController : ControllerBase
     private static PaymentTerms ParsePaymentTerms(string? value) =>
         Enum.TryParse<PaymentTerms>(value, ignoreCase: true, out var pt) ? pt : PaymentTerms.CreditCard;
 
+    private static bool IsValidEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            return addr.Address == email;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static OrganizationDto MapToDto(Organization org, int tenantCount)
     {
         return new OrganizationDto
@@ -344,6 +428,27 @@ public class UpdateOrganizationRequest
     public string? PortalBaseUrl { get; set; }
     public string? PortalApiKey { get; set; }
     public List<int>? TradingPartnerIds { get; set; }
+}
+
+/// <summary>Body of <c>POST /api/v1/admin/organizations/onboard</c> (operator-led onboarding).</summary>
+public class OnboardOrganizationRequest
+{
+    public string? OrganizationName { get; set; }
+    public string? PlanCode { get; set; }
+    public string? AdminDisplayName { get; set; }
+    public string? AdminEmail { get; set; }
+    public string? ContactPhone { get; set; }
+}
+
+/// <summary>Response of the operator-led onboarding endpoint: the created org + invited-admin summary.</summary>
+public class OnboardOrganizationResult
+{
+    public OrganizationDto Organization { get; set; } = new();
+    public string InvitedAdminEmail { get; set; } = string.Empty;
+
+    /// <summary>"Invited" (activation email sent) or "AlreadyExists" (an OrgAdmin already existed).</summary>
+    public string InvitedAdminStatus { get; set; } = string.Empty;
+    public bool SubscriptionCreated { get; set; }
 }
 
 public class SuspendRequest
