@@ -1,0 +1,508 @@
+@page "/"
+@attribute [Authorize]
+@implements IDisposable
+@inject ApiClient Api
+@inject PortalState State
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard — PartnerConnect</PageTitle>
+
+@if (State.Loaded && State.Context is null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error" Title="Couldn't load your organization" Class="page-message">
+        We couldn't load your organization context. Your session may have expired — try signing out and back in.
+    </FluentMessageBar>
+}
+
+@* ---- Hero ---- *@
+<div class="hero">
+    <div class="hero-left">
+        <div class="hero-kicker">Welcome back</div>
+        <div class="hero-title">@HeroTitle</div>
+        <div class="hero-sub">Overview of your connections, catalog, and recent activity.</div>
+    </div>
+    <div class="hero-right">
+        <FluentButton Appearance="Appearance.Accent" OnClick="RefreshAllAsync">Refresh</FluentButton>
+        <div class="hero-meta">
+            @if (State.SelectedTenant is not null)
+            {
+                <div><strong>@State.SelectedTenant.Name</strong></div>
+            }
+            <div>@DateTime.Now.ToString("dddd, MMM d")</div>
+        </div>
+    </div>
+</div>
+
+@if (_summaryFailed && State.SelectedTenant is not null)
+{
+    <FluentMessageBar Intent="MessageIntent.Warning" AllowDismiss="false" Class="page-message">
+        We couldn't load the latest summary for @State.SelectedTenant.Name. The figures below may be out of date.
+    </FluentMessageBar>
+}
+
+@* ---- Amber briefing banner (composed from real signals) ---- *@
+@if (State.SelectedTenant is not null && _summaryLoaded && _summary is not null)
+{
+    <div class="briefing">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+        <span>@Briefing</span>
+    </div>
+}
+
+@* ---- KPI stat cards ---- *@
+<div class="kpi-grid">
+    <div class="kpi-card kpi-blue">
+        <div class="kpi-label">@Ico("link") Active connections</div>
+        @if (_connectionsLoaded)
+        {
+            <div class="kpi-value">@_activeCount</div>
+            <div class="kpi-sub">@_pendingCount pending · @_totalCount total</div>
+        }
+        else
+        {
+            <FluentSkeleton Width="80px" Height="28px" />
+        }
+    </div>
+
+    <div class="kpi-card kpi-green">
+        <div class="kpi-label">@Ico("cart") Open orders</div>
+        @if (State.SelectedTenant is null)
+        {
+            <div class="kpi-value muted">—</div>
+            <div class="kpi-sub">Select a tenant to see orders.</div>
+        }
+        else if (!_summaryLoaded)
+        {
+            <FluentSkeleton Width="80px" Height="28px" />
+        }
+        else
+        {
+            <div class="kpi-value">@_openOrderCount</div>
+            <div class="kpi-sub">of @RecentOrderCount recent orders</div>
+        }
+    </div>
+
+    <div class="kpi-card kpi-amber">
+        <div class="kpi-label">@Ico("clock") Last price sync</div>
+        @if (State.SelectedTenant is null)
+        {
+            <div class="kpi-value muted">—</div>
+            <div class="kpi-sub">Select a tenant to see feed activity.</div>
+        }
+        else if (!_summaryLoaded)
+        {
+            <FluentSkeleton Width="80px" Height="28px" />
+        }
+        else
+        {
+            <div class="kpi-value" style="font-size:20px;">@Ago(_summary?.LastPriceSyncAt)</div>
+            <div class="kpi-sub">@Full(_summary?.LastPriceSyncAt)</div>
+        }
+    </div>
+
+    <div class="kpi-card kpi-purple">
+        <div class="kpi-label">@Ico("file") Last content sync</div>
+        @if (State.SelectedTenant is null)
+        {
+            <div class="kpi-value muted">—</div>
+            <div class="kpi-sub">Select a tenant to see content activity.</div>
+        }
+        else if (!_summaryLoaded)
+        {
+            <FluentSkeleton Width="80px" Height="28px" />
+        }
+        else
+        {
+            <div class="kpi-value" style="font-size:20px;">@Ago(_summary?.LastContentSyncAt)</div>
+            <div class="kpi-sub">@Full(_summary?.LastContentSyncAt)</div>
+        }
+    </div>
+
+    <div class="kpi-card kpi-red">
+        <div class="kpi-label">@Ico("alert") Open errors</div>
+        @if (State.SelectedTenant is null)
+        {
+            <div class="kpi-value muted">—</div>
+            <div class="kpi-sub">Select a tenant.</div>
+        }
+        else if (!_summaryLoaded)
+        {
+            <FluentSkeleton Width="60px" Height="28px" />
+        }
+        else
+        {
+            var count = _summary?.OpenErrorCount ?? 0;
+            <div class="kpi-value @(count > 0 ? "" : "muted")">@count</div>
+            <div class="kpi-sub">@(count > 0 ? "Needs attention" : "Nothing needs attention")</div>
+        }
+    </div>
+
+    <div class="kpi-card kpi-cyan">
+        <div class="kpi-label">@Ico("building") Tenants</div>
+        @if (State.Loaded)
+        {
+            <div class="kpi-value">@State.Tenants.Count</div>
+            <div class="kpi-sub">@(State.Context?.Organization.Name ?? "Organization")</div>
+        }
+        else
+        {
+            <FluentSkeleton Width="50px" Height="28px" />
+        }
+    </div>
+</div>
+
+@* ---- Lower area ---- *@
+<div class="dash-lower">
+    @* Recent orders *@
+    <div class="card">
+        <div class="card-header">
+            <div class="ch-icon">@Ico("cart")</div>
+            <div class="card-header-text">
+                <div class="card-title">Recent orders</div>
+                <div class="card-sub">Latest purchase orders for this tenant</div>
+            </div>
+        </div>
+
+        @if (State.SelectedTenant is null)
+        {
+            <div class="card-sub">Select a tenant to see recent orders.</div>
+        }
+        else if (!_summaryLoaded)
+        {
+            <FluentSkeleton Width="100%" Height="120px" />
+        }
+        else if (_summary is null || _summary.RecentOrders.Count == 0)
+        {
+            <div class="card-sub">No orders yet for @State.SelectedTenant.Name.</div>
+        }
+        else
+        {
+            @if (_orderSpark.Count >= 2)
+            {
+                @Spark(_orderSpark, "#16a34a")
+                <div class="card-sub" style="margin:2px 0 8px;">Recent order totals</div>
+            }
+            @foreach (var o in _summary.RecentOrders)
+            {
+                <a class="list-row" href="@($"/orders/{o.Id}")">
+                    <span class="list-row-icon">@Ico("cart")</span>
+                    <span class="list-row-main">
+                        <span class="list-row-title">@o.PoNumber</span>
+                        <span class="list-row-sub">@o.PartnerName</span>
+                    </span>
+                    <span class="badge @OrderBadgeClass(o.Status)">@o.Status</span>
+                    <span class="list-row-time">@Ago(o.OrderedAt)</span>
+                </a>
+            }
+            <a class="card-footer-link" href="/orders">View all orders →</a>
+        }
+    </div>
+
+    @* Recent activity *@
+    <div class="card">
+        <div class="card-header">
+            <div class="ch-icon">@Ico("activity")</div>
+            <div class="card-header-text">
+                <div class="card-title">Recent activity</div>
+                <div class="card-sub">Feeds, orders, and exceptions</div>
+            </div>
+        </div>
+
+        @if (State.SelectedTenant is null)
+        {
+            <div class="card-sub">Select a tenant to see activity.</div>
+        }
+        else if (!_activityLoaded)
+        {
+            <FluentSkeleton Width="100%" Height="120px" />
+        }
+        else if (_activity.Count == 0)
+        {
+            <div class="card-sub">No recent activity for @State.SelectedTenant.Name.</div>
+        }
+        else
+        {
+            @foreach (var e in _activity)
+            {
+                <div class="list-row">
+                    <span class="list-row-icon @LevelClass(e.Level)">@Ico(LevelIcon(e.Level))</span>
+                    <span class="list-row-main">
+                        <span class="list-row-title">@e.Title</span>
+                        <span class="list-row-sub">@(string.IsNullOrWhiteSpace(e.Detail) ? e.Type : e.Detail)</span>
+                    </span>
+                    <span class="list-row-time">@Ago(e.At)</span>
+                </div>
+            }
+            <a class="card-footer-link" href="/activity">View all activity →</a>
+        }
+    </div>
+
+    @* Connection health *@
+    <div class="card span-2">
+        <div class="card-header">
+            <div class="ch-icon">@Ico("link")</div>
+            <div class="card-header-text">
+                <div class="card-title">Connection health</div>
+                <div class="card-sub">Per-partner status and last sync</div>
+            </div>
+        </div>
+
+        @if (State.SelectedTenant is null)
+        {
+            <div class="card-sub">Select a tenant to see connection health.</div>
+        }
+        else if (!_summaryLoaded)
+        {
+            <FluentSkeleton Width="100%" Height="80px" />
+        }
+        else if (_summary is null || _summary.Connections.Count == 0)
+        {
+            <div class="card-sub">No connections for @State.SelectedTenant.Name yet.</div>
+        }
+        else
+        {
+            @foreach (var c in _summary.Connections)
+            {
+                <div class="health-row">
+                    <span class="health-name">@c.PartnerName</span>
+                    <span class="badge @HealthBadgeClass(c.Status)">@c.Status</span>
+                    <span class="health-time">@(c.LastSyncAt is null ? "No sync yet" : $"synced {Ago(c.LastSyncAt)}")</span>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private bool _connectionsLoaded;
+    private int _activeCount;
+    private int _pendingCount;
+    private int _totalCount;
+
+    private TenantSummaryDto? _summary;
+    private bool _summaryLoaded;
+    private bool _summaryFailed;
+    private int _openOrderCount;
+    private List<decimal> _orderSpark = new();
+
+    private List<ActivityEventDto> _activity = new();
+    private bool _activityLoaded;
+
+    private static readonly HashSet<string> TerminalStatuses =
+        new(StringComparer.OrdinalIgnoreCase) { "Completed", "Delivered", "Cancelled", "Failed" };
+
+    private string HeroTitle =>
+        State.SelectedTenant is not null
+            ? $"{State.SelectedTenant.Name} Command Center"
+            : (State.Context?.Organization.Name is { Length: > 0 } org ? $"{org} Command Center" : "Command Center");
+
+    private int RecentOrderCount => _summary?.RecentOrders.Count ?? 0;
+
+    private string Briefing
+    {
+        get
+        {
+            if (_summary is null) return string.Empty;
+            var errors = _summary.OpenErrorCount;
+            var parts = new List<string>();
+            parts.Add(errors > 0
+                ? $"{errors} open error{(errors == 1 ? "" : "s")} need attention"
+                : "No open errors");
+            parts.Add($"{_activeCount} active connection{(_activeCount == 1 ? "" : "s")}");
+            parts.Add($"last price sync {Ago(_summary.LastPriceSyncAt)}");
+            return string.Join("  ·  ", parts) + ".";
+        }
+    }
+
+    protected override void OnInitialized() => State.OnChange += OnStateChanged;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConnectionsAsync();
+        await LoadSummaryAsync();
+        await LoadActivityAsync();
+    }
+
+    private void OnStateChanged() => _ = ReloadForTenantAsync();
+
+    private async Task ReloadForTenantAsync()
+    {
+        await LoadSummaryAsync();
+        await LoadActivityAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshAllAsync()
+    {
+        await LoadConnectionsAsync();
+        await LoadSummaryAsync();
+        await LoadActivityAsync();
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        _connectionsLoaded = false;
+        var connections = await Api.GetConnectionsAsync();
+        _totalCount = connections.Count;
+        _activeCount = connections.Count(c => c.IsActive);
+        _pendingCount = connections.Count(c =>
+            string.Equals(c.ApprovalStatus, "Pending", StringComparison.OrdinalIgnoreCase));
+        _connectionsLoaded = true;
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        var tenant = State.SelectedTenant;
+        if (tenant is null)
+        {
+            _summary = null;
+            _summaryLoaded = false;
+            _summaryFailed = false;
+            _openOrderCount = 0;
+            _orderSpark = new();
+            return;
+        }
+
+        _summaryLoaded = false;
+        _summaryFailed = false;
+        var summary = await Api.GetTenantSummaryAsync(tenant.Id);
+
+        // Guard against a tenant switch that raced this load.
+        if (State.SelectedTenant?.Id != tenant.Id)
+            return;
+
+        _summary = summary;
+        _summaryFailed = summary is null;
+        _summaryLoaded = true;
+
+        if (summary is not null)
+        {
+            _openOrderCount = summary.RecentOrders.Count(o => !TerminalStatuses.Contains(o.Status));
+            _orderSpark = summary.RecentOrders
+                .OrderBy(o => o.OrderedAt)
+                .Select(o => o.Total)
+                .ToList();
+        }
+        else
+        {
+            _openOrderCount = 0;
+            _orderSpark = new();
+        }
+    }
+
+    private async Task LoadActivityAsync()
+    {
+        var tenant = State.SelectedTenant;
+        if (tenant is null)
+        {
+            _activity = new();
+            _activityLoaded = false;
+            return;
+        }
+
+        _activityLoaded = false;
+        var page = await Api.GetActivityAsync(tenant.Id, null, null, null, null, 0, 6);
+
+        if (State.SelectedTenant?.Id != tenant.Id)
+            return;
+
+        _activity = page.Items;
+        _activityLoaded = true;
+    }
+
+    // ---- helpers ----
+
+    private static string Ago(DateTime? d)
+    {
+        if (d is not { } value)
+            return "—";
+
+        var span = DateTime.UtcNow - value.ToUniversalTime();
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "just now",
+            { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes}m ago",
+            { TotalHours: < 24 } => $"{(int)span.TotalHours}h ago",
+            { TotalDays: < 30 } => $"{(int)span.TotalDays}d ago",
+            _ => value.ToLocalTime().ToString("d")
+        };
+    }
+
+    private static string Full(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "No activity yet";
+
+    private static string OrderBadgeClass(string status) => status switch
+    {
+        "Completed" or "Delivered" or "Shipped" => "badge-success",
+        "Failed" or "Cancelled" => "badge-danger",
+        "Submitted" or "Acknowledged" or "Processing" or "PartiallyShipped" => "badge-info",
+        _ => "badge-neutral"
+    };
+
+    private static string HealthBadgeClass(string status) => status.ToLowerInvariant() switch
+    {
+        "active" or "healthy" or "ok" => "badge-success",
+        "error" or "failed" => "badge-danger",
+        "suspended" or "warning" => "badge-warning",
+        "pending" => "badge-info",
+        _ => "badge-neutral"
+    };
+
+    private static string LevelClass(string level) => level switch
+    {
+        "Error" => "lvl-error",
+        "Warning" => "lvl-warning",
+        _ => "lvl-info"
+    };
+
+    private static string LevelIcon(string level) => level switch
+    {
+        "Error" => "alert",
+        "Warning" => "alert",
+        _ => "activity"
+    };
+
+    // Inline line icons (stroke = currentColor).
+    private static readonly Dictionary<string, string> Paths = new()
+    {
+        ["link"] = "<path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/>",
+        ["cart"] = "<circle cx='9' cy='21' r='1'/><circle cx='20' cy='21' r='1'/><path d='M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6'/>",
+        ["clock"] = "<circle cx='12' cy='12' r='9'/><polyline points='12 7 12 12 15 14'/>",
+        ["file"] = "<path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/>",
+        ["alert"] = "<path d='M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'/><line x1='12' y1='9' x2='12' y2='13'/><line x1='12' y1='17' x2='12.01' y2='17'/>",
+        ["building"] = "<rect x='4' y='2' width='16' height='20' rx='2'/><path d='M10 22v-4h4v4'/>",
+        ["activity"] = "<polyline points='22 12 18 12 15 21 9 3 6 12 2 12'/>",
+    };
+
+    private static MarkupString Ico(string name)
+    {
+        var body = Paths.TryGetValue(name, out var p) ? p : string.Empty;
+        return new MarkupString(
+            $"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round'>{body}</svg>");
+    }
+
+    private static MarkupString Spark(IReadOnlyList<decimal> values, string color)
+    {
+        if (values.Count < 2) return default;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var min = values.Min();
+        var max = values.Max();
+        var range = max - min;
+        if (range == 0) range = 1;
+        var pts = string.Join(" ", values.Select((v, i) =>
+        {
+            var x = (double)i / (values.Count - 1) * 100;
+            var y = 92 - (double)((v - min) / range) * 84;
+            return $"{x.ToString("0.##", inv)},{y.ToString("0.##", inv)}";
+        }));
+        return new MarkupString(
+            $"<svg class='spark' viewBox='0 0 100 100' preserveAspectRatio='none'>" +
+            $"<polyline points='{pts}' fill='none' stroke='{color}' stroke-width='2.5' " +
+            $"vector-effect='non-scaling-stroke' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    }
+
+    void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
+}

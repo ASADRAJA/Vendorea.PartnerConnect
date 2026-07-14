@@ -1,0 +1,179 @@
+@page "/orders/{Id:int}"
+@attribute [Authorize]
+@implements IDisposable
+@inject ApiClient Api
+@inject PortalState State
+@inject NavigationManager Navigation
+
+<PageTitle>Order — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">@Title</h1>
+        <p class="page-subtitle">Order tracking, line items, and document chain.</p>
+    </div>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Stealth" OnClick="@(() => Navigation.NavigateTo("/orders"))">Back to orders</FluentButton>
+        <FluentButton Appearance="Appearance.Stealth" Disabled="@(State.SelectedTenant is null)" OnClick="LoadAsync">Refresh</FluentButton>
+    </div>
+</div>
+
+@if (State.SelectedTenant is null)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">Select a tenant</div>
+            <div class="empty-sub">Choose a tenant from the switcher above to view its orders.</div>
+        </div>
+    </FluentCard>
+}
+else if (!_loaded)
+{
+    <FluentProgressRing />
+}
+else if (_order is null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error" AllowDismiss="false" Class="page-message">
+        This order couldn't be found for @State.SelectedTenant.Name.
+    </FluentMessageBar>
+}
+else
+{
+    @if (_order.Exceptions.Count > 0)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Title="Order exceptions" AllowDismiss="false" Class="page-message">
+            <ul style="margin: 0.25rem 0 0 1rem; padding: 0;">
+                @foreach (var ex in _order.Exceptions)
+                {
+                    <li>@ex</li>
+                }
+            </ul>
+        </FluentMessageBar>
+    }
+
+    <FluentCard Class="order-summary-card">
+        <div class="order-summary-grid">
+            <div><div class="tile-label">Partner</div><div>@_order.PartnerName</div></div>
+            <div><div class="tile-label">Status</div><div><FluentBadge Appearance="@StatusAppearance(_order.Status)">@_order.Status</FluentBadge></div></div>
+            <div><div class="tile-label">Ordered</div><div>@Fmt(_order.OrderedAt)</div></div>
+            <div><div class="tile-label">Partner order #</div><div>@Dash(_order.PartnerOrderNumber)</div></div>
+            <div><div class="tile-label">Total</div><div>@Money(_order.Total, _order.Currency)</div></div>
+        </div>
+    </FluentCard>
+
+    <h2 class="section-title">Document chain</h2>
+    <div class="order-chain">
+        @foreach (var stage in Stages)
+        {
+            var doc = _order.Documents.FirstOrDefault(d => d.Type == stage);
+            var present = doc is not null;
+            <div class="chain-step @(present ? "present" : "pending")">
+                <FluentBadge Appearance="@(present ? Appearance.Accent : Appearance.Lightweight)">@stage</FluentBadge>
+                <div class="chain-step-time">@(present ? Fmt(doc!.ReceivedAt) : "—")</div>
+            </div>
+        }
+    </div>
+
+    <h2 class="section-title">Line items</h2>
+    @if (_order.Lines.Count == 0)
+    {
+        <div class="tile-sub muted">No line items are recorded for this order.</div>
+    }
+    else
+    {
+        <div class="grid-card">
+            <FluentDataGrid Items="@_order.Lines.AsQueryable()" TGridItem="OrderLineDto"
+                            GridTemplateColumns="0.5fr 1.2fr 2.4fr 0.7fr 0.6fr 0.9fr 0.9fr 1fr" Style="width: 100%;">
+                <PropertyColumn Title="#" Property="@(l => l.LineNumber)" />
+                <PropertyColumn Title="SKU" Property="@(l => l.Sku)" />
+                <PropertyColumn Title="Description" Property="@(l => l.Description)" />
+                <TemplateColumn Title="Qty" Align="Align.End">@Qty(context.Quantity) @context.UnitOfMeasure</TemplateColumn>
+                <TemplateColumn Title="Ack" Align="Align.End">@QtyOrDash(context.AcknowledgedQuantity)</TemplateColumn>
+                <TemplateColumn Title="Shipped" Align="Align.End">@QtyOrDash(context.ShippedQuantity)</TemplateColumn>
+                <TemplateColumn Title="Unit" Align="Align.End">@Money(context.UnitPrice, _order.Currency)</TemplateColumn>
+                <TemplateColumn Title="Line total" Align="Align.End">@Money(context.LineTotal, _order.Currency)</TemplateColumn>
+            </FluentDataGrid>
+        </div>
+    }
+
+    <h2 class="section-title">Documents</h2>
+    @if (_order.Documents.Count == 0)
+    {
+        <div class="tile-sub muted">No documents have been recorded for this order yet.</div>
+    }
+    else
+    {
+        <div class="grid-card">
+            <FluentDataGrid Items="@_order.Documents.AsQueryable()" TGridItem="OrderDocumentDto"
+                            GridTemplateColumns="1fr 1.6fr 1.6fr 1fr" Style="width: 100%;">
+                <PropertyColumn Title="Type" Property="@(d => d.Type)" />
+                <TemplateColumn Title="Received">@Fmt(context.ReceivedAt)</TemplateColumn>
+                <PropertyColumn Title="Reference" Property="@(d => d.Reference)" />
+                <TemplateColumn Title="" Align="Align.End">
+                    @if (!string.IsNullOrEmpty(context.ViewUrl))
+                    {
+                        <FluentAnchor Href="@context.ViewUrl" Target="_blank" Appearance="Appearance.Lightweight">View</FluentAnchor>
+                    }
+                    else
+                    {
+                        <span class="tile-sub muted">Metadata only</span>
+                    }
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private static readonly string[] Stages = { "PO", "ACK", "ASN", "Invoice" };
+
+    private bool _loaded;
+    private OrderDetailDto? _order;
+    private int _loadedId = -1;
+
+    private string Title => _order is null ? "Order" : $"Order {_order.PoNumber}";
+
+    protected override void OnInitialized() => State.OnChange += OnStateChanged;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id != _loadedId)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loaded = false;
+        _order = null;
+        _loadedId = Id;
+        if (State.SelectedTenant is null)
+        {
+            _loaded = true;
+            return;
+        }
+        _order = await Api.GetOrderAsync(State.SelectedTenant.Id, Id);
+        _loaded = true;
+    }
+
+    // A tenant switch invalidates the current order; return to the list.
+    private void OnStateChanged() => Navigation.NavigateTo("/orders");
+
+    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+    private static string Qty(decimal q) => q.ToString("0.##");
+    private static string QtyOrDash(decimal? q) => q is { } v ? v.ToString("0.##") : "—";
+
+    private static string Money(decimal value, string currency)
+        => value.ToString("C2") + (string.Equals(currency, "USD", StringComparison.OrdinalIgnoreCase) ? "" : $" {currency}");
+
+    private static Appearance StatusAppearance(string status) => status switch
+    {
+        "Completed" or "Delivered" or "Shipped" => Appearance.Accent,
+        "Failed" or "Cancelled" => Appearance.Lightweight,
+        _ => Appearance.Neutral
+    };
+
+    void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
+}

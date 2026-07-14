@@ -1,0 +1,243 @@
+@page "/registration-requests"
+@attribute [Authorize(Roles = "Admin,Support")]
+@inject ApiClient Api
+
+<PageTitle>Registration Requests - PartnerConnect Admin</PageTitle>
+
+<h1>Registration Requests</h1>
+<p class="text-muted">Review self-service organization registrations. Approving activates the org, creates its plan subscription, and emails the first admin an activation link.</p>
+
+@if (!string.IsNullOrEmpty(actionMessage))
+{
+    <div class="alert @(actionOk ? "alert-success" : "alert-danger") alert-dismissible" role="alert">
+        @actionMessage
+        <button type="button" class="btn-close" @onclick="() => actionMessage = null"></button>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <ul class="nav nav-tabs card-header-tabs">
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "Pending" ? "active" : "")" @onclick='() => SetTab("Pending")'>
+                    <span class="oi oi-inbox me-1"></span> Pending
+                    <span class="badge bg-warning text-dark ms-1">@result.PendingCount</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "Approved" ? "active" : "")" @onclick='() => SetTab("Approved")'>
+                    <span class="oi oi-check me-1"></span> Approved
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "Denied" ? "active" : "")" @onclick='() => SetTab("Denied")'>
+                    <span class="oi oi-x me-1"></span> Denied
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "All" ? "active" : "")" @onclick='() => SetTab("All")'>All</button>
+            </li>
+        </ul>
+        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadAsync" disabled="@isLoading">
+            <span class="oi oi-reload me-1"></span> Refresh
+        </button>
+    </div>
+    <div class="card-body">
+        @if (isLoading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary"></div>
+            </div>
+        }
+        else if (result.Items.Count == 0)
+        {
+            <div class="text-center text-muted py-4">
+                <span class="oi oi-inbox" style="font-size: 2rem;"></span>
+                <p class="mt-2 mb-0">No @activeTab.ToLower() registration requests.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Organization</th>
+                            <th>Plan</th>
+                            <th>Admin</th>
+                            <th>Submitted</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in result.Items)
+                        {
+                            <tr>
+                                <td>@r.OrganizationName</td>
+                                <td><span class="badge bg-light text-dark">@r.PlanCode</span></td>
+                                <td>
+                                    <div>@r.AdminDisplayName</div>
+                                    <div class="small text-muted">@r.AdminEmail</div>
+                                </td>
+                                <td>@r.SubmittedAt.ToLocalTime().ToString("g")</td>
+                                <td>
+                                    <span class="badge @StatusBadge(r.Status)">@r.Status</span>
+                                    @if (!string.IsNullOrEmpty(r.DecisionReason))
+                                    {
+                                        <div class="small text-muted">@r.DecisionReason</div>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    @if (r.Status == "Pending")
+                                    {
+                                        <button class="btn btn-sm btn-success me-1" @onclick="() => ApproveAsync(r)" disabled="@isSubmitting" title="Approve">
+                                            <span class="oi oi-check me-1"></span> Approve
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowDenyModal(r)" disabled="@isSubmitting" title="Deny">
+                                            <span class="oi oi-x me-1"></span> Deny
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">@(r.DecisionByAdmin ?? "—")</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@* Deny Modal *@
+@if (showDenyModal && selected != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Deny @selected.OrganizationName</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Reason (emailed to the applicant)</label>
+                    <textarea class="form-control" rows="3" @bind="denyReason" placeholder="Why is this registration being denied?"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="DenyAsync" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Deny
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private OrgRegistrationListResult result = new();
+    private string activeTab = "Pending";
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+
+    private bool showDenyModal = false;
+    private OrgRegistrationDto? selected;
+    private string? denyReason;
+
+    private string? actionMessage;
+    private bool actionOk;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SetTab(string tab)
+    {
+        activeTab = tab;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            result = await Api.GetOrgRegistrationsAsync(activeTab);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApproveAsync(OrgRegistrationDto r)
+    {
+        isSubmitting = true;
+        StateHasChanged();
+        try
+        {
+            var (ok, message) = await Api.ApproveOrgRegistrationAsync(r.Id);
+            actionOk = ok;
+            actionMessage = ok
+                ? (message ?? $"Approved {r.OrganizationName}.")
+                : (message ?? "Failed to approve the registration.");
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+        await LoadAsync();
+    }
+
+    private void ShowDenyModal(OrgRegistrationDto r)
+    {
+        selected = r;
+        denyReason = null;
+        showDenyModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showDenyModal = false;
+        selected = null;
+    }
+
+    private async Task DenyAsync()
+    {
+        if (selected == null)
+            return;
+
+        isSubmitting = true;
+        StateHasChanged();
+        try
+        {
+            var (ok, message) = await Api.DenyOrgRegistrationAsync(selected.Id, denyReason);
+            actionOk = ok;
+            actionMessage = ok
+                ? (message ?? $"Denied {selected.OrganizationName}.")
+                : (message ?? "Failed to deny the registration.");
+        }
+        finally
+        {
+            isSubmitting = false;
+            showDenyModal = false;
+            selected = null;
+        }
+        await LoadAsync();
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "Pending" => "bg-warning text-dark",
+        "Approved" => "bg-success",
+        "Denied" => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

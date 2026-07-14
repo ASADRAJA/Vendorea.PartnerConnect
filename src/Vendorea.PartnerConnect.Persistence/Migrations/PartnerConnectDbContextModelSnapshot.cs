@@ -1922,6 +1922,248 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("OrderStatusHistory", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgAccessRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DecisionAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DecisionByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<string>("SubmittedOrganizationIdentifier")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Status");
+
+                    b.ToTable("OrgAccessRequests", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AllTenants")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("FailedLoginAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Invited");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Email")
+                        .IsUnique();
+
+                    b.ToTable("OrgPortalUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUserTenant", b =>
+                {
+                    b.Property<Guid>("OrgPortalUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("OrgPortalUserId", "TenantId");
+
+                    b.ToTable("OrgPortalUserTenants", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUserToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("OrgPortalUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrgPortalUserId");
+
+                    b.HasIndex("TokenHash");
+
+                    b.ToTable("OrgPortalUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgRegistrationRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdminDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("AdminEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("BillingPlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("DecisionAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DecisionByAdmin")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OrganizationName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("PlanCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("OrgRegistrationRequests", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Organization", b =>
                 {
                     b.Property<int>("Id")
@@ -8117,6 +8359,61 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgAccessRequest", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUser", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUserTenant", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUser", "OrgPortalUser")
+                        .WithMany("Tenants")
+                        .HasForeignKey("OrgPortalUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrgPortalUser");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUserToken", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUser", "OrgPortalUser")
+                        .WithMany()
+                        .HasForeignKey("OrgPortalUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrgPortalUser");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgRegistrationRequest", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrganizationPartner", b =>
                 {
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Organization", "Organization")
@@ -8775,6 +9072,11 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Navigation("Lines");
 
                     b.Navigation("StatusHistory");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.OrgPortalUser", b =>
+                {
+                    b.Navigation("Tenants");
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Organization", b =>

@@ -98,6 +98,7 @@ public class TenantPartnerAccountRepository : ITenantPartnerAccountRepository
         return await _context.TenantPartnerAccounts
             .Include(a => a.Tenant)
             .Include(a => a.TradingPartner)
+                .ThenInclude(tp => tp!.Capabilities)
             .Include(a => a.Organization)
             .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
     }

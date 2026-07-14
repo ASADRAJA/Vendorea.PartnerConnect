@@ -1,0 +1,83 @@
+@implements IDialogContentComponent<UserDialogModel>
+
+@* Shared dialog for inviting, editing, and approving org portal users. The mode is driven by flags on
+   the model: invite lets you type email + name; edit shows a status selector; approve is role + scope
+   only (email/name are shown read-only). The primary/secondary buttons are supplied by DialogParameters,
+   so closing returns the mutated Content to the caller. *@
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="14">
+    @if (Content.EmailEditable)
+    {
+        <FluentTextField @bind-Value="Content.Email" Label="Email" TextFieldType="TextFieldType.Email"
+                         Required="true" Style="width: 100%;" />
+    }
+    else
+    {
+        <div>
+            <span class="tile-label">Email</span>
+            <div>@Content.Email</div>
+        </div>
+    }
+
+    @if (Content.NameEditable)
+    {
+        <FluentTextField @bind-Value="Content.DisplayName" Label="Name" Style="width: 100%;" />
+    }
+    else if (!string.IsNullOrWhiteSpace(Content.DisplayName))
+    {
+        <div>
+            <span class="tile-label">Name</span>
+            <div>@Content.DisplayName</div>
+        </div>
+    }
+
+    <FluentSelect TOption="string" Label="Role" Items="_roles"
+                  OptionText="@(r => r)" OptionValue="@(r => r)"
+                  @bind-Value="Content.Role" Width="100%" />
+
+    @if (Content.ShowStatus)
+    {
+        <FluentSelect TOption="string" Label="Status" Items="_statuses"
+                      OptionText="@(s => s)" OptionValue="@(s => s)"
+                      @bind-Value="Content.Status" Width="100%" />
+    }
+
+    <FluentCheckbox @bind-Value="Content.AllTenants" Label="Access to all tenants" />
+
+    @if (!Content.AllTenants)
+    {
+        <div>
+            <span class="tile-label">Tenants</span>
+            @if (Content.Tenants.Count == 0)
+            {
+                <div class="muted">No tenants are available in this organization yet.</div>
+            }
+            else
+            {
+                <div class="dc-list">
+                    @foreach (var tenant in Content.Tenants)
+                    {
+                        <FluentCheckbox Value="@Content.SelectedTenantIds.Contains(tenant.Id)"
+                                        ValueChanged="@(v => Toggle(tenant.Id, v))"
+                                        Label="@tenant.Name" />
+                    }
+                </div>
+            }
+        </div>
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public UserDialogModel Content { get; set; } = default!;
+
+    private static readonly string[] _roles = { "OrgAdmin", "TenantManager", "Viewer" };
+    private static readonly string[] _statuses = { "Active", "Disabled" };
+
+    private void Toggle(int tenantId, bool selected)
+    {
+        if (selected)
+            Content.SelectedTenantIds.Add(tenantId);
+        else
+            Content.SelectedTenantIds.Remove(tenantId);
+    }
+}

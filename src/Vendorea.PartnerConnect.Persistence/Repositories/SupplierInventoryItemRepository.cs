@@ -79,6 +79,49 @@ public class SupplierInventoryItemRepository : ISupplierInventoryItemRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<InventoryPage> SearchCurrentInventoryAsync(
+        int tradingPartnerId,
+        string? search,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        // Latest applied snapshot for this partner is the current inventory (partner-level).
+        var latestSnapshot = await _context.SupplierInventorySnapshots
+            .Where(s => s.TradingPartnerId == tradingPartnerId && s.Status == InventorySnapshotStatus.Applied)
+            .OrderByDescending(s => s.ProcessingCompletedAt ?? s.ReceivedAt)
+            .Select(s => new { s.Id, s.InventoryDate, s.ProcessingCompletedAt, s.ReceivedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestSnapshot == null)
+            return new InventoryPage(Array.Empty<SupplierInventoryItem>(), 0, null);
+
+        var asOf = latestSnapshot.ProcessingCompletedAt
+                   ?? (latestSnapshot.InventoryDate == default ? latestSnapshot.ReceivedAt : latestSnapshot.InventoryDate);
+
+        var query = _context.SupplierInventoryItems
+            .Where(i => i.SupplierInventorySnapshotId == latestSnapshot.Id);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(i => i.SupplierSku.Contains(term) ||
+                                     (i.Description != null && i.Description.Contains(term)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderBy(i => i.SupplierSku)
+            .Skip(skip)
+            .Take(take)
+            .Include(i => i.LocationQuantities)
+            .AsSplitQuery()
+            .ToListAsync(cancellationToken);
+
+        return new InventoryPage(items, total, asOf);
+    }
+
     public async Task<SupplierInventoryItem> AddAsync(SupplierInventoryItem item, CancellationToken cancellationToken = default)
     {
         _context.SupplierInventoryItems.Add(item);

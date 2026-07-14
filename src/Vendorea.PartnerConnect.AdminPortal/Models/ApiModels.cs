@@ -598,6 +598,24 @@ public class UpdateOrganizationRequest
     public List<int> TradingPartnerIds { get; set; } = new();
 }
 
+// Operator-led org onboarding (create + activate + subscribe + invite first admin in one step)
+public class OnboardOrganizationRequest
+{
+    public string OrganizationName { get; set; } = string.Empty;
+    public string PlanCode { get; set; } = string.Empty;
+    public string AdminDisplayName { get; set; } = string.Empty;
+    public string AdminEmail { get; set; } = string.Empty;
+    public string? ContactPhone { get; set; }
+}
+
+public class OnboardOrganizationResult
+{
+    public OrganizationDto Organization { get; set; } = new();
+    public string InvitedAdminEmail { get; set; } = string.Empty;
+    public string InvitedAdminStatus { get; set; } = string.Empty;
+    public bool SubscriptionCreated { get; set; }
+}
+
 // Tenant-partner connection models
 public class TenantConnectionDto
 {
@@ -885,4 +903,29 @@ public class SprCallbackDto
     public int RetryCount { get; set; }
     public string? LastError { get; set; }
     public string? Payload { get; set; }
+}
+
+// --- Self-service org registration queue ---
+
+public class OrgRegistrationDto
+{
+    public int Id { get; set; }
+    public int OrganizationId { get; set; }
+    public string OrganizationName { get; set; } = string.Empty;
+    public string PlanCode { get; set; } = string.Empty;
+    public string AdminDisplayName { get; set; } = string.Empty;
+    public string AdminEmail { get; set; } = string.Empty;
+    public string? ContactPhone { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime SubmittedAt { get; set; }
+    public DateTime? DecisionAt { get; set; }
+    public string? DecisionByAdmin { get; set; }
+    public string? DecisionReason { get; set; }
+}
+
+public class OrgRegistrationListResult
+{
+    public int Total { get; set; }
+    public int PendingCount { get; set; }
+    public List<OrgRegistrationDto> Items { get; set; } = new();
 }

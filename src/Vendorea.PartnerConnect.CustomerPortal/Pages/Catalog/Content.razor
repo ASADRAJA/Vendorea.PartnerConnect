@@ -1,0 +1,203 @@
+@page "/catalog/content"
+@attribute [Authorize]
+@implements IDisposable
+@inject ApiClient Api
+@inject PortalState State
+
+<PageTitle>Content — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Content</h1>
+        <p class="page-subtitle">Product-content coverage and subscription for the selected tenant.</p>
+    </div>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Stealth" Disabled="@(_selectedPartnerCode is null)" OnClick="RefreshAsync">Refresh</FluentButton>
+    </div>
+</div>
+
+@if (State.SelectedTenant is null)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">Select a tenant</div>
+            <div class="empty-sub">Choose a tenant from the switcher above to view content coverage.</div>
+        </div>
+    </FluentCard>
+}
+else if (!_partnersLoaded)
+{
+    <FluentProgressRing />
+}
+else if (_partners.Count == 0)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">No connected partners</div>
+            <div class="empty-sub">@State.SelectedTenant.Name has no approved partner connections yet.</div>
+        </div>
+    </FluentCard>
+}
+else
+{
+    <div class="catalog-toolbar">
+        @if (_partners.Count > 1)
+        {
+            <FluentSelect TOption="OrgCatalogPartnerDto"
+                          Label="Partner"
+                          Items="@_partners"
+                          OptionText="@(p => p.PartnerName)"
+                          OptionValue="@(p => p.PartnerCode)"
+                          @bind-Value="_selectedPartnerCode"
+                          @bind-Value:after="OnPartnerChanged"
+                          Width="220px" />
+        }
+        <FluentSearch @bind-Value="_search"
+                      @bind-Value:after="OnSearchAsync"
+                      Placeholder="Search SKU or description"
+                      Style="width: 320px;" />
+    </div>
+
+    <div class="tile-grid">
+        <FluentCard>
+            <div class="tile">
+                <div class="tile-label">Coverage</div>
+                @if (_summary is null)
+                {
+                    <FluentSkeleton Width="120px" Height="24px" />
+                }
+                else
+                {
+                    <div class="tile-value">@_summary.CoveragePct.ToString("0.#")%</div>
+                    <div class="tile-sub">@_summary.WithContent.ToString("N0") of @_summary.TotalSkus.ToString("N0") SKUs have content</div>
+                }
+            </div>
+        </FluentCard>
+
+        <FluentCard>
+            <div class="tile">
+                <div class="tile-label">Subscription</div>
+                @if (_summary is null)
+                {
+                    <FluentSkeleton Width="120px" Height="24px" />
+                }
+                else
+                {
+                    <div class="tile-value">
+                        <FluentBadge Appearance="@(_summary.Subscribed ? Appearance.Accent : Appearance.Lightweight)">
+                            @(_summary.Subscribed ? "Subscribed" : "Not subscribed")
+                        </FluentBadge>
+                    </div>
+                    <div class="tile-sub">Last sync: @Fmt(_summary.LastSyncAt)</div>
+                    <div class="tile-sub muted">Product content is shared partner-level master data; per-tenant relevance is via subscription.</div>
+                }
+            </div>
+        </FluentCard>
+    </div>
+
+    <div class="grid-card">
+        <FluentDataGrid @ref="_grid" TGridItem="ContentRowDto" ItemsProvider="_provider" Pagination="_pagination"
+                        GridTemplateColumns="1.4fr 1fr 1.5fr 3fr" Style="width: 100%;">
+            <PropertyColumn Title="SKU" Property="@(c => c.Sku)" />
+            <TemplateColumn Title="Content">
+                <FluentBadge Appearance="@(context.HasContent ? Appearance.Accent : Appearance.Lightweight)">
+                    @(context.HasContent ? "Available" : "None")
+                </FluentBadge>
+            </TemplateColumn>
+            <PropertyColumn Title="Brand" Property="@(c => c.Brand)" />
+            <PropertyColumn Title="Description" Property="@(c => c.Description)" />
+        </FluentDataGrid>
+
+        <FluentPaginator State="_pagination" />
+    </div>
+}
+
+@code {
+    private bool _partnersLoaded;
+    private List<OrgCatalogPartnerDto> _partners = new();
+    private string? _selectedPartnerCode;
+    private string _search = string.Empty;
+
+    private ContentSummaryDto? _summary;
+
+    private FluentDataGrid<ContentRowDto>? _grid;
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 50 };
+    private GridItemsProvider<ContentRowDto> _provider = default!;
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += OnStateChanged;
+        _provider = async request =>
+        {
+            if (State.SelectedTenant is null || _selectedPartnerCode is null)
+                return GridItemsProviderResult.From(Array.Empty<ContentRowDto>(), 0);
+
+            var take = request.Count ?? _pagination.ItemsPerPage;
+            var page = await Api.GetContentAsync(
+                State.SelectedTenant.Id, _selectedPartnerCode, _search, request.StartIndex, take, request.CancellationToken);
+            return GridItemsProviderResult.From(page.Items, page.Total);
+        };
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadPartnersAsync();
+
+    private async Task LoadPartnersAsync()
+    {
+        _partnersLoaded = false;
+        _summary = null;
+        if (State.SelectedTenant is null)
+        {
+            _partners = new();
+            _partnersLoaded = true;
+            return;
+        }
+
+        _partners = await Api.GetTenantPartnersAsync(State.SelectedTenant.Id);
+        _selectedPartnerCode = _partners.FirstOrDefault()?.PartnerCode;
+        _partnersLoaded = true;
+        await LoadSummaryAsync();
+        await RefreshGridAsync();
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        if (State.SelectedTenant is null || _selectedPartnerCode is null)
+        {
+            _summary = null;
+            return;
+        }
+        _summary = await Api.GetContentSummaryAsync(State.SelectedTenant.Id, _selectedPartnerCode);
+    }
+
+    private void OnStateChanged() => _ = ReloadForTenantAsync();
+
+    private async Task ReloadForTenantAsync()
+    {
+        await LoadPartnersAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnPartnerChanged()
+    {
+        await LoadSummaryAsync();
+        await RefreshGridAsync();
+    }
+
+    private async Task OnSearchAsync() => await RefreshGridAsync();
+
+    private async Task RefreshAsync()
+    {
+        await LoadSummaryAsync();
+        await RefreshGridAsync();
+    }
+
+    private async Task RefreshGridAsync()
+    {
+        if (_grid is not null)
+            await _grid.RefreshDataAsync();
+    }
+
+    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+
+    void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
+}

@@ -18,6 +18,21 @@ public interface IOrderRepository
         int? offset = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// A single page of a tenant's orders (newest first) with the trading partner eagerly loaded,
+    /// filterable by partner, status, and order-date range. Paging is pushed to SQL; the total is
+    /// the full filtered count. Backs the customer portal's tenant-scoped Orders list.
+    /// </summary>
+    Task<(IReadOnlyList<Order> Items, int Total)> GetTenantOrderPageAsync(
+        int tenantId,
+        int? tradingPartnerId,
+        OrderStatus? status,
+        DateTime? from,
+        DateTime? to,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Order>> GetByOrganizationIdAsync(
         int organizationId,
         OrderStatus? status = null,

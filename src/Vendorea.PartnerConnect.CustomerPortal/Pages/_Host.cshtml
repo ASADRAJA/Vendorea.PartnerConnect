@@ -1,0 +1,11 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@namespace Vendorea.PartnerConnect.CustomerPortal.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = "_Layout";
+}
+
+@* Server (not ServerPrerendered): Fluent UI Blazor components (e.g. FluentMenu/providers)
+   fail during the static prerender pass; interactive-only rendering avoids that class of error. *@
+<component type="typeof(App)" render-mode="Server" />

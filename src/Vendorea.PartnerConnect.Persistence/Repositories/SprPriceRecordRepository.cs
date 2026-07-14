@@ -133,6 +133,174 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
         return await query.ToListAsync(cancellationToken);
     }
 
+    public async Task<PricePage> GetCurrentPricePageAsync(
+        int dealerId,
+        string partnerCode,
+        string? search,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        // Latest completed upload for this dealer + partner drives "current" prices.
+        var latestUpload = await _context.PriceFeedUploads
+            .Where(u => u.DealerId == dealerId &&
+                        u.TradingPartner != null &&
+                        u.TradingPartner.Code == partnerCode &&
+                        u.Status == PriceFeedUploadStatus.Completed)
+            .OrderByDescending(u => u.UploadedAt)
+            .Select(u => new { u.Id, u.UploadedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestUpload == null)
+            return new PricePage(Array.Empty<PriceRow>(), 0);
+
+        var query = _context.SprPriceRecords
+            .Where(r => r.PriceFeedUploadId == latestUpload.Id);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(r => r.StockNumber.Contains(term) || r.ProductDescription.Contains(term));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderBy(r => r.StockNumber)
+            .Skip(skip)
+            .Take(take)
+            .Select(r => new PriceRow(
+                r.StockNumber,
+                r.ProductDescription,
+                r.NetCostNonCcp,
+                r.CatalogListPrice,
+                r.SellingUnitOfMeasure,
+                r.PricingStartDate,
+                latestUpload.UploadedAt))
+            .ToListAsync(cancellationToken);
+
+        return new PricePage(items, total);
+    }
+
+    public async Task<IReadOnlyList<PriceHistoryRow>> GetPriceHistoryAsync(
+        int dealerId,
+        string partnerCode,
+        string stockNumber,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.SprPriceRecords
+            .Where(r => r.DealerId == dealerId && r.StockNumber == stockNumber)
+            .Join(
+                _context.PriceFeedUploads.Where(u =>
+                    u.TradingPartner != null &&
+                    u.TradingPartner.Code == partnerCode &&
+                    u.Status == PriceFeedUploadStatus.Completed),
+                r => r.PriceFeedUploadId,
+                u => u.Id,
+                (r, u) => new { r, u })
+            .OrderByDescending(x => x.u.UploadedAt)
+            .Take(take)
+            .Select(x => new PriceHistoryRow(
+                x.r.NetCostNonCcp,
+                x.r.CatalogListPrice,
+                x.r.SellingUnitOfMeasure,
+                x.r.PricingStartDate,
+                x.r.PricingEndDate,
+                x.u.UploadedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<ContentCoverage> GetContentCoverageAsync(
+        int dealerId,
+        string partnerCode,
+        string localeId,
+        CancellationToken cancellationToken = default)
+    {
+        var latestUploadId = await _context.PriceFeedUploads
+            .Where(u => u.DealerId == dealerId &&
+                        u.TradingPartner != null &&
+                        u.TradingPartner.Code == partnerCode &&
+                        u.Status == PriceFeedUploadStatus.Completed)
+            .OrderByDescending(u => u.UploadedAt)
+            .Select(u => (int?)u.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestUploadId == null)
+            return new ContentCoverage(0, 0);
+
+        var total = await _context.SprPriceRecords
+            .CountAsync(r => r.PriceFeedUploadId == latestUploadId.Value, cancellationToken);
+
+        // Count dealer SKUs that have shared partner content (join on StockNumber == ProductId).
+        var withContent = await _context.SprPriceRecords
+            .Where(r => r.PriceFeedUploadId == latestUploadId.Value)
+            .Where(r => _context.SprProductContent.Any(c =>
+                c.ProductId == r.StockNumber && c.LocaleId == localeId))
+            .CountAsync(cancellationToken);
+
+        return new ContentCoverage(total, withContent);
+    }
+
+    public async Task<SkuContentPage> GetSkuContentPageAsync(
+        int dealerId,
+        string partnerCode,
+        string localeId,
+        string? search,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var latestUploadId = await _context.PriceFeedUploads
+            .Where(u => u.DealerId == dealerId &&
+                        u.TradingPartner != null &&
+                        u.TradingPartner.Code == partnerCode &&
+                        u.Status == PriceFeedUploadStatus.Completed)
+            .OrderByDescending(u => u.UploadedAt)
+            .Select(u => (int?)u.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestUploadId == null)
+            return new SkuContentPage(Array.Empty<SkuContentRow>(), 0);
+
+        var query = _context.SprPriceRecords
+            .Where(r => r.PriceFeedUploadId == latestUploadId.Value);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(r => r.StockNumber.Contains(term) || r.ProductDescription.Contains(term));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderBy(r => r.StockNumber)
+            .Skip(skip)
+            .Take(take)
+            .Select(r => new
+            {
+                r.StockNumber,
+                r.ProductDescription,
+                Content = _context.SprProductContent
+                    .Where(c => c.ProductId == r.StockNumber && c.LocaleId == localeId)
+                    .Select(c => new { c.BrandName, c.Description1 })
+                    .FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = items
+            .Select(x => new SkuContentRow(
+                x.StockNumber,
+                x.ProductDescription,
+                x.Content != null,
+                x.Content?.BrandName,
+                x.Content?.Description1))
+            .ToList();
+
+        return new SkuContentPage(rows, total);
+    }
+
     public async Task BulkInsertAsync(
         IEnumerable<SprPriceRecord> records,
         CancellationToken cancellationToken = default)

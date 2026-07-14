@@ -24,6 +24,18 @@
                 <span class="oi oi-person" aria-hidden="true"></span> Tenants
             </NavLink>
         </div>
+        <AuthorizeView Policy="RequireOperator">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="onboard-organization">
+                    <span class="oi oi-plus" aria-hidden="true"></span> Onboard Organization
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="registration-requests">
+                    <span class="oi oi-inbox" aria-hidden="true"></span> Registration Requests
+                </NavLink>
+            </div>
+        </AuthorizeView>
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="orders">
                 <span class="oi oi-cart" aria-hidden="true"></span> Orders

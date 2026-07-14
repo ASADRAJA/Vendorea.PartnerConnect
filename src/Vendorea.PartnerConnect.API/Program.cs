@@ -3,6 +3,7 @@ using Serilog;
 using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 using Vendorea.PartnerConnect.Api.Authentication;
 using Vendorea.PartnerConnect.Api.Authorization;
+using Vendorea.PartnerConnect.Api.RateLimiting;
 using Vendorea.PartnerConnect.Billing;
 using Vendorea.PartnerConnect.Infrastructure.DependencyInjection;
 using Vendorea.PartnerConnect.Infrastructure.Middleware;
@@ -122,9 +123,77 @@ builder.Services.AddBilling(builder.Configuration);
 // Worker Processes (for FTP ingestion services, without background worker)
 builder.Services.AddWorkerProcesses(builder.Configuration);
 
-// Authentication
-builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.AuthenticationScheme)
-    .AddApiKeyAuthentication();
+// JWT settings for the API's own tokens (customer-portal user tokens). The signing key is shared
+// between issuance (OrgUserTokenService) and validation (the JwtBearer scheme below).
+builder.Services.Configure<Vendorea.PartnerConnect.Api.Authentication.JwtSettings>(
+    builder.Configuration.GetSection(Vendorea.PartnerConnect.Api.Authentication.JwtSettings.SectionName));
+builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Authentication.IOrgUserTokenService,
+    Vendorea.PartnerConnect.Api.Authentication.OrgUserTokenService>();
+
+// Shared org-onboarding path (activate + subscribe + invite first OrgAdmin). Used by both the
+// registration-approval flow and the operator-led onboarding endpoint. Lives in the API project
+// because it depends on IBillingService.
+builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Services.IOrganizationOnboardingService,
+    Vendorea.PartnerConnect.Api.Services.OrganizationOnboardingService>();
+
+// Transactional email (activation links etc). SMTP-backed, bound from the "Email" config section;
+// degrades gracefully (logs, never throws) and — in Development — logs the message + link so the
+// activation flow is testable with no SMTP sink running.
+// IEmailSender is registered in AddPartnerConnectServices (shared with the workers host). Bind
+// EmailOptions from THIS host's config so the API's Email settings apply (workers use defaults).
+builder.Services.Configure<Vendorea.PartnerConnect.Infrastructure.Services.EmailOptions>(
+    builder.Configuration.GetSection(Vendorea.PartnerConnect.Infrastructure.Services.EmailOptions.SectionName));
+
+var jwtSettings = builder.Configuration
+    .GetSection(Vendorea.PartnerConnect.Api.Authentication.JwtSettings.SectionName)
+    .Get<Vendorea.PartnerConnect.Api.Authentication.JwtSettings>()
+    ?? new Vendorea.PartnerConnect.Api.Authentication.JwtSettings();
+
+// Authentication. Two schemes coexist: the org/dealer/admin API-key scheme (machine/integration
+// callers via X-API-Key) and a JWT bearer scheme (customer-portal user tokens via Authorization:
+// Bearer). A smart selector routes each request to the right one based on its headers, so the
+// default principal is populated correctly for either credential.
+const string SmartAuthScheme = "Smart";
+builder.Services.AddAuthentication(SmartAuthScheme)
+    .AddPolicyScheme(SmartAuthScheme, "API key or bearer token", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+        {
+            // Prefer the API key. Integrations (e.g. Merchant360) authenticate with X-API-Key, and
+            // some HttpClient pipelines also attach an Authorization: Bearer header that is NOT a PC
+            // JWT — routing those to the JWT scheme would reject a valid API-key caller (a regression).
+            // So: if X-API-Key is present, use the API-key scheme; only route to JWT for a Bearer token
+            // with no API key (the customer-portal user tokens).
+            if (context.Request.Headers.ContainsKey(ApiKeyAuthenticationHandler.ApiKeyHeaderName))
+            {
+                return ApiKeyAuthenticationHandler.AuthenticationScheme;
+            }
+            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+            if (!string.IsNullOrEmpty(authHeader)
+                && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
+            }
+            return ApiKeyAuthenticationHandler.AuthenticationScheme;
+        };
+    })
+    .AddApiKeyAuthentication()
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false; // keep the raw claim types (sub, role, scope, token_type)
+        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtSettings.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                System.Text.Encoding.UTF8.GetBytes(jwtSettings.SigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
 
 // Authorization with permissions
 builder.Services.AddPermissionAuthorization();
@@ -153,6 +222,11 @@ builder.Services.Configure<Microsoft.AspNetCore.Authorization.AuthorizationOptio
 // API host. The default StopHost would take the API down with it.
 builder.Services.Configure<Microsoft.Extensions.Hosting.HostOptions>(o =>
     o.BackgroundServiceExceptionBehavior = Microsoft.Extensions.Hosting.BackgroundServiceExceptionBehavior.Ignore);
+
+// Rate limiting for the public/anonymous auth surface (register, access-request, forgot-password,
+// login). Opt-in via [EnableRateLimiting(...)] on those endpoints only — the authenticated app/API
+// surface is never throttled.
+builder.Services.AddPublicRateLimiting();
 
 // Health checks
 builder.Services.AddHealthChecks();
@@ -255,6 +329,9 @@ app.UseCors("Default");
 app.UsePartnerConnectMiddleware();
 app.UseAuthentication();
 app.UseAuthorization();
+// Must follow routing/auth so per-endpoint [EnableRateLimiting] policies resolve; only decorated
+// (public/anonymous) endpoints are throttled.
+app.UseRateLimiter();
 app.UseSerilogRequestLogging();
 
 app.MapControllers();

@@ -1,0 +1,80 @@
+@page "/org/tenants"
+@attribute [Authorize]
+@inject ApiClient Api
+
+<PageTitle>Tenants — PartnerConnect</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Tenants</h1>
+        <p class="page-subtitle">Operator-provisioned tenants in your organization (read-only).</p>
+    </div>
+    <div class="command-bar">
+        <FluentButton Appearance="Appearance.Stealth" OnClick="LoadAsync">Refresh</FluentButton>
+    </div>
+</div>
+
+<FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false" Class="page-message">
+    Tenants are provisioned by your PartnerConnect operator when a connection is approved (they map to
+    an M360 merchant where applicable), so this list is read-only. Request a connection to add a tenant.
+</FluentMessageBar>
+
+@if (!_loaded)
+{
+    <FluentProgressRing />
+}
+else if (_tenants.Count == 0)
+{
+    <FluentCard>
+        <div class="empty-state">
+            <div class="empty-title">No tenants yet</div>
+            <div class="empty-sub">
+                A tenant appears here once its first partner connection is approved.
+                <FluentAnchor Href="/connections" Appearance="Appearance.Hypertext">View connections</FluentAnchor>
+            </div>
+        </div>
+    </FluentCard>
+}
+else
+{
+    <div class="grid-card">
+        <FluentDataGrid Items="@_tenants.AsQueryable()" TGridItem="OrgTenantRowDto"
+                        GridTemplateColumns="1.6fr 1fr 1fr 1.4fr 1.2fr" Style="width: 100%;">
+            <PropertyColumn Title="Tenant" Property="@(t => t.Name)" Sortable="true" />
+            <PropertyColumn Title="Code" Property="@(t => t.Code)" Sortable="true" />
+            <TemplateColumn Title="Status">
+                <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
+            </TemplateColumn>
+            <TemplateColumn Title="M360 mapping">
+                @(string.IsNullOrWhiteSpace(context.ExternalId)
+                    ? (MarkupString)"<span class=\"muted\">Not mapped</span>"
+                    : (MarkupString)System.Net.WebUtility.HtmlEncode(context.ExternalId))
+            </TemplateColumn>
+            <TemplateColumn Title="Connections">
+                @context.ActiveConnectionCount active
+                <span class="muted">/ @context.ConnectionCount total</span>
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
+}
+
+@code {
+    private bool _loaded;
+    private List<OrgTenantRowDto> _tenants = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loaded = false;
+        _tenants = await Api.GetTenantsAsync();
+        _loaded = true;
+    }
+
+    private static Appearance StatusAppearance(string status) => status.ToLowerInvariant() switch
+    {
+        "active" => Appearance.Accent,
+        "suspended" => Appearance.Neutral,
+        _ => Appearance.Lightweight
+    };
+}

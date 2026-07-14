@@ -1,0 +1,164 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ApiClient Api
+@inject PortalState State
+@inject NavigationManager Navigation
+
+<div class="app-shell">
+    <aside class="app-sidebar">
+        <div class="brand">
+            <div class="brand-logo">PC</div>
+            <div class="brand-text">
+                <div class="brand-name">PartnerConnect</div>
+                <div class="brand-sub" title="@BrandSub">@BrandSub</div>
+            </div>
+        </div>
+
+        @if (State.Context is not null && State.Tenants.Count > 0)
+        {
+            <div class="tenant-switcher">
+                <span class="tenant-switcher-label">Tenant</span>
+                <FluentSelect TOption="OrgTenantDto"
+                              Items="@State.Tenants"
+                              OptionText="@(t => t.Name)"
+                              OptionValue="@(t => t.Id.ToString())"
+                              SelectedOption="@State.SelectedTenant"
+                              SelectedOptionChanged="OnTenantChanged"
+                              Width="208px"
+                              Style="width: 100%;" />
+            </div>
+        }
+
+        <NavMenu />
+    </aside>
+
+    <div class="app-main">
+        <header class="topbar">
+            <h1 class="page-title">@PageTitle</h1>
+            <div class="topbar-right">
+                <FluentButton Id="userMenuBtn" Appearance="Appearance.Stealth" Class="persona-trigger"
+                              OnClick="@(() => _userMenuOpen = !_userMenuOpen)">
+                    <div class="persona-chip">
+                        <span class="persona-avatar">@Initials</span>
+                        <span class="persona-meta">
+                            <span class="persona-name">@UserDisplay</span>
+                        </span>
+                        @if (IsOrgAdmin)
+                        {
+                            <span class="persona-role">Admin</span>
+                        }
+                        <svg class="persona-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </div>
+                </FluentButton>
+                @* UseMenuService=false renders the menu inline so it doesn't depend on FluentMenuProvider
+                   being initialized first (init order: this menu is declared before the provider). *@
+                <FluentMenu Anchor="userMenuBtn" @bind-Open="_userMenuOpen" VerticalThreshold="170" UseMenuService="false">
+                    <FluentMenuItem Disabled="true">@UserDisplay</FluentMenuItem>
+                    <FluentDivider />
+                    <FluentMenuItem OnClick="SignOut">Sign out</FluentMenuItem>
+                </FluentMenu>
+            </div>
+        </header>
+
+        <main class="content">
+            @Body
+        </main>
+    </div>
+</div>
+
+@* Fluent providers required by the library (toasts, dialogs, tooltips, message bars, menus). *@
+<FluentToastProvider />
+<FluentDialogProvider />
+<FluentTooltipProvider />
+<FluentMessageBarProvider />
+<FluentMenuProvider />
+
+@code {
+    private bool _userMenuOpen;
+
+    private string PageTitle => TitleForPath(new Uri(Navigation.Uri).AbsolutePath);
+
+    private string BrandSub =>
+        State.SelectedTenant?.Name
+        ?? State.Context?.Organization.Name
+        ?? "—";
+
+    private bool IsOrgAdmin => State.IsOrgAdmin;
+
+    private string UserDisplay =>
+        State.Context?.User.DisplayName
+        ?? State.Context?.Organization.Name
+        ?? "Account";
+
+    private string Initials
+    {
+        get
+        {
+            var source = UserDisplay;
+            if (string.IsNullOrWhiteSpace(source)) return "?";
+            var parts = source.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length switch
+            {
+                0 => "?",
+                1 => parts[0][..1].ToUpperInvariant(),
+                _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant()
+            };
+        }
+    }
+
+    // Maps the current route to a top-bar title. Centralized here so pages don't
+    // need to push a cascading title; the in-content page headers stay as section labels.
+    private static string TitleForPath(string path)
+    {
+        path = path.TrimEnd('/').ToLowerInvariant();
+        return path switch
+        {
+            "" => "Dashboard",
+            "/connections" => "Connections",
+            "/catalog/prices" => "Prices",
+            "/catalog/inventory" => "Inventory",
+            "/catalog/content" => "Content",
+            "/orders" => "Orders",
+            "/activity" => "Activity",
+            "/org/tenants" => "Tenants",
+            "/org/users" => "Users",
+            "/org/settings" => "Settings",
+            _ when path.StartsWith("/connections/") => "Connection",
+            _ when path.StartsWith("/orders/") => "Order",
+            _ => "PartnerConnect"
+        };
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += StateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!State.Loaded)
+        {
+            var context = await Api.GetOrgContextAsync();
+            State.SetContext(context);
+        }
+    }
+
+    private void OnTenantChanged(OrgTenantDto? tenant) => State.SelectTenant(tenant);
+
+    private void SignOut() => Navigation.NavigateTo("/account/logout", forceLoad: true);
+
+    private void StateChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        State.OnChange -= StateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}
