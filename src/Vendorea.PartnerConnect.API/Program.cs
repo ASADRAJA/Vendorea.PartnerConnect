@@ -159,6 +159,15 @@ builder.Services.AddAuthentication(SmartAuthScheme)
     {
         options.ForwardDefaultSelector = context =>
         {
+            // Prefer the API key. Integrations (e.g. Merchant360) authenticate with X-API-Key, and
+            // some HttpClient pipelines also attach an Authorization: Bearer header that is NOT a PC
+            // JWT — routing those to the JWT scheme would reject a valid API-key caller (a regression).
+            // So: if X-API-Key is present, use the API-key scheme; only route to JWT for a Bearer token
+            // with no API key (the customer-portal user tokens).
+            if (context.Request.Headers.ContainsKey(ApiKeyAuthenticationHandler.ApiKeyHeaderName))
+            {
+                return ApiKeyAuthenticationHandler.AuthenticationScheme;
+            }
             var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
             if (!string.IsNullOrEmpty(authHeader)
                 && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
