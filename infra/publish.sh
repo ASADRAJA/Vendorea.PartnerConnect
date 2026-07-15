@@ -1,8 +1,9 @@
 #!/bin/bash
 # Vendorea PartnerConnect - Build & deploy apps to App Service
 # Usage: ./publish.sh <environment> [apps]
-# Example: ./publish.sh test            # deploys api, admin, workers
+# Example: ./publish.sh test            # deploys api, admin, workers (default set)
 #          ./publish.sh test "api"      # deploys only the api
+#          ./publish.sh test "portal"   # deploys the customer portal (provision it via deploy.sh first)
 #
 # Note: written for bash 3.2 (macOS default) — no associative arrays.
 
@@ -24,6 +25,7 @@ project_for() {
         api)     echo "src/Vendorea.PartnerConnect.API" ;;
         admin)   echo "src/Vendorea.PartnerConnect.AdminPortal" ;;
         workers) echo "src/Vendorea.PartnerConnect.BackgroundWorkers" ;;
+        portal)  echo "src/Vendorea.PartnerConnect.CustomerPortal" ;;
         *)       echo "" ;;
     esac
 }
@@ -31,7 +33,7 @@ project_for() {
 deploy_app() {
     local app="$1"
     local project; project="$(project_for "$app")"
-    if [ -z "$project" ]; then echo "Unknown app: $app (expected api|admin|workers)"; exit 1; fi
+    if [ -z "$project" ]; then echo "Unknown app: $app (expected api|admin|workers|portal)"; exit 1; fi
 
     local webapp="${BASE_NAME}-${ENVIRONMENT}-${app}"
     local outdir; outdir="$(mktemp -d)"

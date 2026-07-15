@@ -16,6 +16,7 @@ cd infra
 ./deploy.sh test westus2     # 1. provision infra (prompts for SQL password + M360 URL/key)
 ./migrate.sh test            # 2. apply EF Core migrations to Azure SQL
 ./publish.sh test            # 3. build & deploy api, admin, workers
+./publish.sh test portal     # 4. (optional) deploy the customer portal (provisioned by deploy.sh above)
 ```
 
 ## Resources created
@@ -24,6 +25,7 @@ cd infra
 - **Web Apps**:
   - `partnerconnect-<env>-api` — inbound order submission from M360, data/admin APIs, M360 callbacks
   - `partnerconnect-<env>-admin` — Blazor admin portal (calls the API)
+  - `partnerconnect-<env>-portal` — customer-facing org portal (Blazor UI → API); `ApiBaseUrl` app setting points at the API
   - `partnerconnect-<env>-workers` — background workers (outbox→M360, SPR polling, doc processing); `alwaysOn`, exposes `/health`
 - **Azure SQL**: own server `partnerconnect-<env>-sql`, database `PartnerConnect`
 - **Storage Account**: `pc<env><suffix>` with a private `partner-documents` blob container
