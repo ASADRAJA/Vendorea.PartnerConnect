@@ -184,6 +184,26 @@ module adminApp 'modules/webApp.bicep' = {
 }
 
 // ============================================================================
+// Customer Portal (org-facing Blazor UI -> API)
+// ============================================================================
+module portalApp 'modules/webApp.bicep' = {
+  name: 'portalApp-deployment'
+  params: {
+    name: '${resourcePrefix}-portal'
+    location: location
+    appServicePlanId: appServicePlan.outputs.id
+    appInsightsConnectionString: appInsights.outputs.connectionString
+    tags: tags
+    appSettings: [
+      {
+        name: 'ApiBaseUrl'
+        value: 'https://${resourcePrefix}-api.azurewebsites.net'
+      }
+    ]
+  }
+}
+
+// ============================================================================
 // Background Workers (outbox -> M360 callbacks, SPR polling, doc processing)
 // alwaysOn so the host stays loaded; exposes /health for App Service warmup.
 // ============================================================================
