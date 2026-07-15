@@ -62,13 +62,14 @@ public class SprWebServiceContextResolver
         if (connection is null)
             return new SprWebServiceContextResult(SprContextStatus.NoActiveConnection, null);
 
-        // GroupCode is the SPR web-services registration code (partner-level, assigned by SPR at
-        // web-service registration) and is DISTINCT from the dealer's customer/account number.
-        // UserID/Password are the shared, partner-level web-service credentials. CustNumber (below)
-        // carries the per-tenant dealer account number that drives pricing. The connection's
-        // AccountNumber is only a fallback when no partner-level GroupCode is configured.
-        var groupCode = !string.IsNullOrWhiteSpace(config.WebServicesGroupCode)
-            ? config.WebServicesGroupCode
+        // GroupCode is PER-TENANT: each SPR-subscribed tenant is itself an SPR customer with its own
+        // web-services group code, stored on the connection (SpecialIdentifyingCode). It is DISTINCT
+        // from the dealer's customer/account number. UserID/Password/BaseUrl remain the shared,
+        // partner-level web-service credentials. CustNumber (below) carries the per-tenant dealer
+        // account number that drives pricing. Falls back to the account number only if no per-tenant
+        // group code is set on the connection.
+        var groupCode = !string.IsNullOrWhiteSpace(connection.SpecialIdentifyingCode)
+            ? connection.SpecialIdentifyingCode
             : connection.AccountNumber;
 
         return new SprWebServiceContextResult(SprContextStatus.Ok, new SprWebServiceConfig
