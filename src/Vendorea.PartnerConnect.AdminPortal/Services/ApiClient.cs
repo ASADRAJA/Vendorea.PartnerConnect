@@ -943,6 +943,21 @@ public class ApiClient
         }
     }
 
+    public async Task<(bool Success, string? Message)> ResendOrgRegistrationInviteAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/v1/admin/org-registrations/{id}/resend-invite", null);
+            var body = await response.Content.ReadAsStringAsync();
+            return (response.IsSuccessStatusCode, ExtractError(body));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resend org registration invite {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
     // --- Tenant-partner connections ---
 
     public async Task<TenantConnectionListResult> GetConnectionsAsync(int? organizationId = null, string? status = null)

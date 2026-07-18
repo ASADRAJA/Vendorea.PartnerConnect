@@ -20,6 +20,8 @@ public class AdminOrgRegistrationsController : ControllerBase
     private readonly IOrgRegistrationRequestRepository _registrations;
     private readonly IOrganizationRepository _organizations;
     private readonly IOrganizationOnboardingService _onboarding;
+    private readonly IOrgPortalUserRepository _users;
+    private readonly IOrgPortalUserInvitationService _invitations;
     private readonly IEmailSender _email;
     private readonly IAuditService _audit;
     private readonly ILogger<AdminOrgRegistrationsController> _logger;
@@ -28,6 +30,8 @@ public class AdminOrgRegistrationsController : ControllerBase
         IOrgRegistrationRequestRepository registrations,
         IOrganizationRepository organizations,
         IOrganizationOnboardingService onboarding,
+        IOrgPortalUserRepository users,
+        IOrgPortalUserInvitationService invitations,
         IEmailSender email,
         IAuditService audit,
         ILogger<AdminOrgRegistrationsController> logger)
@@ -35,6 +39,8 @@ public class AdminOrgRegistrationsController : ControllerBase
         _registrations = registrations;
         _organizations = organizations;
         _onboarding = onboarding;
+        _users = users;
+        _invitations = invitations;
         _email = email;
         _audit = audit;
         _logger = logger;
@@ -105,6 +111,38 @@ public class AdminOrgRegistrationsController : ControllerBase
             id, org.Id, org.Code);
 
         return Ok(new { message = $"Approved. {org.Name} is active and an activation email was sent to {registration.AdminEmail}." });
+    }
+
+    /// <summary>
+    /// Re-sends the activation invite for an already-approved registration's first OrgAdmin — for when
+    /// the original email didn't arrive. Issues a fresh single-use token. Only valid while the
+    /// registration is Approved and its admin hasn't activated yet.
+    /// </summary>
+    [HttpPost("{id:int}/resend-invite")]
+    public async Task<IActionResult> ResendInvite(int id, CancellationToken cancellationToken)
+    {
+        var registration = await _registrations.GetByIdAsync(id, cancellationToken);
+        if (registration is null)
+            return NotFound(new { error = $"Registration {id} not found." });
+
+        if (registration.Status != OrgRegistrationStatus.Approved)
+            return BadRequest(new { error = $"Registration {id} is {registration.Status}; approve it before resending the invite." });
+
+        var org = await _organizations.GetByIdAsync(registration.OrganizationId, cancellationToken);
+        if (org is null)
+            return NotFound(new { error = $"The organization for registration {id} no longer exists." });
+
+        var user = await _users.GetByOrgAndEmailAsync(org.Id, registration.AdminEmail, cancellationToken);
+        if (user is null)
+            return NotFound(new { error = $"No portal admin found for {registration.AdminEmail} in {org.Name}." });
+
+        if (user.Status != OrgPortalUserStatus.Invited)
+            return Conflict(new { error = $"{registration.AdminEmail} has already activated their account." });
+
+        await _invitations.SendActivationEmailAsync(user, org, cancellationToken);
+        _logger.LogInformation("Re-sent activation invite for registration {RegistrationId} to {Email}", id, user.Email);
+
+        return Ok(new { message = $"Activation email re-sent to {registration.AdminEmail}." });
     }
 
     /// <summary>
