@@ -98,6 +98,13 @@
                                             <span class="oi oi-x me-1"></span> Deny
                                         </button>
                                     }
+                                    else if (r.Status == "Approved")
+                                    {
+                                        <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ResendInviteAsync(r)" disabled="@isSubmitting" title="Re-send the activation email to the org admin">
+                                            <span class="oi oi-envelope-closed me-1"></span> Resend invite
+                                        </button>
+                                        <span class="text-muted small">@(r.DecisionByAdmin ?? "—")</span>
+                                    }
                                     else
                                     {
                                         <span class="text-muted small">@(r.DecisionByAdmin ?? "—")</span>
@@ -188,6 +195,25 @@
             actionMessage = ok
                 ? (message ?? $"Approved {r.OrganizationName}.")
                 : (message ?? "Failed to approve the registration.");
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+        await LoadAsync();
+    }
+
+    private async Task ResendInviteAsync(OrgRegistrationDto r)
+    {
+        isSubmitting = true;
+        StateHasChanged();
+        try
+        {
+            var (ok, message) = await Api.ResendOrgRegistrationInviteAsync(r.Id);
+            actionOk = ok;
+            actionMessage = ok
+                ? (message ?? $"Activation email re-sent for {r.OrganizationName}.")
+                : (message ?? "Failed to resend the activation email.");
         }
         finally
         {
