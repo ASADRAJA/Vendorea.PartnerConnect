@@ -81,9 +81,10 @@
 
     private string PageTitle => TitleForPath(new Uri(Navigation.Uri).AbsolutePath);
 
+    // Sidebar sub-label shows the ORGANIZATION; the selected tenant is chosen in the
+    // tenant switcher right below it, so this stays the org for a stable identity.
     private string BrandSub =>
-        State.SelectedTenant?.Name
-        ?? State.Context?.Organization.Name
+        State.Context?.Organization.Name
         ?? "—";
 
     private bool IsOrgAdmin => State.IsOrgAdmin;

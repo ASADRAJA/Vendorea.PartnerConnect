@@ -26,7 +26,7 @@
         <div class="hero-meta">
             @if (State.SelectedTenant is not null)
             {
-                <div><strong>@State.SelectedTenant.Name</strong></div>
+                <div>Tenant: <strong>@State.SelectedTenant.Name</strong></div>
             }
             <div>@DateTime.Now.ToString("dddd, MMM d")</div>
         </div>
@@ -294,10 +294,12 @@
     private static readonly HashSet<string> TerminalStatuses =
         new(StringComparer.OrdinalIgnoreCase) { "Completed", "Delivered", "Cancelled", "Failed" };
 
+    // The hero title is the ORGANIZATION (e.g. "Merchant360"); the selected tenant is shown
+    // separately in the hero meta and the sidebar tenant switcher.
     private string HeroTitle =>
-        State.SelectedTenant is not null
-            ? $"{State.SelectedTenant.Name} Command Center"
-            : (State.Context?.Organization.Name is { Length: > 0 } org ? $"{org} Command Center" : "Command Center");
+        State.Context?.Organization.Name is { Length: > 0 } org
+            ? $"{org} Command Center"
+            : "Command Center";
 
     private int RecentOrderCount => _summary?.RecentOrders.Count ?? 0;
 
