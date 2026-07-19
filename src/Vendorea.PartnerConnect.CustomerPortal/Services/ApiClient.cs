@@ -510,9 +510,29 @@ public class ApiClient
         return await GetPagedAsync<OrderSummaryDto>($"/api/v1/org/tenants/{tenantId}/orders{query}", cancellationToken);
     }
 
+    /// <summary>Combined orders across all visible tenants (org-level), each row tagged with its tenant.
+    /// Optional tenantId narrows to one tenant. Filterable by status + order-date range, paged.</summary>
+    public async Task<PagedResult<OrderSummaryDto>> GetAllOrdersAsync(
+        int? tenantId, string? status, DateTime? from, DateTime? to,
+        int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(
+            ("tenantId", tenantId?.ToString()),
+            ("status", status),
+            ("from", from?.ToString("o")),
+            ("to", to?.ToString("o")),
+            ("skip", skip.ToString()),
+            ("take", take.ToString()));
+        return await GetPagedAsync<OrderSummaryDto>($"/api/v1/org/orders{query}", cancellationToken);
+    }
+
     /// <summary>Full detail for one order incl. its document chain. Null on non-success/transport error.</summary>
     public async Task<OrderDetailDto?> GetOrderAsync(int tenantId, int orderId, CancellationToken cancellationToken = default)
         => await GetJsonAsync<OrderDetailDto>($"/api/v1/org/tenants/{tenantId}/orders/{orderId}", cancellationToken);
+
+    /// <summary>Order detail by id, resolved across the caller's visible tenants (combined view).</summary>
+    public async Task<OrderDetailDto?> GetOrderByIdAsync(int orderId, CancellationToken cancellationToken = default)
+        => await GetJsonAsync<OrderDetailDto>($"/api/v1/org/orders/{orderId}", cancellationToken);
 
     /// <summary>The tenant's activity feed (paged), filterable by type, level, and date range.</summary>
     public async Task<PagedResult<ActivityEventDto>> GetActivityAsync(

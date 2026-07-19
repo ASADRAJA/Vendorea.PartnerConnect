@@ -95,6 +95,41 @@ public class OrderRepository : IOrderRepository
         return (items, total);
     }
 
+    public async Task<(IReadOnlyList<Order> Items, int Total)> GetTenantsOrderPageAsync(
+        IReadOnlyCollection<int> tenantIds,
+        int? tradingPartnerId,
+        OrderStatus? status,
+        DateTime? from,
+        DateTime? to,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Orders.Where(o => tenantIds.Contains(o.TenantId));
+
+        if (tradingPartnerId.HasValue)
+            query = query.Where(o => o.TradingPartnerId == tradingPartnerId.Value);
+        if (status.HasValue)
+            query = query.Where(o => o.Status == status.Value);
+        if (from.HasValue)
+            query = query.Where(o => o.OrderDate >= from.Value);
+        if (to.HasValue)
+            query = query.Where(o => o.OrderDate <= to.Value);
+
+        var total = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .Include(o => o.TradingPartner)
+            .Include(o => o.Tenant)
+            .OrderByDescending(o => o.OrderDate)
+            .ThenByDescending(o => o.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return (items, total);
+    }
+
     public async Task<IReadOnlyList<Order>> GetByOrganizationIdAsync(
         int organizationId,
         OrderStatus? status = null,

@@ -14,27 +14,18 @@
     </div>
     <div class="command-bar">
         <FluentButton Appearance="Appearance.Stealth" OnClick="@(() => Navigation.NavigateTo("/orders"))">Back to orders</FluentButton>
-        <FluentButton Appearance="Appearance.Stealth" Disabled="@(State.SelectedTenant is null)" OnClick="LoadAsync">Refresh</FluentButton>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="LoadAsync">Refresh</FluentButton>
     </div>
 </div>
 
-@if (State.SelectedTenant is null)
-{
-    <FluentCard>
-        <div class="empty-state">
-            <div class="empty-title">Select a tenant</div>
-            <div class="empty-sub">Choose a tenant from the switcher above to view its orders.</div>
-        </div>
-    </FluentCard>
-}
-else if (!_loaded)
+@if (!_loaded)
 {
     <FluentProgressRing />
 }
 else if (_order is null)
 {
     <FluentMessageBar Intent="MessageIntent.Error" AllowDismiss="false" Class="page-message">
-        This order couldn't be found for @State.SelectedTenant.Name.
+        This order couldn't be found.
     </FluentMessageBar>
 }
 else
@@ -148,17 +139,13 @@ else
         _loaded = false;
         _order = null;
         _loadedId = Id;
-        if (State.SelectedTenant is null)
-        {
-            _loaded = true;
-            return;
-        }
-        _order = await Api.GetOrderAsync(State.SelectedTenant.Id, Id);
+        _order = await Api.GetOrderByIdAsync(Id);
         _loaded = true;
     }
 
-    // A tenant switch invalidates the current order; return to the list.
-    private void OnStateChanged() => Navigation.NavigateTo("/orders");
+    // The order is loaded by id independent of the selected tenant (combined view), so a header
+    // tenant switch no longer affects this page.
+    private void OnStateChanged() { }
 
     private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
     private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
