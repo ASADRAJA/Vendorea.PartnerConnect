@@ -33,6 +33,17 @@ public interface IOrderRepository
         int take,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Paged orders across a set of tenants (org-level combined view), newest first.</summary>
+    Task<(IReadOnlyList<Order> Items, int Total)> GetTenantsOrderPageAsync(
+        IReadOnlyCollection<int> tenantIds,
+        int? tradingPartnerId,
+        OrderStatus? status,
+        DateTime? from,
+        DateTime? to,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Order>> GetByOrganizationIdAsync(
         int organizationId,
         OrderStatus? status = null,

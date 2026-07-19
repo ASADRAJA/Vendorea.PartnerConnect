@@ -363,6 +363,11 @@ public class OrderSummaryDto
 {
     public int Id { get; set; }
     public string PoNumber { get; set; } = string.Empty;
+
+    /// <summary>The tenant (dealer) that placed the order — shown on the org-level combined view.</summary>
+    public int TenantId { get; set; }
+    public string TenantName { get; set; } = string.Empty;
+
     public string PartnerCode { get; set; } = string.Empty;
     public string PartnerName { get; set; } = string.Empty;
     public DateTime OrderedAt { get; set; }

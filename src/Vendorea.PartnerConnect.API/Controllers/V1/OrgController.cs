@@ -739,6 +739,88 @@ public class OrgController : ControllerBase
     // ============================================================================================
 
     /// <summary>
+    /// Combined, org-level order list across every tenant the caller can see (an OrgAdmin sees all the
+    /// org's tenants; a scoped user sees only their tenants). Each row carries the tenant that placed
+    /// the order. Optional <paramref name="tenantId"/> narrows to a single in-scope tenant. Filterable
+    /// by status + order-date range, paged, newest first.
+    /// </summary>
+    [HttpGet("orders")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetOrgOrders(
+        [FromQuery] int? tenantId,
+        [FromQuery] string? status,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        // Tenants this caller may see: all the org's, or the scoped subset for a tenant-scoped user.
+        var tenants = await _tenantRepository.GetByOrganizationIdAsync(org.Id, cancellationToken);
+        var visibleIds = tenants
+            .Where(t => _resolvedUser is not { AllTenants: false } || _resolvedUser.ScopedTenantIds.Contains(t.Id))
+            .Select(t => t.Id);
+        if (tenantId is int tid)
+            visibleIds = visibleIds.Where(id => id == tid); // narrow to one in-scope tenant
+        var idList = visibleIds.ToList();
+        if (idList.Count == 0)
+            return Ok(PagedResult<OrderSummaryDto>.Empty(skip, take));
+
+        OrderStatus? statusFilter = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<OrderStatus>(status, ignoreCase: true, out var parsed))
+                return Ok(PagedResult<OrderSummaryDto>.Empty(skip, take));
+            statusFilter = parsed;
+        }
+
+        (skip, take) = NormalizePaging(skip, take);
+        var (items, total) = await _orderRepository.GetTenantsOrderPageAsync(
+            idList, null, statusFilter, from, to, skip, take, cancellationToken);
+
+        var dtos = items.Select(o => new OrderSummaryDto
+        {
+            Id = o.Id,
+            PoNumber = o.PoNumber,
+            TenantId = o.TenantId,
+            TenantName = o.Tenant?.Name ?? $"Tenant {o.TenantId}",
+            PartnerCode = o.TradingPartner?.Code ?? string.Empty,
+            PartnerName = o.TradingPartner?.Name ?? $"Partner {o.TradingPartnerId}",
+            OrderedAt = o.OrderDate,
+            Status = o.Status.ToString(),
+            Chain = DeriveChain(o),
+            Total = o.TotalAmount,
+            Currency = o.Currency
+        }).ToList();
+
+        return Ok(new PagedResult<OrderSummaryDto>(dtos, total, skip, take));
+    }
+
+    /// <summary>
+    /// Full detail for one order by id, for the combined view — resolves the order's tenant and reuses
+    /// the tenant-scoped detail path, which enforces org ownership + per-user tenant scope. Returns 404
+    /// if the order's tenant is outside the caller's scope.
+    /// </summary>
+    [HttpGet("orders/{orderId:int}")]
+    [RequireScope(ApiScopes.ConnectionsRead)]
+    public async Task<IActionResult> GetOrgOrder(int orderId, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null)
+            return error!;
+
+        var order = await _orderRepository.GetByIdAsync(orderId, cancellationToken);
+        if (order is null)
+            return NotFound(new { error = $"Order '{orderId}' not found" });
+
+        return await GetOrder(order.TenantId, orderId, cancellationToken);
+    }
+
+    /// <summary>
     /// Lists the tenant's orders (newest first), filterable by partner, status, and order-date
     /// range, paged. Each row carries the document-chain stages present (PO/ACK/ASN) derived from the
     /// order's own state — cheap and authoritative, no per-row document lookup. Returns 404 if the
@@ -1827,6 +1909,11 @@ public class OrderSummaryDto
 {
     public int Id { get; set; }
     public string PoNumber { get; set; } = string.Empty;
+
+    /// <summary>The tenant (dealer) that placed the order — populated on the org-level combined view.</summary>
+    public int TenantId { get; set; }
+    public string TenantName { get; set; } = string.Empty;
+
     public string PartnerCode { get; set; } = string.Empty;
     public string PartnerName { get; set; } = string.Empty;
     public DateTime OrderedAt { get; set; }
