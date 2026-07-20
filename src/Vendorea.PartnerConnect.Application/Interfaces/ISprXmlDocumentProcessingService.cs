@@ -46,6 +46,7 @@ public interface ISprXmlDocumentProcessingService
     Task<SprXmlProcessingResult> CreateOutboundOrderAsync(
         int connectionId,
         PurchaseOrder order,
+        string? buyerOrganizationCode = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

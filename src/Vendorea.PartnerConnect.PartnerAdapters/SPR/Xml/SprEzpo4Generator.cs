@@ -152,7 +152,9 @@ public class SprEzpo4Generator : ISprEzpo4Generator
         // Order header attributes. OrderType + ShipNode are order-driven; remaining SPR routing
         // flags are left to their schema defaults.
         var orderElement = new XElement("Order",
-            new XAttribute("EnterpriseCode", string.IsNullOrWhiteSpace(enterpriseCode) ? "SPR" : enterpriseCode),
+            // EnterpriseCode is optional to SPR ("not required or used"): emit it only when configured,
+            // never a placeholder — a bogus value fails SPR's schema validation.
+            string.IsNullOrWhiteSpace(enterpriseCode) ? null : new XAttribute("EnterpriseCode", enterpriseCode),
             new XAttribute("BuyerOrganizationCode", buyerOrgCode),
             new XAttribute("OrderType", MapSprOrderType(order.OrderType)),
             new XAttribute("CustomerPONo", Truncate(order.PoNumber, MaxCustomerPoNo)));
