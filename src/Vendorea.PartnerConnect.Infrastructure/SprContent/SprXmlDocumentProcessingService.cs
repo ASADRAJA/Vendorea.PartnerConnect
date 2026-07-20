@@ -188,6 +188,120 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         return result;
     }
 
+    public async Task<SprXmlInboundPollResult> PollInboundAsync(
+        int tradingPartnerId,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new SprXmlInboundPollResult();
+
+        var partner = await _partnerRepository.GetByIdAsync(tradingPartnerId, cancellationToken);
+        if (partner is null)
+        {
+            result.ErrorMessage = $"Trading partner {tradingPartnerId} not found";
+            return result;
+        }
+
+        var config = SprConfiguration.FromJson(partner.TransportConfigJson);
+        if (string.IsNullOrWhiteSpace(config.SftpHost) || string.IsNullOrWhiteSpace(config.SprXmlInboundPath))
+        {
+            // Not configured for SPR XML SFTP — nothing to poll (not an error).
+            result.Success = true;
+            return result;
+        }
+
+        var credsJson = !string.IsNullOrWhiteSpace(partner.TransportCredentialsJson)
+            ? _credentialProtector.Unprotect(partner.TransportCredentialsJson)
+            : null;
+        var credentials = SprCredentials.FromJson(credsJson);
+
+        var connectionInfo = new TransportConnectionInfo(
+            Host: config.SftpHost,
+            Port: config.SprXmlSftpPort,
+            Username: config.SftpUsername,
+            Password: credentials.SftpPassword,
+            PrivateKeyPath: credentials.PrivateKeyPath,
+            PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
+            ConnectionTimeout: TimeSpan.FromSeconds(config.ConnectionTimeoutSeconds));
+
+        var client = _transportClientFactory.CreateSftpClient();
+        try
+        {
+            await client.ConnectAsync(connectionInfo, cancellationToken);
+
+            var files = await client.ListFilesAsync(config.SprXmlInboundPath, cancellationToken);
+            var xmlFiles = files
+                .Where(f => !f.IsDirectory && f.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            result.Found = xmlFiles.Count;
+
+            foreach (var file in xmlFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var remotePath = CombineRemotePath(config.SprXmlInboundPath, file.Name);
+                try
+                {
+                    string xmlContent;
+                    await using (var stream = await client.DownloadFileAsync(remotePath, cancellationToken))
+                    using (var reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        xmlContent = await reader.ReadToEndAsync(cancellationToken);
+                    }
+
+                    var processResult = await ProcessInboundDocumentAsync(
+                        tradingPartnerId, xmlContent, file.Name, null, cancellationToken);
+
+                    // Delete once PC has CAPTURED the document (PartnerDocumentId set) — SPR requires
+                    // removal after a successful download, and the raw doc is persisted in PC even when
+                    // parsing had errors (those are recorded on the document for investigation).
+                    if (processResult.PartnerDocumentId is not null)
+                    {
+                        await client.DeleteFileAsync(remotePath, cancellationToken);
+                        result.Deleted++;
+                        result.Processed++;
+                        if (!processResult.Success)
+                        {
+                            _logger.LogWarning(
+                                "Captured inbound SPR file {File} for partner {PartnerId} but processing had errors: {Error}",
+                                file.Name, tradingPartnerId, processResult.ErrorMessage);
+                        }
+                    }
+                    else
+                    {
+                        // Not captured — leave it on the server so the next poll retries.
+                        result.Failed++;
+                        _logger.LogWarning(
+                            "Inbound SPR file {File} for partner {PartnerId} was not captured (left on server): {Error}",
+                            file.Name, tradingPartnerId, processResult.ErrorMessage);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    _logger.LogError(ex,
+                        "Error handling inbound SPR file {File} for partner {PartnerId} (left on server)",
+                        file.Name, tradingPartnerId);
+                }
+            }
+
+            await client.DisconnectAsync(cancellationToken);
+            result.Success = true;
+            _logger.LogInformation(
+                "SPR inbound poll for partner {PartnerId}: found={Found}, processed={Processed}, failed={Failed}, deleted={Deleted}",
+                tradingPartnerId, result.Found, result.Processed, result.Failed, result.Deleted);
+        }
+        catch (Exception ex)
+        {
+            result.ErrorMessage = ex.Message;
+            _logger.LogError(ex, "SPR inbound SFTP poll failed for partner {PartnerId}", tradingPartnerId);
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+
+        return result;
+    }
+
     public async Task<SprXmlProcessingResult> CreateOutboundOrderAsync(
         int tradingPartnerId,
         PurchaseOrder order,

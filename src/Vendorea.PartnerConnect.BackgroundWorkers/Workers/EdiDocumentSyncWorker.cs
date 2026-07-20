@@ -83,7 +83,7 @@ public class EdiDocumentSyncWorker : BackgroundService
 
         using var scope = _serviceProvider.CreateScope();
         var partnerRepo = scope.ServiceProvider.GetRequiredService<ITradingPartnerRepository>();
-        var ediProcessingService = scope.ServiceProvider.GetRequiredService<IEdiDocumentProcessingService>();
+        var pollService = scope.ServiceProvider.GetRequiredService<ISprXmlDocumentProcessingService>();
 
         var partners = await partnerRepo.GetByStatusAsync(TradingPartnerStatus.Active, cancellationToken);
 
@@ -108,7 +108,7 @@ public class EdiDocumentSyncWorker : BackgroundService
             await semaphore.WaitAsync(cancellationToken);
             try
             {
-                await ProcessPartnerAsync(ediProcessingService, partner, cancellationToken);
+                await ProcessPartnerAsync(pollService, partner, cancellationToken);
             }
             finally
             {
@@ -122,32 +122,32 @@ public class EdiDocumentSyncWorker : BackgroundService
     }
 
     private async Task ProcessPartnerAsync(
-        IEdiDocumentProcessingService ediProcessingService,
+        ISprXmlDocumentProcessingService pollService,
         TradingPartner partner,
         CancellationToken cancellationToken)
     {
         try
         {
-            _logger.LogDebug("Processing EDI for partner {TradingPartnerId}", partner.Id);
+            _logger.LogDebug("Polling SPR XML inbound for partner {TradingPartnerId}", partner.Id);
 
-            var result = await ediProcessingService.SyncEdiDocumentsAsync(partner.Id, cancellationToken);
+            var result = await pollService.PollInboundAsync(partner.Id, cancellationToken);
 
             if (result.Success)
             {
                 _logger.LogInformation(
-                    "EDI sync completed for partner {TradingPartnerId}: Found={Found}, Processed={Processed}, Failed={Failed}, Sent={Sent}",
-                    partner.Id, result.FilesFound, result.FilesProcessed, result.FilesFailed, result.OutboundDocumentsSent);
+                    "SPR inbound poll for partner {TradingPartnerId}: Found={Found}, Processed={Processed}, Failed={Failed}, Deleted={Deleted}",
+                    partner.Id, result.Found, result.Processed, result.Failed, result.Deleted);
             }
             else
             {
                 _logger.LogWarning(
-                    "EDI sync completed with errors for partner {TradingPartnerId}: {Error}",
+                    "SPR inbound poll failed for partner {TradingPartnerId}: {Error}",
                     partner.Id, result.ErrorMessage);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error syncing EDI for partner {TradingPartnerId}", partner.Id);
+            _logger.LogError(ex, "Error polling SPR inbound for partner {TradingPartnerId}", partner.Id);
         }
     }
 
@@ -158,10 +158,10 @@ public class EdiDocumentSyncWorker : BackgroundService
 
         try
         {
-            // Check if EDI paths are configured
+            // Enabled when the SPR XML order-exchange SFTP is configured (host + inbound path).
             var config = PartnerAdapters.SPR.SprConfiguration.FromJson(partner.TransportConfigJson);
             return !string.IsNullOrEmpty(config.SftpHost) &&
-                   !string.IsNullOrEmpty(config.EdiInboundPath);
+                   !string.IsNullOrEmpty(config.SprXmlInboundPath);
         }
         catch
         {
