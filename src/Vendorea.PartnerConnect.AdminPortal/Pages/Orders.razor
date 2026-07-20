@@ -6,6 +6,14 @@
 <h1>Orders</h1>
 <p class="text-muted">View and manage orders placed by tenants</p>
 
+@if (!string.IsNullOrEmpty(transmitMessage))
+{
+    <div class="alert @(transmitOk ? "alert-success" : "alert-danger") alert-dismissible" role="alert">
+        @transmitMessage
+        <button type="button" class="btn-close" @onclick="() => transmitMessage = null"></button>
+    </div>
+}
+
 <div class="row mb-4">
     <div class="col-12">
         <div class="card">
@@ -124,6 +132,12 @@
                                                 {
                                                     <button class="btn btn-sm btn-success me-1" @onclick="() => AcknowledgeOrder(order.Id)" title="Acknowledge">
                                                         <span class="oi oi-check"></span>
+                                                    </button>
+                                                }
+                                                @if (CanTransmit(order.Status))
+                                                {
+                                                    <button class="btn btn-sm btn-primary me-1" @onclick="() => TransmitOrder(order.Id)" disabled="@transmitting" title="Transmit to SPR (generate EZPO4 + SFTP send)">
+                                                        <span class="oi oi-data-transfer-upload"></span> SPR
                                                     </button>
                                                 }
                                                 @if (CanCancel(order.Status))
@@ -537,6 +551,28 @@
         }
     }
 
+    // Temporary manual "Transmit to SPR" until outbound dispatch is automated.
+    private bool transmitting;
+    private string? transmitMessage;
+    private bool transmitOk;
+
+    private async Task TransmitOrder(int orderId)
+    {
+        transmitting = true;
+        transmitMessage = null;
+        try
+        {
+            var (ok, message) = await Api.TransmitOrderAsync(orderId);
+            transmitOk = ok;
+            transmitMessage = message ?? (ok ? "Transmitted to SPR." : "Transmit failed.");
+        }
+        finally
+        {
+            transmitting = false;
+        }
+        await LoadOrders();
+    }
+
     private async Task AcknowledgeOrderFromDetail()
     {
         if (orderDetail == null) return;
@@ -571,6 +607,10 @@
 
     private static bool CanCancel(string status) =>
         status == "Draft" || status == "Submitted" || status == "Acknowledged";
+
+    // Transmittable = anything not already terminal/shipped (mirrors the API's NonTransmittableStatuses).
+    private static bool CanTransmit(string status) =>
+        status is not ("Cancelled" or "Completed" or "Shipped" or "Delivered");
 
     private static string GetStatusBadgeClass(string status) => status switch
     {

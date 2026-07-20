@@ -1266,6 +1266,24 @@ public class ApiClient
         }
     }
 
+    /// <summary>Transmits an order to SPR (generate EZPO4 → XSD validate → SFTP send). Temporary manual dispatch.</summary>
+    public async Task<(bool Success, string? Message)> TransmitOrderAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/orders/{id}/transmit", null);
+            var body = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+                return (true, "Transmitted to SPR — order moved to Processing.");
+            return (false, ExtractError(body) ?? $"Transmit failed (HTTP {(int)response.StatusCode}).");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to transmit order {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
     // Scheduled / Cron Jobs endpoints
     public async Task<List<ScheduledJobDto>> GetScheduledJobsAsync()
     {
