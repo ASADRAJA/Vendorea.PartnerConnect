@@ -68,6 +68,34 @@ public class SprPoackParser : ISprPoackParser
                 return result;
             }
 
+            // SPR schema-validation rejection ("translation ERROR" ack): the wrapper is
+            // <Order><Errors><Error Code="" Message="..."><OriginalOrder><![CDATA[ <Order CustomerPONo=".."..> ]]>.
+            // The PO reference lives inside the echoed OriginalOrder, so the normal element parse below
+            // can't find it. Detect this shape, surface SPR's REAL error message (not our generic one),
+            // and correlate via the loose PO extraction (which reads CustomerPONo out of the CDATA).
+            if (root.Descendants("OriginalOrder").Any() && root.Descendants("Error").Any())
+            {
+                var sprErrors = string.Join("; ", root.Descendants("Error")
+                    .Select(e =>
+                    {
+                        var msg = (e.Attribute("Message")?.Value ?? string.Empty).Trim();
+                        var code = (e.Attribute("Code")?.Value ?? string.Empty).Trim();
+                        return string.IsNullOrEmpty(code) ? msg : $"{msg} [{code}]";
+                    })
+                    .Where(s => !string.IsNullOrWhiteSpace(s)));
+                var message = string.IsNullOrWhiteSpace(sprErrors)
+                    ? "SPR rejected the order (schema validation failed)"
+                    : $"SPR rejected the order: {sprErrors}";
+
+                result.Result = BuildErrorAckFromRaw(xmlContent, dealerId, sourceDocumentId, message);
+                result.BusinessReference = result.Result.PoNumber;
+                result.Success = true;
+
+                _logger.LogWarning("EZPOACK is an SPR rejection for PO {PoNumber}: {Message}",
+                    result.Result.PoNumber, message);
+                return result;
+            }
+
             // SPR POACK can have different root element names
             var orderElement = root.Name.LocalName switch
             {
