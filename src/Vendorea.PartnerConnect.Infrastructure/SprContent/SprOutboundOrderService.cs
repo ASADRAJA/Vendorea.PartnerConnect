@@ -58,9 +58,13 @@ public class SprOutboundOrderService : ISprOutboundOrderService
 
         var purchaseOrder = OrderToPurchaseOrderMapper.Map(order);
 
+        // BuyerOrganizationCode on the EZPO4 is the tenant's SPR account number, held per-connection
+        // (SpecialIdentifyingCode — the same value used as the web-service GroupCode).
+        var buyerOrgCode = order.TenantPartnerAccount?.SpecialIdentifyingCode;
+
         // Generate + strictly validate the EZPO4 against the real SPR schema.
         var createResult = await _processingService.CreateOutboundOrderAsync(
-            partner.Id, purchaseOrder, cancellationToken);
+            partner.Id, purchaseOrder, buyerOrgCode, cancellationToken);
 
         if (!createResult.Success || createResult.SprXmlDocumentId == null)
         {

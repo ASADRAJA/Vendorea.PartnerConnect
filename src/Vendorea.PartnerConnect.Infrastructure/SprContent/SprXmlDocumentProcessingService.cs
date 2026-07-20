@@ -305,6 +305,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     public async Task<SprXmlProcessingResult> CreateOutboundOrderAsync(
         int tradingPartnerId,
         PurchaseOrder order,
+        string? buyerOrganizationCode = null,
         CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -325,11 +326,17 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
 
             var config = SprConfiguration.FromJson(partner.TransportConfigJson);
 
-            // Generate the XML
+            // BuyerOrganizationCode is the tenant's SPR account number (per-connection SpecialIdentifyingCode),
+            // passed in by the caller; fall back to any partner-level config value. EnterpriseCode is omitted
+            // when unset (SPR: "not required or used") — never a placeholder, which fails SPR's schema.
+            var effectiveBuyerOrg = !string.IsNullOrWhiteSpace(buyerOrganizationCode)
+                ? buyerOrganizationCode
+                : config.BuyerOrgCode;
+
             var generateResult = _orderGenerator.Generate(
                 order,
-                config.EnterpriseCode ?? "DEFAULT",
-                config.BuyerOrgCode ?? "BUYER",
+                config.EnterpriseCode ?? string.Empty,
+                effectiveBuyerOrg ?? string.Empty,
                 config.SellerOrgCode ?? "SPR");
 
             if (!generateResult.Success)
@@ -377,7 +384,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 DocumentType = SprXmlDocumentType.EZPO4,
                 Direction = EdiDirection.Outbound,
                 EnterpriseCode = config.EnterpriseCode,
-                BuyerOrganizationCode = config.BuyerOrgCode,
+                BuyerOrganizationCode = effectiveBuyerOrg,
                 SellerOrganizationCode = config.SellerOrgCode,
                 OrderNumber = order.PoNumber,
                 CanonicalType = nameof(PurchaseOrder),
