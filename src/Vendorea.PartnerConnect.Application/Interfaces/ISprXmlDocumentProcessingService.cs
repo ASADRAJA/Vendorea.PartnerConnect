@@ -26,6 +26,17 @@ public interface ISprXmlDocumentProcessingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Polls the partner's SPR XML inbound SFTP folder (<c>SprXmlInboundPath</c>): lists <c>*.xml</c>,
+    /// downloads each file, processes it via <see cref="ProcessInboundDocumentAsync"/> (POACK / ASN /
+    /// invoice → order status + M360 callbacks), and deletes it from the server once PC has captured it.
+    /// Files that fail to download or capture are left on the server for the next poll. No-op (Success,
+    /// Found=0) when the partner has no SPR XML SFTP config.
+    /// </summary>
+    Task<SprXmlInboundPollResult> PollInboundAsync(
+        int tradingPartnerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates and queues an outbound purchase order for SPR.
     /// </summary>
     /// <param name="connectionId">The dealer-partner connection ID.</param>
@@ -98,6 +109,24 @@ public class SprXmlProcessingResult
     /// stored document so it shows the right dealer; null when the document couldn't be correlated.
     /// </summary>
     public int? ResolvedTenantId { get; set; }
+}
+
+/// <summary>
+/// Summary of one SPR XML inbound SFTP poll cycle for a partner.
+/// </summary>
+public class SprXmlInboundPollResult
+{
+    /// <summary>The poll ran (connected + listed) without a transport-level failure.</summary>
+    public bool Success { get; set; }
+    /// <summary>XML files found in the inbound folder.</summary>
+    public int Found { get; set; }
+    /// <summary>Files downloaded + captured into PC.</summary>
+    public int Processed { get; set; }
+    /// <summary>Files that failed to download/capture (left on the server for retry).</summary>
+    public int Failed { get; set; }
+    /// <summary>Files removed from the server after successful capture.</summary>
+    public int Deleted { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 /// <summary>
