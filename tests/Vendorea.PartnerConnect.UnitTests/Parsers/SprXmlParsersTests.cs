@@ -132,6 +132,31 @@ public class SprPoackParserTests
     }
 
     [Fact]
+    public void Parse_WithSchemaValidationErrorPoack_SurfacesSprMessageAndPoNumber()
+    {
+        // SPR's schema-validation rejection: <Order><Errors><Error Message="..."><OriginalOrder>
+        // echoes our order (with CustomerPONo) in a CDATA block. The parser must correlate via the
+        // PO inside the CDATA and surface SPR's actual error message, not a generic parser message.
+        var xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+<Order>
+  <Errors>
+    <Error Code="""" Message=""XML Schema Validation Failed"">
+      <OriginalOrder><![CDATA[<?xml version=""1.0""?><Order BuyerOrganizationCode=""0033822.00"" OrderType=""03"" CustomerPONo=""WPO-TEST-1"" />]]></OriginalOrder>
+    </Error>
+  </Errors>
+</Order>";
+
+        var result = _sut.Parse(xml, dealerId: 1, sourceDocumentId: "doc-err");
+
+        result.Success.Should().BeTrue();
+        result.Result.Should().NotBeNull();
+        result.Result!.IsError.Should().BeTrue();
+        result.Result.Status.Should().Be(PoAckStatus.Error);
+        result.Result.PoNumber.Should().Be("WPO-TEST-1");
+        result.Result.ErrorMessage.Should().Contain("XML Schema Validation Failed");
+    }
+
+    [Fact]
     public void Parse_WithMalformedXml_ProducesTranslationErrorAck_RetainsRawAndExtractsPo()
     {
         // SPR translation-level ERROR ack: the original order echoed back with an error message
