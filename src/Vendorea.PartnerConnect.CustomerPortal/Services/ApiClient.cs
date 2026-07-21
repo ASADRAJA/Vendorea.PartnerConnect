@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Components.Authorization;
 using Vendorea.PartnerConnect.CustomerPortal.Models;
 
 namespace Vendorea.PartnerConnect.CustomerPortal.Services;
@@ -18,13 +19,13 @@ public class ApiClient
     public const string TokenClaim = "org_user_token";
 
     private readonly HttpClient _httpClient;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly AuthenticationStateProvider _authStateProvider;
     private readonly ILogger<ApiClient> _logger;
 
-    public ApiClient(HttpClient httpClient, IHttpContextAccessor httpContextAccessor, ILogger<ApiClient> logger)
+    public ApiClient(HttpClient httpClient, AuthenticationStateProvider authStateProvider, ILogger<ApiClient> logger)
     {
         _httpClient = httpClient;
-        _httpContextAccessor = httpContextAccessor;
+        _authStateProvider = authStateProvider;
         _logger = logger;
     }
 
@@ -281,7 +282,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Get, "/api/v1/org/me");
+            using var request = await BuildRequestAsync(HttpMethod.Get, "/api/v1/org/me");
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -302,7 +303,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Get, "/api/v1/org/connections");
+            using var request = await BuildRequestAsync(HttpMethod.Get, "/api/v1/org/connections");
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -323,7 +324,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Get, $"/api/v1/org/connections/{id}");
+            using var request = await BuildRequestAsync(HttpMethod.Get, $"/api/v1/org/connections/{id}");
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -344,7 +345,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Put, $"/api/v1/org/connections/{id}");
+            using var request = await BuildRequestAsync(HttpMethod.Put, $"/api/v1/org/connections/{id}");
             request.Content = JsonContent.Create(body);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             return await ToActionResultAsync(response, cancellationToken);
@@ -361,7 +362,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Post, $"/api/v1/org/connections/{id}/suspend");
+            using var request = await BuildRequestAsync(HttpMethod.Post, $"/api/v1/org/connections/{id}/suspend");
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             return await ToActionResultAsync(response, cancellationToken);
         }
@@ -377,7 +378,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Delete, $"/api/v1/org/connections/{id}");
+            using var request = await BuildRequestAsync(HttpMethod.Delete, $"/api/v1/org/connections/{id}");
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             return await ToActionResultAsync(response, cancellationToken);
         }
@@ -393,7 +394,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Get, $"/api/v1/org/partners/{Uri.EscapeDataString(partnerCode)}/distribution-centers");
+            using var request = await BuildRequestAsync(HttpMethod.Get, $"/api/v1/org/partners/{Uri.EscapeDataString(partnerCode)}/distribution-centers");
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -463,7 +464,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Post, "/api/v1/org/stock-check");
+            using var request = await BuildRequestAsync(HttpMethod.Post, "/api/v1/org/stock-check");
             request.Content = JsonContent.Create(body);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)
@@ -566,7 +567,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Put, "/api/v1/org/settings");
+            using var request = await BuildRequestAsync(HttpMethod.Put, "/api/v1/org/settings");
             request.Content = JsonContent.Create(body);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)
@@ -627,7 +628,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Post, $"/api/v1/org/users/{id}/resend-invite");
+            using var request = await BuildRequestAsync(HttpMethod.Post, $"/api/v1/org/users/{id}/resend-invite");
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)
                 return OrgUserActionResult.Ok(null);
@@ -660,7 +661,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(method, uri);
+            using var request = await BuildRequestAsync(method, uri);
             if (body is not null)
                 request.Content = JsonContent.Create(body);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -688,7 +689,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Get, requestUri);
+            using var request = await BuildRequestAsync(HttpMethod.Get, requestUri);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -709,7 +710,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Get, requestUri);
+            using var request = await BuildRequestAsync(HttpMethod.Get, requestUri);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -730,7 +731,7 @@ public class ApiClient
     {
         try
         {
-            using var request = BuildRequest(HttpMethod.Get, requestUri);
+            using var request = await BuildRequestAsync(HttpMethod.Get, requestUri);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -779,13 +780,23 @@ public class ApiClient
     }
 
     /// <summary>Builds a request with the current user's bearer token attached as Authorization.</summary>
-    private HttpRequestMessage BuildRequest(HttpMethod method, string requestUri)
+    private async Task<HttpRequestMessage> BuildRequestAsync(HttpMethod method, string requestUri)
     {
         var request = new HttpRequestMessage(method, requestUri);
-        var token = _httpContextAccessor.HttpContext?.User?.FindFirst(TokenClaim)?.Value;
+        var token = await GetTokenAsync();
         if (!string.IsNullOrEmpty(token))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
+    }
+
+    // The per-user JWT lives in the org_user_token claim of the authenticated principal. Read it via
+    // AuthenticationStateProvider (available inside the Blazor Server circuit) rather than
+    // IHttpContextAccessor, whose HttpContext is null in the circuit — which left the token off the
+    // API calls on Azure and produced the "couldn't load your organization" error on /org/me.
+    private async Task<string?> GetTokenAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        return authState.User.FindFirst(TokenClaim)?.Value;
     }
 }
