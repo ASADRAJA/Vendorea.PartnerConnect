@@ -36,6 +36,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
     private readonly IFileTransportClientFactory _transportClientFactory;
     private readonly IOrderRepository _orderRepository;
     private readonly ITenantRepository _tenantRepository;
+    private readonly ITenantPartnerAccountRepository _tenantPartnerAccountRepository;
     private readonly IOutboxService _outboxService;
     private readonly ILogger<SprXmlDocumentProcessingService> _logger;
 
@@ -52,6 +53,7 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         IFileTransportClientFactory transportClientFactory,
         IOrderRepository orderRepository,
         ITenantRepository tenantRepository,
+        ITenantPartnerAccountRepository tenantPartnerAccountRepository,
         IOutboxService outboxService,
         ILogger<SprXmlDocumentProcessingService> logger)
     {
@@ -67,8 +69,31 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         _transportClientFactory = transportClientFactory;
         _orderRepository = orderRepository;
         _tenantRepository = tenantRepository;
+        _tenantPartnerAccountRepository = tenantPartnerAccountRepository;
         _outboxService = outboxService;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Records connection usage (portal "Last sync") when an inbound SPR document is successfully
+    /// correlated to one of the tenant's orders. Best-effort: failures are logged, never fatal.
+    /// </summary>
+    private async Task TouchConnectionAsync(int tenantPartnerAccountId, CancellationToken cancellationToken)
+    {
+        if (tenantPartnerAccountId <= 0)
+            return;
+        try
+        {
+            var account = await _tenantPartnerAccountRepository.GetByIdAsync(tenantPartnerAccountId, cancellationToken);
+            if (account is null)
+                return;
+            account.LastUsedAt = DateTime.UtcNow;
+            await _tenantPartnerAccountRepository.UpdateAsync(account, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not update LastUsedAt for connection {AccountId}", tenantPartnerAccountId);
+        }
     }
 
     public async Task<SprXmlProcessingResult> ProcessInboundDocumentAsync(
@@ -684,6 +709,9 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
         // Stamp the stored document with the correlated dealer/tenant (inbound arrives with no tenant).
         result.ResolvedTenantId = order.TenantId;
 
+        // Receiving a correlated document means the connection exchanged data inbound — stamp it.
+        await TouchConnectionAsync(order.TenantPartnerAccountId, cancellationToken);
+
         var previousStatus = order.Status;
         OrderStatusType m360StatusType;
         string m360StatusCode;
@@ -825,6 +853,9 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             }
 
             result.ResolvedTenantId = order.TenantId;
+
+        // Receiving a correlated document means the connection exchanged data inbound — stamp it.
+        await TouchConnectionAsync(order.TenantPartnerAccountId, cancellationToken);
 
             // Idempotency guard: skip an already-applied manifest so re-ingestion doesn't double-count.
             if (await _orderRepository.HasAppliedShipmentAsync(order.Id, shipment.ShipmentId, cancellationToken))
@@ -992,6 +1023,9 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             }
 
             result.ResolvedTenantId = order.TenantId;
+
+        // Receiving a correlated document means the connection exchanged data inbound — stamp it.
+        await TouchConnectionAsync(order.TenantPartnerAccountId, cancellationToken);
 
             var merchantId = await ResolveMerchantIdAsync(order.TenantId, cancellationToken);
             if (merchantId == null)

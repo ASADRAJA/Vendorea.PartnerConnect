@@ -165,8 +165,11 @@ public class OrgConnectionTransportDto
 {
     public string? Type { get; set; }
     public string? Host { get; set; }
+    public int? Port { get; set; }
     public string? Username { get; set; }
     public bool HasPassword { get; set; }
+    public string? OutboundPath { get; set; }
+    public string? InboundPath { get; set; }
     public bool Editable { get; set; }
     public bool ManagedByOperator { get; set; } = true;
 }

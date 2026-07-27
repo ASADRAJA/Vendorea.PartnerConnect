@@ -1549,7 +1549,10 @@ public class OrgController : ControllerBase
             Status = MapStatus(c),
             ApprovalStatus = c.ApprovalStatus.ToString(),
             RequestedAt = c.CreatedAt,
-            ApprovedAt = c.ApprovalStatus == ConnectionApprovalStatus.Approved ? c.DecidedAt : null,
+            // Auto-provisioned/mirrored connections are born Approved without going through the
+            // approve flow that stamps DecidedAt, so fall back to CreatedAt (they were effectively
+            // approved at creation) rather than showing a blank approval date.
+            ApprovedAt = c.ApprovalStatus == ConnectionApprovalStatus.Approved ? (c.DecidedAt ?? c.CreatedAt) : null,
             DecidedAt = c.DecidedAt,
             DecisionReason = c.DecisionReason,
             Capabilities = MapCapabilities(partner),
@@ -1615,12 +1618,24 @@ public class OrgController : ControllerBase
     private static OrgConnectionTransportDto BuildTransportDto(TradingPartner? partner)
     {
         var cfg = ParseConfigDict(partner?.TransportConfigJson);
+
+        // Partner transport configs use partner-specific key names (e.g. SPR stores SftpHost /
+        // SftpUsername / SprXmlSftpPort, not Host / Username / Port), so read the canonical keys
+        // first and fall back to the SFTP-specific ones. Type isn't stored, so infer SFTP when an
+        // SFTP host is present.
+        var host = GetConfigString(cfg, "Host") ?? GetConfigString(cfg, "SftpHost");
+        var type = GetConfigString(cfg, "Type") ?? GetConfigString(cfg, "TransportType")
+                   ?? (string.IsNullOrWhiteSpace(host) ? null : "SFTP");
+
         return new OrgConnectionTransportDto
         {
-            Type = GetConfigString(cfg, "Type") ?? GetConfigString(cfg, "TransportType"),
-            Host = GetConfigString(cfg, "Host"),
-            Username = GetConfigString(cfg, "Username") ?? GetConfigString(cfg, "User"),
+            Type = type,
+            Host = host,
+            Port = GetConfigInt(cfg, "Port") ?? GetConfigInt(cfg, "SprXmlSftpPort") ?? GetConfigInt(cfg, "SftpPort"),
+            Username = GetConfigString(cfg, "Username") ?? GetConfigString(cfg, "User") ?? GetConfigString(cfg, "SftpUsername"),
             HasPassword = !string.IsNullOrWhiteSpace(partner?.TransportCredentialsJson),
+            OutboundPath = GetConfigString(cfg, "OutboundPath") ?? GetConfigString(cfg, "SprXmlOutboundPath"),
+            InboundPath = GetConfigString(cfg, "InboundPath") ?? GetConfigString(cfg, "SprXmlInboundPath"),
             Editable = false,
             ManagedByOperator = true
         };
@@ -1650,6 +1665,17 @@ public class OrgController : ControllerBase
         => d.TryGetValue(key, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? v.GetBoolean()
             : null;
+
+    private static int? GetConfigInt(Dictionary<string, JsonElement> d, string key)
+    {
+        if (!d.TryGetValue(key, out var v))
+            return null;
+        if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n))
+            return n;
+        if (v.ValueKind == JsonValueKind.String && int.TryParse(v.GetString(), out var s))
+            return s;
+        return null;
+    }
 
     private static List<string> GetConfigStringList(Dictionary<string, JsonElement> d, string key)
     {
@@ -1774,8 +1800,15 @@ public class OrgConnectionTransportDto
 {
     public string? Type { get; set; }
     public string? Host { get; set; }
+    public int? Port { get; set; }
     public string? Username { get; set; }
     public bool HasPassword { get; set; }
+
+    /// <summary>Outbound (send) directory on the partner endpoint, when configured.</summary>
+    public string? OutboundPath { get; set; }
+
+    /// <summary>Inbound (pickup) directory on the partner endpoint, when configured.</summary>
+    public string? InboundPath { get; set; }
 
     /// <summary>False: transport is shared partner-level config, editable by PC operators only.</summary>
     public bool Editable { get; set; }
