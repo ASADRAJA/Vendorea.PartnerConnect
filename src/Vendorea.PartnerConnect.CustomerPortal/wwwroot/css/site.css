@@ -823,9 +823,56 @@ a.list-row:hover {
 .section-divider {
     margin: 8px 0;
 }
+.config-actions {
+    display: flex;
+    gap: 8px;
+}
+/* Read-only transport summary: aligned label / value pairs. */
+.transport-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 6px 16px;
+    align-items: baseline;
+    margin: 8px 0 4px;
+    font-size: 13px;
+    color: var(--text-2);
+}
 .status-badge {
     margin-left: 10px;
     vertical-align: middle;
+}
+/* Per-connection recent activity (Activity tab) */
+.activity-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 16px;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+.activity-item {
+    display: grid;
+    grid-template-columns: 130px auto 1fr;
+    gap: 12px;
+    align-items: start;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-soft);
+}
+.activity-item:last-child {
+    border-bottom: none;
+}
+.activity-when {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.activity-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+.activity-footnote {
+    margin-top: 10px;
 }
 
 /* Organization settings form */

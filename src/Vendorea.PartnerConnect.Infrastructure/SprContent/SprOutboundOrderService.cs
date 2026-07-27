@@ -100,6 +100,13 @@ public class SprOutboundOrderService : ISprOutboundOrderService
         order.EdiDocumentId = createResult.PartnerDocumentId;
         order.SubmittedAt ??= DateTime.UtcNow;
         order.UpdatedAt = DateTime.UtcNow;
+
+        // Record connection usage so the portal's "Last sync" reflects the outbound exchange.
+        // TenantPartnerAccount is eager-loaded on the order and shares this scope's DbContext, so
+        // the change is persisted by the order save below.
+        if (order.TenantPartnerAccount is not null)
+            order.TenantPartnerAccount.LastUsedAt = DateTime.UtcNow;
+
         await _orderRepository.UpdateAsync(order, cancellationToken);
         await AddHistoryAsync(order, previousStatus, OrderStatus.Processing,
             $"EZPO4 transmitted to SPR (PO {order.PoNumber})", cancellationToken);

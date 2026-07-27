@@ -119,6 +119,9 @@ public class SprFlowSmokeTests
         tenantRepo.Setup(r => r.GetByIdAsync(DealerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Tenant { Id = DealerId, ExternalId = "7000" });
 
+        // Connection "last used" stamping is best-effort; a null account is a harmless no-op here.
+        var tenantPartnerAccountRepo = new Mock<ITenantPartnerAccountRepository>();
+
         var schemaProvider = new XsdSchemaProvider(
             Options.Create(new XsdSchemaProviderOptions()), NullLogger<XsdSchemaProvider>.Instance);
         var validator = new XsdValidationService(schemaProvider, NullLogger<XsdValidationService>.Instance);
@@ -136,6 +139,7 @@ public class SprFlowSmokeTests
             new Mock<IFileTransportClientFactory>().Object,
             orderRepo.Object,
             tenantRepo.Object,
+            tenantPartnerAccountRepo.Object,
             outbox.Object,
             NullLogger<SprXmlDocumentProcessingService>.Instance);
 

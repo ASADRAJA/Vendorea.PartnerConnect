@@ -19,10 +19,6 @@
         </h1>
     </div>
     <div class="command-bar">
-        <FluentButton Appearance="Appearance.Accent"
-                      Disabled="@(_busy || !CanWrite || !CanEditConfig)"
-                      title="@WriteTip"
-                      OnClick="SaveAsync">Save</FluentButton>
         <FluentButton Appearance="Appearance.Outline"
                       Disabled="@(_busy || !CanWrite || !CanSuspend)"
                       title="@WriteTip"
@@ -76,14 +72,17 @@ else
                         <div class="tile-label">Timeline</div>
                         <div class="tile-sub">Requested: @Fmt(_connection.RequestedAt)</div>
                         <div class="tile-sub">Approved: @Fmt(_connection.ApprovedAt)</div>
-                        <div class="tile-sub">Last decision: @Fmt(_connection.DecidedAt)</div>
+                        @if (_connection.DecidedAt is not null)
+                        {
+                            <div class="tile-sub">Last decision: @Fmt(_connection.DecidedAt)</div>
+                        }
                     </div>
                 </FluentCard>
 
                 <FluentCard>
                     <div class="tile">
                         <div class="tile-label">Health</div>
-                        <div class="tile-sub">Last sync: @Fmt(_connection.Health.LastSyncAt)</div>
+                        <div class="tile-sub">Last sync: @(_connection.Health.LastSyncAt is { } s ? s.ToLocalTime().ToString("g") : "Never")</div>
                         <div class="tile-sub">
                             Last error:
                             @if (string.IsNullOrWhiteSpace(_connection.Health.LastError))
@@ -121,6 +120,21 @@ else
 
         <FluentTab Label="Configuration" Id="tab-config">
             <div class="config-form">
+                <div class="config-actions">
+                    @if (_editMode)
+                    {
+                        <FluentButton Appearance="Appearance.Accent" Disabled="@_busy" OnClick="SaveAsync">
+                            @(_busy ? "Saving…" : "Save")
+                        </FluentButton>
+                        <FluentButton Appearance="Appearance.Outline" Disabled="@_busy" OnClick="CancelEdit">Cancel</FluentButton>
+                    }
+                    else
+                    {
+                        <FluentButton Appearance="Appearance.Accent" Disabled="@(!CanEdit)"
+                                      title="@EditTip" OnClick="EnterEdit">Edit</FluentButton>
+                    }
+                </div>
+
                 @if (!CanWrite)
                 {
                     <FluentMessageBar Intent="MessageIntent.Info" AllowDismiss="false">
@@ -135,10 +149,10 @@ else
                 }
 
                 <FluentTextField @bind-Value="_form.PartnerAccountNumber" Label="Partner account number"
-                                 Disabled="@(!CanEdit)" Style="width: 320px;" />
+                                 ReadOnly="@(!EditingConfig)" Style="width: 320px;" />
 
                 <FluentTextField @bind-Value="_form.DisplayName" Label="Display name (optional)"
-                                 Disabled="@(!CanEdit)" Style="width: 320px;" />
+                                 ReadOnly="@(!EditingConfig)" Style="width: 320px;" />
 
                 <div class="field-group">
                     <label class="field-label">Distribution centers</label>
@@ -157,7 +171,7 @@ else
                             {
                                 <FluentCheckbox Value="@_selectedDcs.Contains(dc.Code)"
                                                 ValueChanged="@(v => ToggleDc(dc.Code, v))"
-                                                Disabled="@(!CanEdit)"
+                                                Disabled="@(!EditingConfig)"
                                                 Label="@dc.DisplayLabel" />
                             }
                         </div>
@@ -165,21 +179,30 @@ else
                 </div>
 
                 <FluentTextField @bind-Value="_form.OrderType" Label="Default order type (preference)"
-                                 Disabled="@(!CanEdit)" Style="width: 200px;" />
+                                 ReadOnly="@(!EditingConfig)" Style="width: 200px;" />
 
                 <FluentCheckbox @bind-Value="_form.ContentSubscribed" Label="Subscribed to product content"
-                                Disabled="@(!CanEdit)" />
+                                Disabled="@(!EditingConfig)" />
 
                 <FluentDivider Class="section-divider" />
 
                 <div class="field-group">
                     <label class="field-label">Transport</label>
                     <FluentBadge Appearance="Appearance.Lightweight">Managed by operator</FluentBadge>
-                    <div class="tile-sub">Type: @Dash(_connection.Config.Transport.Type)</div>
-                    <div class="tile-sub">Host: @Dash(_connection.Config.Transport.Host)</div>
-                    <div class="tile-sub">Username: @Dash(_connection.Config.Transport.Username)</div>
-                    <div class="tile-sub">
-                        Password: @(_connection.Config.Transport.HasPassword ? "Set" : "Not set")
+                    <div class="transport-grid">
+                        <span class="tile-label">Type</span><span>@Dash(_connection.Config.Transport.Type)</span>
+                        <span class="tile-label">Host</span><span>@Dash(_connection.Config.Transport.Host)</span>
+                        <span class="tile-label">Port</span><span>@(_connection.Config.Transport.Port?.ToString() ?? "—")</span>
+                        <span class="tile-label">Username</span><span>@Dash(_connection.Config.Transport.Username)</span>
+                        <span class="tile-label">Password</span><span>@(_connection.Config.Transport.HasPassword ? "Set" : "Not set")</span>
+                        @if (!string.IsNullOrWhiteSpace(_connection.Config.Transport.OutboundPath))
+                        {
+                            <span class="tile-label">Outbound</span><span>@_connection.Config.Transport.OutboundPath</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_connection.Config.Transport.InboundPath))
+                        {
+                            <span class="tile-label">Inbound</span><span>@_connection.Config.Transport.InboundPath</span>
+                        }
                     </div>
                     <div class="tile-sub muted">
                         Transport credentials are shared partner-level settings and are configured by
@@ -190,10 +213,45 @@ else
         </FluentTab>
 
         <FluentTab Label="Activity" Id="tab-activity">
-            <div class="tile">
-                <FluentBadge Appearance="Appearance.Neutral">Coming soon</FluentBadge>
-                <div class="tile-sub">A per-connection activity feed will appear here in a later release.</div>
-            </div>
+            @if (_connection.TenantId is null)
+            {
+                <div class="tile">
+                    <div class="tile-sub muted">This connection isn't linked to a tenant yet, so there's no activity to show.</div>
+                </div>
+            }
+            else if (_activityLoading)
+            {
+                <FluentProgressRing />
+            }
+            else if (_activity.Count == 0)
+            {
+                <div class="empty-state">
+                    <div class="empty-title">No activity yet</div>
+                    <div class="empty-sub">Feed uploads, orders, and connection events will appear here.</div>
+                </div>
+            }
+            else
+            {
+                <div class="activity-list">
+                    @foreach (var e in _activity)
+                    {
+                        <div class="activity-item">
+                            <div class="activity-when">@Fmt(e.At)</div>
+                            <FluentBadge Appearance="@LevelAppearance(e.Level)">@e.Type</FluentBadge>
+                            <div class="activity-body">
+                                <div class="activity-title">@e.Title</div>
+                                @if (!string.IsNullOrWhiteSpace(e.Detail))
+                                {
+                                    <div class="tile-sub muted">@e.Detail</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="tile-sub muted activity-footnote">
+                    Showing recent activity for this tenant. See the <FluentAnchor Href="/activity" Appearance="Appearance.Hypertext">Activity</FluentAnchor> page for the full, filterable feed.
+                </div>
+            }
         </FluentTab>
     </FluentTabs>
 }
@@ -205,12 +263,16 @@ else
     private bool _loaded;
     private bool _busy;
     private bool _dcLoading;
+    private bool _editMode;
     private string _activeTab = "tab-status";
 
     private OrgConnectionDetailDto? _connection;
     private List<OrgDistributionCenterDto> _distributionCenters = new();
     private HashSet<string> _selectedDcs = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConfigForm _form = new();
+
+    private List<ActivityEventDto> _activity = new();
+    private bool _activityLoading;
 
     private string? _message;
     private MessageIntent _messageIntent = MessageIntent.Success;
@@ -224,30 +286,57 @@ else
 
     // Fields are editable only when the connection state allows it AND the user has write access.
     private bool CanEdit => CanEditConfig && CanWrite;
+    private string? EditTip => CanEdit ? null : (!CanWrite ? "Read-only access" : "This connection's configuration is read-only");
+
+    // The config form only accepts input once the user explicitly enters edit mode.
+    private bool EditingConfig => _editMode && CanEdit;
 
     // Terminal states are read-only; Pending/Active/Suspended can still be edited.
     private bool CanEditConfig => _connection is { Status: "Pending" or "Active" or "Suspended" };
     private bool CanSuspend => _connection is { Status: "Active" };
     private bool CanDisconnect => _connection is { Status: "Pending" or "Active" or "Suspended" };
 
+    private void EnterEdit()
+    {
+        if (CanEdit)
+            _editMode = true;
+    }
+
+    // Revert any unsaved edits back to the last-loaded connection and leave edit mode.
+    private void CancelEdit()
+    {
+        _editMode = false;
+        _message = null;
+        if (_connection is not null)
+            ResetForm(_connection);
+    }
+
     protected override Task OnParametersSetAsync() => LoadAsync();
 
     private async Task LoadAsync()
     {
         _loaded = false;
+        _editMode = false;
         _connection = ConnectionId > 0 ? await Api.GetConnectionAsync(ConnectionId) : null;
         _loaded = true;
 
         if (_connection is not null)
         {
-            _form.PartnerAccountNumber = _connection.Config.PartnerAccountNumber;
-            _form.DisplayName = _connection.Config.DisplayName;
-            _form.OrderType = _connection.Config.Preferences.OrderType;
-            _form.ContentSubscribed = _connection.Config.Preferences.ContentSubscribed ?? false;
-            _selectedDcs = new HashSet<string>(_connection.Config.SelectedDistributionCenters, StringComparer.OrdinalIgnoreCase);
-
+            ResetForm(_connection);
             await LoadDistributionCentersAsync(_connection.PartnerCode);
+            await LoadActivityAsync(_connection.TenantId);
         }
+    }
+
+    private async Task LoadActivityAsync(int? tenantId)
+    {
+        if (tenantId is not { } id)
+            return;
+
+        _activityLoading = true;
+        var page = await Api.GetActivityAsync(id, null, null, null, null, 0, 25);
+        _activity = page.Items;
+        _activityLoading = false;
     }
 
     private async Task LoadDistributionCentersAsync(string partnerCode)
@@ -292,6 +381,7 @@ else
         if (result.Success)
         {
             ApplyResult(result.Connection);
+            _editMode = false;
             ShowMessage("Configuration saved.", MessageIntent.Success);
         }
         else
@@ -356,11 +446,17 @@ else
         if (updated is null)
             return;
         _connection = updated;
-        _form.PartnerAccountNumber = updated.Config.PartnerAccountNumber;
-        _form.DisplayName = updated.Config.DisplayName;
-        _form.OrderType = updated.Config.Preferences.OrderType;
-        _form.ContentSubscribed = updated.Config.Preferences.ContentSubscribed ?? false;
-        _selectedDcs = new HashSet<string>(updated.Config.SelectedDistributionCenters, StringComparer.OrdinalIgnoreCase);
+        ResetForm(updated);
+    }
+
+    // Seed the editable form + DC selection from a connection snapshot (load, save, or cancel-revert).
+    private void ResetForm(OrgConnectionDetailDto c)
+    {
+        _form.PartnerAccountNumber = c.Config.PartnerAccountNumber;
+        _form.DisplayName = c.Config.DisplayName;
+        _form.OrderType = c.Config.Preferences.OrderType;
+        _form.ContentSubscribed = c.Config.Preferences.ContentSubscribed ?? false;
+        _selectedDcs = new HashSet<string>(c.Config.SelectedDistributionCenters, StringComparer.OrdinalIgnoreCase);
     }
 
     private void ShowMessage(string message, MessageIntent intent)
@@ -377,6 +473,13 @@ else
         "active" => Appearance.Accent,
         "pending" => Appearance.Neutral,
         "suspended" => Appearance.Neutral,
+        _ => Appearance.Lightweight
+    };
+
+    private static Appearance LevelAppearance(string level) => level switch
+    {
+        "Error" => Appearance.Accent,
+        "Warning" => Appearance.Neutral,
         _ => Appearance.Lightweight
     };
 
