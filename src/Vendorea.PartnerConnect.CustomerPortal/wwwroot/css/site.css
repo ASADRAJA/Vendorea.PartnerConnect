@@ -836,7 +836,20 @@ a.list-row:hover {
 .settings-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 16px 20px;
+    gap: 18px 20px;
+    align-items: start;
+}
+/* Each field wraps its label + input as ONE grid cell so they stay aligned
+   (FluentTextField renders the label and input as separate siblings). */
+.settings-grid .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+.settings-grid .field > fluent-text-field,
+.settings-grid .field > label {
+    width: 100%;
 }
 .settings-readonly {
     display: flex;
@@ -902,6 +915,34 @@ fluent-card {
 /* DataGrids: comfortable, on a white surface (usually wrapped in .grid-card) */
 fluent-data-grid {
     background: transparent;
+}
+
+/* Soft, elegant Fluent-2 badge pills — replaces the heavy black/solid default fills used for
+   status/chain/connection-state across all grids + pages. Styles both the host and its ::part so
+   it applies whether the fill is painted on the element or an inner part. Safe: color/shape only. */
+fluent-badge,
+fluent-badge::part(control) {
+    border: none !important;
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: .01em;
+    box-shadow: none !important;
+}
+fluent-badge[appearance="neutral"],
+fluent-badge[appearance="neutral"]::part(control) {
+    background: #eef2f6 !important;
+    color: #475569 !important;
+}
+fluent-badge[appearance="accent"],
+fluent-badge[appearance="accent"]::part(control) {
+    background: #e4eefe !important;
+    color: #1d4ed8 !important;
+}
+fluent-badge[appearance="lightweight"],
+fluent-badge[appearance="lightweight"]::part(control) {
+    background: #eef2f6 !important;
+    color: #9aa5b5 !important;
 }
 
 /* =============================================================================
