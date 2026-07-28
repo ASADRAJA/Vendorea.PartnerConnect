@@ -54,6 +54,8 @@ else
         }
         <FluentSearch @bind-Value="_search"
                       @bind-Value:after="OnSearchAsync"
+                      Immediate="true"
+                      ImmediateDelay="300"
                       Placeholder="Search SKU or description"
                       Style="width: 320px;" />
     </div>
