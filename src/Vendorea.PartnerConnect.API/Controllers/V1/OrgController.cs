@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vendorea.PartnerConnect.Api.Authentication;
@@ -1511,18 +1512,37 @@ public class OrgController : ControllerBase
         bool AllTenants,
         IReadOnlyCollection<int> ScopedTenantIds);
 
-    private static OrgConnectionDto MapConnection(TenantPartnerAccount c) => new()
+    // Merchant360 connection-approval ID invariant (see
+    // docs/partner-connect/connection-approval-id-invariant.md): M360 must never see a connection as
+    // approved/active unless BOTH PC ids (pcOrganizationID + pcMerchantID) are present on the same
+    // payload — otherwise it marks the subscription approved (prices/content flow) but can't create
+    // the order-submission config, leaving the dealer "approved but unable to order".
+    //
+    // PC approval provisions the tenant atomically with the Approved flip, so an approved connection
+    // normally carries both ids. This guard is defense-in-depth: any approved-but-unprovisioned row
+    // (legacy/mirrored data, or a race) is reported as pending — never approved/active with null ids.
+    private static OrgConnectionDto MapConnection(TenantPartnerAccount c)
     {
-        Id = c.Id,
-        TradingPartnerId = c.TradingPartnerId,
-        PartnerName = c.TradingPartner?.Name,
-        ExternalTenantId = c.ExternalTenantId,
-        AccountNumber = c.AccountNumber,
-        ApprovalStatus = c.ApprovalStatus.ToString(),
-        IsActive = c.IsActive,
-        CreatedAt = c.CreatedAt,
-        DecidedAt = c.DecidedAt
-    };
+        var idsProvisioned = c.OrganizationId.HasValue && c.TenantId.HasValue;
+        var reportPending = c.ApprovalStatus == ConnectionApprovalStatus.Approved && !idsProvisioned;
+
+        return new OrgConnectionDto
+        {
+            Id = c.Id,
+            TradingPartnerId = c.TradingPartnerId,
+            PartnerName = c.TradingPartner?.Name,
+            ExternalTenantId = c.ExternalTenantId,
+            AccountNumber = c.AccountNumber,
+            ApprovalStatus = reportPending
+                ? ConnectionApprovalStatus.Pending.ToString()
+                : c.ApprovalStatus.ToString(),
+            IsActive = c.IsActive && !reportPending,
+            PcOrganizationId = c.OrganizationId,
+            PcMerchantId = c.TenantId,
+            CreatedAt = c.CreatedAt,
+            DecidedAt = c.DecidedAt
+        };
+    }
 
     private static List<string> ParseFieldNames(string? json)
     {
@@ -1718,6 +1738,21 @@ public class OrgConnectionDto
     public string AccountNumber { get; set; } = string.Empty;
     public string ApprovalStatus { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+
+    /// <summary>
+    /// PC organization id for this M360 org. Per the connection-approval ID invariant, this is
+    /// non-null whenever <see cref="ApprovalStatus"/> is approved/active. Wire name: <c>pcOrganizationID</c>.
+    /// </summary>
+    [JsonPropertyName("pcOrganizationID")]
+    public int? PcOrganizationId { get; set; }
+
+    /// <summary>
+    /// PC tenant ("merchant") id, created on approval. Per the connection-approval ID invariant, this
+    /// is non-null whenever <see cref="ApprovalStatus"/> is approved/active. Wire name: <c>pcMerchantID</c>.
+    /// </summary>
+    [JsonPropertyName("pcMerchantID")]
+    public int? PcMerchantId { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? DecidedAt { get; set; }
 }

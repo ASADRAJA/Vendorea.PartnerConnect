@@ -186,3 +186,6 @@ cookies.txt
 partner-feeds/
 feed-downloads/
 .claude/*
+
+# Runtime document storage (local IDocumentStorage output: ingested feeds, SPR docs)
+src/Vendorea.PartnerConnect.API/documents/
