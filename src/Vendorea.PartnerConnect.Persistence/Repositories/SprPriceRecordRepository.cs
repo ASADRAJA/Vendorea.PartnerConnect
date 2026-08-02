@@ -8,6 +8,17 @@ namespace Vendorea.PartnerConnect.Persistence.Repositories;
 
 public class SprPriceRecordRepository : ISprPriceRecordRepository
 {
+    // An upload's parsed price/content records stay current once it reaches Completed. The M360
+    // push then advances the status to PushedToMerchant360 (or PushFailed if the push errored) —
+    // neither removes the stored records, so all three count as "data available" for reads.
+    // Gating reads on Completed alone made prices/content vanish after the push ran.
+    private static readonly PriceFeedUploadStatus[] AvailableUploadStatuses =
+    {
+        PriceFeedUploadStatus.Completed,
+        PriceFeedUploadStatus.PushedToMerchant360,
+        PriceFeedUploadStatus.PushFailed
+    };
+
     private readonly PartnerConnectDbContext _context;
 
     public SprPriceRecordRepository(PartnerConnectDbContext context)
@@ -51,7 +62,7 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             .Where(u => u.DealerId == dealerId &&
                         u.TradingPartner != null &&
                         u.TradingPartner.Code == "SPR" &&
-                        u.Status == PriceFeedUploadStatus.Completed)
+                        AvailableUploadStatuses.Contains(u.Status))
             .OrderByDescending(u => u.UploadedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -109,7 +120,7 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             .Where(u => u.DealerId == dealerId &&
                         u.TradingPartner != null &&
                         u.TradingPartner.Code == "SPR" &&
-                        u.Status == PriceFeedUploadStatus.Completed)
+                        AvailableUploadStatuses.Contains(u.Status))
             .OrderByDescending(u => u.UploadedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -146,7 +157,7 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             .Where(u => u.DealerId == dealerId &&
                         u.TradingPartner != null &&
                         u.TradingPartner.Code == partnerCode &&
-                        u.Status == PriceFeedUploadStatus.Completed)
+                        AvailableUploadStatuses.Contains(u.Status))
             .OrderByDescending(u => u.UploadedAt)
             .Select(u => new { u.Id, u.UploadedAt })
             .FirstOrDefaultAsync(cancellationToken);
@@ -195,7 +206,7 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
                 _context.PriceFeedUploads.Where(u =>
                     u.TradingPartner != null &&
                     u.TradingPartner.Code == partnerCode &&
-                    u.Status == PriceFeedUploadStatus.Completed),
+                    AvailableUploadStatuses.Contains(u.Status)),
                 r => r.PriceFeedUploadId,
                 u => u.Id,
                 (r, u) => new { r, u })
@@ -221,7 +232,7 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             .Where(u => u.DealerId == dealerId &&
                         u.TradingPartner != null &&
                         u.TradingPartner.Code == partnerCode &&
-                        u.Status == PriceFeedUploadStatus.Completed)
+                        AvailableUploadStatuses.Contains(u.Status))
             .OrderByDescending(u => u.UploadedAt)
             .Select(u => (int?)u.Id)
             .FirstOrDefaultAsync(cancellationToken);
@@ -255,7 +266,7 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             .Where(u => u.DealerId == dealerId &&
                         u.TradingPartner != null &&
                         u.TradingPartner.Code == partnerCode &&
-                        u.Status == PriceFeedUploadStatus.Completed)
+                        AvailableUploadStatuses.Contains(u.Status))
             .OrderByDescending(u => u.UploadedAt)
             .Select(u => (int?)u.Id)
             .FirstOrDefaultAsync(cancellationToken);
