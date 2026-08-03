@@ -52,7 +52,12 @@ public class TenantConnectionService : ITenantConnectionService
             AccountNumber = input.AccountNumber,
             ContactFirstName = input.ContactFirstName,
             ContactLastName = input.ContactLastName,
-            SpecialIdentifyingCode = input.SpecialIdentifyingCode,
+            // The SPR BuyerOrg/GroupCode (SpecialIdentifyingCode) is required to place orders but
+            // isn't always supplied on the connection request. Fall back to the account number so a
+            // connection is never born unable to order; an explicit value still takes precedence.
+            SpecialIdentifyingCode = string.IsNullOrWhiteSpace(input.SpecialIdentifyingCode)
+                ? input.AccountNumber
+                : input.SpecialIdentifyingCode,
             Notes = input.Notes,
             ConfirmationFieldsJson = input.ConfirmationFields is { Count: > 0 }
                 ? JsonSerializer.Serialize(input.ConfirmationFields)
