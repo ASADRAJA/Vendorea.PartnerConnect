@@ -254,6 +254,9 @@ public class AdminTenantsController : ControllerBase
             TenantId = tenantId,
             TradingPartnerId = request.TradingPartnerId,
             AccountNumber = request.AccountNumber,
+            // Default the SPR BuyerOrg/GroupCode to the account number (this path supplies no
+            // explicit code) so the account can place orders without a separate provisioning step.
+            SpecialIdentifyingCode = request.AccountNumber,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };

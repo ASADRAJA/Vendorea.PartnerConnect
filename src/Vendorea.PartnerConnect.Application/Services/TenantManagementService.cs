@@ -195,6 +195,9 @@ public class TenantManagementService : ITenantManagementService
             TradingPartnerId = request.TradingPartnerId,
             AccountNumber = request.AccountNumber,
             DisplayName = request.DisplayName,
+            // Default the SPR BuyerOrg/GroupCode to the account number (this path supplies no
+            // explicit code) so the account can place orders without a separate provisioning step.
+            SpecialIdentifyingCode = request.AccountNumber,
             IsDefault = request.IsDefault,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
