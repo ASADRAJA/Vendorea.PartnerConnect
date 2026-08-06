@@ -171,6 +171,14 @@ public class PriceBatchRequest
 public class PriceBatchItem
 {
     public string StockNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The stock number with punctuation removed (SPR price feed column 3). M360 joins price to
+    /// content on this rather than <see cref="StockNumber"/>: ~4% of SPR stock numbers carry a dash,
+    /// slash, or dot that content never has, and those rows match on the stripped form only.
+    /// </summary>
+    public string? StockNumberStripped { get; set; }
+
     public string? ProductDescription { get; set; }
     public decimal NetCost { get; set; }
     public decimal? RetailListPrice { get; set; }
@@ -229,6 +237,16 @@ public class ContentBatchRequest
 public class ContentBatchProduct
 {
     public string StockNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The SPR stock number when SPR genuinely publishes one for this product, and NULL when
+    /// <see cref="StockNumber"/> fell back to the manufacturer part number. M360 joins
+    /// price.stockNumberStripped to this field, so the null keeps fallback rows out of the join
+    /// structurally - a fallback value can coincide with a real stock number belonging to a
+    /// different product, which would otherwise attach the wrong description to a priced item.
+    /// </summary>
+    public string? StockNumberStripped { get; set; }
+
     public string? ProductName { get; set; }
     public string? ShortDescription { get; set; }
     public string? LongDescription { get; set; }

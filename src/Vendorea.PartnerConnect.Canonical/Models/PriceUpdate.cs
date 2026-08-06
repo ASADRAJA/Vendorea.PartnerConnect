@@ -28,6 +28,13 @@ public record PriceUpdate
     public string PartnerSku { get; init; } = string.Empty;
 
     /// <summary>
+    /// <see cref="PartnerSku"/> with punctuation removed, when the partner supplies such a form.
+    /// M360 joins price to content on this, so every path that builds a price batch must carry it -
+    /// a path that leaves it null makes the join silently drop those rows.
+    /// </summary>
+    public string? PartnerSkuStripped { get; init; }
+
+    /// <summary>
     /// Universal Product Code (UPC/EAN).
     /// </summary>
     public string? Upc { get; init; }

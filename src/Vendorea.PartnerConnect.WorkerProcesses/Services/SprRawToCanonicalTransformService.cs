@@ -254,7 +254,7 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
         // Transform products with descriptions and manufacturer info
         var sql = $@"
             INSERT INTO SprProductContent (
-                ContentUploadId, ProductId, LocaleId, Sku, Upc, BrandName,
+                ContentUploadId, ProductId, LocaleId, Sku, StockNumberStripped, Upc, BrandName,
                 ProductType, ProductLine, ProductSeries,
                 Description1, Description2, Description3, MarketingText,
                 ManufacturerId, ManufacturerName, CountryOfOrigin, UnspscCode,
@@ -272,6 +272,12 @@ public class SprRawToCanonicalTransformService : ISprRawToCanonicalTransformServ
                      WHERE productid = p.productid AND name = 'SP Richards'),
                     p.mfgpartno
                 ) AS Sku,
+                -- Deliberately NOT coalesced: this stays null when SPR publishes no stock number for
+                -- the product, which is what lets the M360 join exclude the mfgpartno fallback rows
+                -- structurally rather than by inference. No stripping needed - genuine SPR stock
+                -- numbers carry no punctuation.
+                (SELECT TOP 1 sku FROM spr.productskus
+                 WHERE productid = p.productid AND name = 'SP Richards') AS StockNumberStripped,
                 (SELECT TOP 1 sku FROM spr.productskus
                  WHERE productid = p.productid AND name = 'UPC') AS Upc,
                 COALESCE(m.name, 'Unknown') AS BrandName,

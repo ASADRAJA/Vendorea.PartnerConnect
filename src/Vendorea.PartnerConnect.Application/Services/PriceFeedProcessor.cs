@@ -141,6 +141,7 @@ public class PriceFeedProcessor : IPriceFeedProcessor
             Items = priceUpdates.Select(p => new PriceBatchItem
             {
                 StockNumber = p.PartnerSku,
+                StockNumberStripped = p.PartnerSkuStripped,
                 NetCost = p.Cost,
                 RetailListPrice = p.ListPrice,
                 UpcCode = p.Upc,

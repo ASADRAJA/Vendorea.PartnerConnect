@@ -359,6 +359,7 @@ public class FeedProcessingService : IFeedProcessingService
             Items = updatesList.Select(p => new PriceBatchItem
             {
                 StockNumber = p.PartnerSku,
+                StockNumberStripped = p.PartnerSkuStripped,
                 NetCost = p.Cost,
                 RetailListPrice = p.ListPrice,
                 ManufacturerPartNumber = p.ManufacturerPartNumber,
