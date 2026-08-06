@@ -21,16 +21,28 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
             // for the next full ingest. Same rule the transform applies: the SPR stock number when
             // SPR publishes one, left null when Sku fell back to the manufacturer part number.
             // Guarded because the raw Etilize staging tables only exist where an ingest has run.
+            //
+            // Staged through a temp table rather than a correlated lookup per content row: productid
+            // needs casting to compare against ProductId, which is non-sargable, so the correlated
+            // form rescans all of productskus for every content row and times out on Azure SQL.
+            // MIN(sku) matches the transform's TOP 1 exactly - 'SP Richards' rows are 1:1 per product.
             migrationBuilder.Sql(@"
                 IF OBJECT_ID('spr.productskus', 'U') IS NOT NULL
                 BEGIN
+                    SELECT CAST(productid AS NVARCHAR(50)) AS ProductId, MIN(sku) AS Sku
+                    INTO #SprStockNumbers
+                    FROM spr.productskus
+                    WHERE name = 'SP Richards'
+                    GROUP BY productid;
+
+                    CREATE CLUSTERED INDEX IX_SprStockNumbers ON #SprStockNumbers(ProductId);
+
                     UPDATE c
-                    SET c.StockNumberStripped = s.sku
+                    SET c.StockNumberStripped = s.Sku
                     FROM SprProductContent c
-                    CROSS APPLY (
-                        SELECT TOP 1 sku FROM spr.productskus
-                        WHERE CAST(productid AS NVARCHAR(50)) = c.ProductId AND name = 'SP Richards'
-                    ) s;
+                    INNER JOIN #SprStockNumbers s ON s.ProductId = c.ProductId;
+
+                    DROP TABLE #SprStockNumbers;
                 END");
 
             migrationBuilder.CreateIndex(

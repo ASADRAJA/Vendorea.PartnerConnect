@@ -39,9 +39,12 @@ dotnet tool install --global dotnet-ef >/dev/null 2>&1 || true
 export PATH="$PATH:$HOME/.dotnet/tools"
 
 echo -e "${YELLOW}Applying migrations to ${SQL_FQDN}/${DATABASE}...${NC}"
+# EF's default 30s command timeout is too tight for data migrations on Serverless tiers, where a
+# backfill over a large table can outlast it (and a cold database spends part of that waking up).
 dotnet ef database update \
     --project "${REPO_ROOT}/src/Vendorea.PartnerConnect.Persistence" \
     --startup-project "${REPO_ROOT}/src/Vendorea.PartnerConnect.API" \
-    --connection "$CONN"
+    --connection "$CONN" \
+    --command-timeout "${MIGRATE_COMMAND_TIMEOUT:-600}"
 
 echo -e "${GREEN}Migrations applied.${NC}"
