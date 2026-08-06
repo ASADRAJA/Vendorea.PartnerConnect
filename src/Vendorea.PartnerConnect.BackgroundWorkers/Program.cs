@@ -61,6 +61,11 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.Configure<Vendorea.PartnerConnect.Application.Services.SprSimulationOptions>(
     builder.Configuration.GetSection(Vendorea.PartnerConnect.Application.Services.SprSimulationOptions.SectionName));
 
+// Merchant360 push tuning (batch sizes; see Merchant360PushOptions). The workers app performs the
+// actual pushes, so this is the host where the setting matters most.
+builder.Services.Configure<Vendorea.PartnerConnect.Application.Services.Merchant360PushOptions>(
+    builder.Configuration.GetSection(Vendorea.PartnerConnect.Application.Services.Merchant360PushOptions.SectionName));
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddPartnerConnectPersistence(connectionString);

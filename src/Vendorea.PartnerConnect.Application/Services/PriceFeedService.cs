@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
@@ -21,6 +22,7 @@ public class PriceFeedService : IPriceFeedService
     private readonly IDocumentStorage _documentStorage;
     private readonly ISprPriceFeedParser _sprParser;
     private readonly IMerchant360Client _merchant360Client;
+    private readonly Merchant360PushOptions _pushOptions;
     private readonly ILogger<PriceFeedService> _logger;
 
     public PriceFeedService(
@@ -32,6 +34,7 @@ public class PriceFeedService : IPriceFeedService
         IDocumentStorage documentStorage,
         ISprPriceFeedParser sprParser,
         IMerchant360Client merchant360Client,
+        IOptions<Merchant360PushOptions> pushOptions,
         ILogger<PriceFeedService> logger)
     {
         _uploadRepository = uploadRepository;
@@ -42,6 +45,7 @@ public class PriceFeedService : IPriceFeedService
         _documentStorage = documentStorage;
         _sprParser = sprParser;
         _merchant360Client = merchant360Client;
+        _pushOptions = pushOptions.Value;
         _logger = logger;
     }
 
@@ -508,7 +512,9 @@ public class PriceFeedService : IPriceFeedService
         int uploadId,
         CancellationToken cancellationToken = default)
     {
-        const int BatchSize = 10000; // M360 limit
+        // Sized well under M360's 10,000 ceiling: Azure App Service kills any request still running
+        // at 230s, and a 10,000-record batch has exceeded that. See Merchant360PushOptions.
+        var batchSize = _pushOptions.PriceBatchSize > 0 ? _pushOptions.PriceBatchSize : 2000;
 
         // Claim the queued push (PushQueued -> Pushing) so only one worker runs it.
         var claimed = await _uploadRepository.TryClaimPushAsync(uploadId, cancellationToken);
@@ -590,13 +596,13 @@ public class PriceFeedService : IPriceFeedService
             int totalUpdated = 0;
             int totalSkipped = 0;
             int batchNumber = 0;
-            int totalBatches = (int)Math.Ceiling((double)allItems.Count / BatchSize);
+            int totalBatches = (int)Math.Ceiling((double)allItems.Count / batchSize);
 
             _logger.LogInformation(
                 "Pushing {TotalRecords} records to Merchant360 in {TotalBatches} batches",
                 allItems.Count, totalBatches);
 
-            foreach (var batch in allItems.Chunk(BatchSize))
+            foreach (var batch in allItems.Chunk(batchSize))
             {
                 batchNumber++;
                 _logger.LogInformation("Pushing batch {BatchNumber}/{TotalBatches} ({BatchSize} records)",
