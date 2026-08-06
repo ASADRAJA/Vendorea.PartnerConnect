@@ -27,6 +27,9 @@ public class SprProductContentConfiguration : IEntityTypeConfiguration<SprProduc
         builder.Property(e => e.Sku)
             .HasMaxLength(50);
 
+        builder.Property(e => e.StockNumberStripped)
+            .HasMaxLength(50);
+
         builder.Property(e => e.Upc)
             .HasMaxLength(20);
 
@@ -156,6 +159,12 @@ public class SprProductContentConfiguration : IEntityTypeConfiguration<SprProduc
 
         builder.HasIndex(e => new { e.Sku, e.LocaleId })
             .HasDatabaseName("IX_SprProductContent_Sku_Locale");
+
+        // Filtered: the fallback rows are null here by design and are ~39% of the table, so keeping
+        // them out of the index makes it materially smaller for the price-to-content join.
+        builder.HasIndex(e => new { e.StockNumberStripped, e.LocaleId })
+            .HasFilter("[StockNumberStripped] IS NOT NULL")
+            .HasDatabaseName("IX_SprProductContent_StockNumberStripped_Locale");
 
         builder.HasIndex(e => new { e.Upc, e.LocaleId })
             .HasDatabaseName("IX_SprProductContent_Upc_Locale");

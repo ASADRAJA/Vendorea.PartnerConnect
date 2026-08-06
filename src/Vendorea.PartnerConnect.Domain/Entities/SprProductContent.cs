@@ -3,7 +3,8 @@ namespace Vendorea.PartnerConnect.Domain.Entities;
 /// <summary>
 /// SPR enhanced product content including descriptions, marketing text, and metadata.
 /// This is SHARED MASTER DATA - not dealer-specific. All dealers reference the same content.
-/// Links to dealer-specific SprPriceRecord via ProductId/StockNumber.
+/// Links to dealer-specific SprPriceRecord via Sku/StockNumber (see <see cref="StockNumberStripped"/>
+/// for the join key M360 uses).
 /// </summary>
 public class SprProductContent
 {
@@ -20,7 +21,8 @@ public class SprProductContent
     public SprContentUpload? ContentUpload { get; set; }
 
     /// <summary>
-    /// SPR product identifier (links to SprPriceRecord.StockNumber).
+    /// Etilize internal product identifier. This is NOT an SPR stock number and does not join to
+    /// SprPriceRecord - use <see cref="Sku"/> or <see cref="StockNumberStripped"/> for that.
     /// </summary>
     public string ProductId { get; set; } = string.Empty;
 
@@ -30,9 +32,21 @@ public class SprProductContent
     public string LocaleId { get; set; } = "EN_US";
 
     /// <summary>
-    /// Product SKU (may differ from ProductId).
+    /// Product SKU. Holds the SPR stock number when SPR publishes one for this product, otherwise
+    /// falls back to the manufacturer part number - so a populated Sku is not proof of an SPR item.
     /// </summary>
     public string? Sku { get; set; }
+
+    /// <summary>
+    /// The SPR stock number, populated ONLY when SPR genuinely publishes one for this product and
+    /// null when <see cref="Sku"/> fell back to the manufacturer part number. This is the agreed
+    /// join key against SprPriceRecord.StockNumberStripped on the M360 side: the null structurally
+    /// excludes fallback rows from the join instead of relying on the consumer to infer them.
+    ///
+    /// No stripping is applied because none is needed - genuine SPR stock numbers carry no
+    /// punctuation, so this is the SPR stock number verbatim.
+    /// </summary>
+    public string? StockNumberStripped { get; set; }
 
     /// <summary>
     /// Universal Product Code.

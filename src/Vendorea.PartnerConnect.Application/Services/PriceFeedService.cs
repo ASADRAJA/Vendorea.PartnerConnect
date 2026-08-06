@@ -556,6 +556,7 @@ public class PriceFeedService : IPriceFeedService
             var allItems = records.Select(r => new PriceBatchItem
             {
                 StockNumber = r.StockNumber,
+                StockNumberStripped = r.StockNumberStripped,
                 ProductDescription = r.ProductDescription,
                 NetCost = r.NetCostNonCcp,
                 RetailListPrice = r.RetailListPrice,

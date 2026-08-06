@@ -243,11 +243,14 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
         var total = await _context.SprPriceRecords
             .CountAsync(r => r.PriceFeedUploadId == latestUploadId.Value, cancellationToken);
 
-        // Count dealer SKUs that have shared partner content (join on StockNumber == ProductId).
+        // Count dealer SKUs that have shared partner content. Joins on the stripped stock number:
+        // ProductId is Etilize's internal id and never equals a stock number (this join previously
+        // used it and matched zero rows), and ~4% of stock numbers carry punctuation that the
+        // content side does not.
         var withContent = await _context.SprPriceRecords
             .Where(r => r.PriceFeedUploadId == latestUploadId.Value)
             .Where(r => _context.SprProductContent.Any(c =>
-                c.ProductId == r.StockNumber && c.LocaleId == localeId))
+                c.StockNumberStripped == r.StockNumberStripped && c.LocaleId == localeId))
             .CountAsync(cancellationToken);
 
         return new ContentCoverage(total, withContent);
@@ -293,8 +296,9 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             {
                 r.StockNumber,
                 r.ProductDescription,
+                // Same join key as GetContentCoverageAsync - see the note there.
                 Content = _context.SprProductContent
-                    .Where(c => c.ProductId == r.StockNumber && c.LocaleId == localeId)
+                    .Where(c => c.StockNumberStripped == r.StockNumberStripped && c.LocaleId == localeId)
                     .Select(c => new { c.BrandName, c.Description1 })
                     .FirstOrDefault()
             })

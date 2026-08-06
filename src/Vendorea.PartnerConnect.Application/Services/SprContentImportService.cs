@@ -1525,6 +1525,8 @@ public class SprContentImportService : ISprContentImportService
         {
             // Use Sku if not empty, otherwise fall back to ProductId
             StockNumber = !string.IsNullOrWhiteSpace(product.Sku) ? product.Sku : product.ProductId,
+            // Null for manufacturer-part-number fallback rows - see ContentBatchProduct.
+            StockNumberStripped = product.StockNumberStripped,
             ProductName = product.Description1,
             ShortDescription = product.Description2,
             LongDescription = product.MarketingText,

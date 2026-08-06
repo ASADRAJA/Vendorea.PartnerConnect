@@ -183,6 +183,9 @@ public class SprPriceFeedParser
             DealerId = dealerId,
             TradingPartnerCode = SprAdapter.AdapterCode,
             PartnerSku = record.StockNumber,
+            PartnerSkuStripped = string.IsNullOrWhiteSpace(record.StockNumberStripped)
+                ? null
+                : record.StockNumberStripped,
             Upc = string.IsNullOrWhiteSpace(record.Upc) ? null : record.Upc,
             ManufacturerPartNumber = null, // SPR doesn't provide MPN in this file
             Cost = dealerCost,
