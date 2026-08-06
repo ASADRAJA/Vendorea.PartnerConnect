@@ -103,6 +103,10 @@ builder.Services.AddPartnerAdapters();
 builder.Services.Configure<Vendorea.PartnerConnect.Application.Services.SprSimulationOptions>(
     builder.Configuration.GetSection(Vendorea.PartnerConnect.Application.Services.SprSimulationOptions.SectionName));
 
+// Merchant360 push tuning (batch sizes; see Merchant360PushOptions).
+builder.Services.Configure<Vendorea.PartnerConnect.Application.Services.Merchant360PushOptions>(
+    builder.Configuration.GetSection(Vendorea.PartnerConnect.Application.Services.Merchant360PushOptions.SectionName));
+
 // Merchant360 connector with API key or OAuth2 authentication
 builder.Services.AddMerchant360Connector(options =>
 {
