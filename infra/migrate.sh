@@ -38,13 +38,14 @@ CONN="Server=tcp:${SQL_FQDN},1433;Initial Catalog=${DATABASE};User ID=${SQL_USER
 dotnet tool install --global dotnet-ef >/dev/null 2>&1 || true
 export PATH="$PATH:$HOME/.dotnet/tools"
 
+# Statements run with the 180s command timeout set in Persistence/DependencyInjection.cs. It is not
+# settable from here: 'dotnet ef database update' has no --command-timeout option, and an explicit
+# CommandTimeout in code overrides the connection string's 'Command Timeout' keyword. Raise it there
+# if a future data migration genuinely needs longer.
 echo -e "${YELLOW}Applying migrations to ${SQL_FQDN}/${DATABASE}...${NC}"
-# EF's default 30s command timeout is too tight for data migrations on Serverless tiers, where a
-# backfill over a large table can outlast it (and a cold database spends part of that waking up).
 dotnet ef database update \
     --project "${REPO_ROOT}/src/Vendorea.PartnerConnect.Persistence" \
     --startup-project "${REPO_ROOT}/src/Vendorea.PartnerConnect.API" \
-    --connection "$CONN" \
-    --command-timeout "${MIGRATE_COMMAND_TIMEOUT:-600}"
+    --connection "$CONN"
 
 echo -e "${GREEN}Migrations applied.${NC}"
