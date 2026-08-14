@@ -492,6 +492,28 @@ public class PriceFeedService : IPriceFeedService
         );
     }
 
+    /// <summary>
+    /// The cost the dealer actually transacts at.
+    ///
+    /// SPR's file carries two costs per line: <c>NetCostNonCcp</c> (column 78) is the undiscounted
+    /// reference, and <c>PromoLevel1Cost</c> (column 87) is the price under whichever pricing
+    /// program applies to that item for this account. Despite the name these are not quantity
+    /// breaks - promo levels 1, 2 and 3 hold identical quantities (always 1) and identical costs on
+    /// every row of every file examined, so level 1 is read and the other two ignored.
+    ///
+    /// Where no program applies the two columns are equal, which is why the fallback is safe rather
+    /// than merely defensive: a zero promo means "no program", and the reference cost is then the
+    /// real price. Validated against SPR's own backend on 17 items spanning 8 pricing programs,
+    /// 5 units of measure and discounts from 0% to 94% - 16 matched to the cent, the 17th explained
+    /// by a stale monthly file.
+    ///
+    /// Not handled here: dealers on SPR's CCP-3/CCP-4 programs should fall back to columns 79/80
+    /// instead of 78. Every account seen so far carries identical values in all three, so the
+    /// distinction is invisible today - but it needs addressing before a CCP dealer is onboarded.
+    /// </summary>
+    private static decimal ResolveEffectiveCost(SprPriceRecord record) =>
+        record.PromoLevel1Cost > 0 ? record.PromoLevel1Cost : record.NetCostNonCcp;
+
     public async Task<PriceFeedActionResult> RequestPushAsync(int uploadId, CancellationToken cancellationToken = default)
     {
         var upload = await _uploadRepository.GetByIdAsync(uploadId, cancellationToken);
@@ -564,12 +586,14 @@ public class PriceFeedService : IPriceFeedService
                 StockNumber = r.StockNumber,
                 StockNumberStripped = r.StockNumberStripped,
                 ProductDescription = r.ProductDescription,
-                NetCost = r.NetCostNonCcp,
+                NetCost = ResolveEffectiveCost(r),
                 RetailListPrice = r.RetailListPrice,
                 Uom = r.SellingUnitOfMeasure,
                 // Use SPR category code if available, otherwise fall back to price feed code
                 CategoryCode = skuToCategoryCode.TryGetValue(r.StockNumber, out var sprCode) ? sprCode : r.CategoryCode,
-                ManufacturerPartNumber = r.MpcNumber,
+                // ManufacturerPartNumber is deliberately not sent. It used to carry MpcNumber - the
+                // Moore Product Code - which is a different identifier and is populated on ~27 of
+                // 47,000 rows. SPR does not publish a manufacturer part number in this file at all.
                 UpcCode = r.Upc,
                 Weight = r.WeightLbs,
                 Length = r.LengthInches,
