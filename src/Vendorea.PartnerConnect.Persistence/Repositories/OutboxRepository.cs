@@ -132,14 +132,21 @@ public class OutboxRepository : IOutboxRepository
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        // Calculate average delivery time for recent deliveries
-        var avgDeliveryTime = await _context.OutboxMessages
-            .Where(m => m.Status == OutboxMessageStatus.Delivered && m.DeliveredAt >= yesterday)
-            // SPIKE: EF.Functions.DateDiffMillisecond is SQL Server-only. Npgsql translates plain
-            // DateTime subtraction to an interval, so express it that way instead.
-            .Select(m => (m.DeliveredAt!.Value - m.CreatedAt).TotalMilliseconds)
-            .DefaultIfEmpty(0)
-            .AverageAsync(cancellationToken);
+        // Average delivery time for recent deliveries.
+        //
+        // EF.Functions.DateDiffMillisecond is SQL Server-only. Plain DateTime subtraction is not a
+        // usable substitute either: it compiles, but Npgsql cannot translate TimeSpan.TotalMilliseconds
+        // and throws at runtime. PostgreSQL expresses this as EXTRACT(EPOCH FROM interval), which has
+        // no LINQ equivalent, so it goes through a raw scalar query. COALESCE keeps the empty-set case
+        // returning 0 as DefaultIfEmpty(0) did.
+        var avgDeliveryTime = await _context.Database
+            .SqlQueryRaw<double>(
+                @"SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (""DeliveredAt"" - ""CreatedAt"")) * 1000), 0)::double precision AS ""Value""
+                  FROM ""OutboxMessages""
+                  WHERE ""Status"" = {0} AND ""DeliveredAt"" >= {1}",
+                // Status is persisted as its string name, not its numeric value.
+                OutboxMessageStatus.Delivered.ToString(), yesterday)
+            .FirstAsync(cancellationToken);
 
         return new OutboxStatistics
         {

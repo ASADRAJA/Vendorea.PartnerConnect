@@ -146,6 +146,14 @@ public class PartnerConnectDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // SQL Server ran under a case-insensitive collation; PostgreSQL is case-sensitive by
+        // default and will not accept a non-deterministic collation as the database default.
+        // Declare one here and apply it per column to the identity fields that relied on the
+        // old behaviour. "und-u-ks-level2" is case-insensitive but accent-sensitive, matching
+        // SQL_Latin1_General_CP1_CI_AS. Requires PostgreSQL 18+ for LIKE support.
+        modelBuilder.HasCollation("ci", locale: "und-u-ks-level2", provider: "icu", deterministic: false);
+
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PartnerConnectDbContext).Assembly);
     }
 }

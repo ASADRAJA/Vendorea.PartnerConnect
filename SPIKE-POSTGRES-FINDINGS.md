@@ -128,6 +128,66 @@ This is the category of problem that only running the code finds: the schema app
 cleanly, the code compiled, and the defect was a missing default that production SQL
 silently depended on.
 
+## Runtime verification — API, workers, tests, collation
+
+**Test suite:** 175 tests, **174 pass, 1 fails**. The failure
+(`SprFlowSmokeTests.Flow1_Outbound`) fails identically on `main` at `6e6acd1` — verified in a
+throwaway worktree. Pre-existing, not caused by the port.
+
+**API:** starts on PostgreSQL, `/health` 200, Swagger generates (265 paths). All 75
+parameterless GETs probed: 72 x 401, 2 x 400, 1 x 200, **zero 500s**. The 401s are the global
+API-key middleware (`WWW-Authenticate: ApiKey`), so HTTP probing cannot reach the data layer -
+which is why the repository probes below matter more.
+
+**Workers:** all 8 start and poll PostgreSQL cleanly - Price Feed Sync, Price Feed Upload
+Processing, Document Processing, Content Sync, Outbox, EDI Document Sync, SPR Content
+Ingestion, FTP Ingestion Queue. Generated SQL is correctly quoted, including the `M360Push*`
+columns whose defaults were restored above. **Zero PostgresExceptions.**
+
+But getting there needed a real fix. The workers initially died with
+`FileNotFoundException: Microsoft.EntityFrameworkCore.Relational, Version=8.0.29.0`. Cause:
+`Microsoft.EntityFrameworkCore.InMemory 8.0.29` is pinned in Persistence, and the old
+`Microsoft.EntityFrameworkCore.SqlServer 8.0.29` used to hold every EF assembly at that
+version. `Npgsql.EntityFrameworkCore.PostgreSQL 8.0.*` resolves EF **8.0.11**, so the solution
+compiled against 8.0.29 references and shipped 8.0.11. The API happened to work; the workers
+did not. Fixed by pinning `Microsoft.EntityFrameworkCore.Relational` to 8.0.29.
+
+**DateDiffMillisecond, take two.** The earlier "port" - plain `DateTime` subtraction plus
+`.TotalMilliseconds` - compiles but **Npgsql cannot translate it**, so `GetStatisticsAsync`
+threw at runtime. PostgreSQL needs `EXTRACT(EPOCH FROM interval)`, which has no LINQ
+equivalent, so it now goes through a raw scalar query. Verified: a message seeded 5 minutes
+before delivery reports `avg delivery 300,000 ms`.
+
+**DateTime.Kind:** `DateTime.UtcNow` predicates work; `new DateTime(...)` and `DateTime.Today`
+throw, exactly as on Merchant360. PartnerConnect's exposure is far smaller though - **0
+`DateTime.Today`, 0 `DateTime.Now`**, 508 `DateTime.UtcNow`, 10 `new DateTime(`.
+
+**Case sensitivity — demonstrated, then fixed.** Before:
+
+| | PostgreSQL | SQL Server |
+|---|---|---|
+| `Username == "PCAdmin"` (row is `pcadmin`) | 0 matches | 1 match |
+| insert `PCADMIN` next to `pcadmin` | **INSERTED** | rejected by unique index |
+
+That second row is the dangerous one: a duplicate admin account the unique index was supposed
+to prevent. Fixed by declaring a non-deterministic ICU collation on the model
+(`und-u-ks-level2` - case-insensitive, accent-sensitive, matching
+`SQL_Latin1_General_CP1_CI_AS`) and applying it to `AdminPortalUser.Username`. After:
+wrong-case lookup matches, `LIKE '%ADMIN%'` matches (PG 18 support confirmed on a real
+column), and the duplicate insert is rejected by `IX_AdminPortalUsers_Username`.
+
+Only `Username` is converted so far; the other identity columns (`Organizations.Code`,
+`TradingPartners.Code`, emails, `SprPriceRecords.StockNumber`) still need the same treatment.
+
+## Incidental pre-existing bugs found
+
+- `IFeedProcessingService` has **zero DI registrations**, yet `ContentSyncWorker`,
+  `InventoryFeedSyncWorker` and `PriceFeedSyncWorker` all call
+  `GetRequiredService<IFeedProcessingService>()`. Those workers throw on every poll, on `main`
+  too.
+- `SprFlowSmokeTests.Flow1_Outbound` red on `main`.
+- 27-line dead SQL block in `SprRawToCanonicalTransformService` (CS0219).
+
 ## Still outstanding
 3. Not exercised: running the API/workers, the 167 InMemory tests, case-insensitivity,
    `DateTime.Kind` (M360 needed the legacy switch; PC untested).

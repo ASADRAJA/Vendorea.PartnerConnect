@@ -17,12 +17,15 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
             migrationBuilder.EnsureSchema(
                 name: "spr");
 
+            migrationBuilder.AlterDatabase()
+                .Annotation("Npgsql:CollationDefinition:ci", "und-u-ks-level2,und-u-ks-level2,icu,False");
+
             migrationBuilder.CreateTable(
                 name: "AdminPortalUsers",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Username = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Username = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, collation: "ci"),
                     PasswordHash = table.Column<string>(type: "character varying(400)", maxLength: 400, nullable: false),
                     Role = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     DisplayName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),

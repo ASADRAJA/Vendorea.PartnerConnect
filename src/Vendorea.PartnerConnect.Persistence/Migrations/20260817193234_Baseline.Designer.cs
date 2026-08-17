@@ -12,7 +12,7 @@ using Vendorea.PartnerConnect.Persistence;
 namespace Vendorea.PartnerConnect.Persistence.Migrations
 {
     [DbContext(typeof(PartnerConnectDbContext))]
-    [Migration("20260817190150_Baseline")]
+    [Migration("20260817193234_Baseline")]
     partial class Baseline
     {
         /// <inheritdoc />
@@ -20,6 +20,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
+                .HasAnnotation("Npgsql:CollationDefinition:ci", "und-u-ks-level2,und-u-ks-level2,icu,False")
                 .HasAnnotation("ProductVersion", "8.0.29")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
@@ -450,7 +451,8 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("ci");
 
                     b.HasKey("Id");
 
