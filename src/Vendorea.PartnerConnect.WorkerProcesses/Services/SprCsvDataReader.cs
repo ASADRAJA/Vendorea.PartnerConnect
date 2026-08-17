@@ -3,8 +3,9 @@ using System.Data;
 namespace Vendorea.PartnerConnect.WorkerProcesses.Services;
 
 /// <summary>
-/// IDataReader implementation for reading SPR CSV files for SqlBulkCopy.
+/// IDataReader implementation for reading SPR CSV files.
 /// Handles quoted fields, proper delimiter parsing, and type conversion.
+/// Consumed by SprCsvBulkImportService, which streams these rows into PostgreSQL COPY.
 /// </summary>
 public class SprCsvDataReader : IDataReader
 {

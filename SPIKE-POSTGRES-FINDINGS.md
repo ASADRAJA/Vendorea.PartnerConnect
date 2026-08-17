@@ -46,15 +46,33 @@ to build a `DataTable` rather than hard-coding columns. The Npgsql version drops
 than the original. The comment's original rationale (EF change detection is O(n²) and blows
 past App Service's 230 s limit) holds and is better served: 95k rows in 1.2 s.
 
+## The CSV importer port (second bulk path) — DONE
+
+`SprCsvBulkImportService` now streams into PostgreSQL text-format `COPY` instead of
+`SqlBulkCopy`. `SprCsvDataReader` is **unchanged** — its parsing is proven, and it already
+hands back strings, which is exactly what text COPY wants. Every `spr.*` raw column is
+`text`, so there is no type conversion at all: the reader's strings go straight in.
+
+Measured on 500,000 rows of `productattribute` (the biggest raw table — 5.3M rows in dev):
+
+| | |
+|---|---|
+| Throughput | **500,000 rows in 3,804 ms — 131,441 rows/sec** |
+| Rows landed | 500,000 / 500,000 |
+| Empty → NULL | 71,429 (exact) |
+| Embedded commas preserved | 500 (exact) |
+| Escaped quotes preserved | 334 (exact) |
+
+Extrapolated, the full 5.3M-row `productattribute` import is roughly 40 seconds.
+
+`BulkInsertBatchSize` no longer applies — COPY is a single continuous transfer.
+
+**`Microsoft.Data.SqlClient` has been removed from `WorkerProcesses`. PartnerConnect now has
+no SQL Server dependency anywhere, and the solution builds clean.**
+
 ## Still outstanding
 
-1. **`SprCsvBulkImportService` (314 lines) + `SprCsvDataReader` (189 lines)** — the second
-   `SqlBulkCopy` path, importing SPR CSVs into the raw schema tables. Not ported. It still
-   compiles because `WorkerProcesses` keeps its own `Microsoft.Data.SqlClient` reference, but
-   it would fail at runtime. `SprCsvDataReader` is an `IDataReader` built for `SqlBulkCopy`;
-   Npgsql's COPY is write-based, so that abstraction does not carry over — though the CSV
-   parsing logic does.
-2. **Raw SQL T-SQL** across 3 files: 16 × `GETUTCDATE()`, 10 × `TOP 1`, 3 × `ISNULL(`,
+1. **Raw SQL T-SQL** across 3 files: 16 × `GETUTCDATE()`, 10 × `TOP 1`, 3 × `ISNULL(`,
    2 × `sys.indexes`. All mechanical.
 3. Not exercised: running the API/workers, the 167 InMemory tests, case-insensitivity,
    `DateTime.Kind` (M360 needed the legacy switch; PC untested).

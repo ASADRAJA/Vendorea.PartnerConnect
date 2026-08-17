@@ -1,7 +1,8 @@
 using System.Data;
 using System.Diagnostics;
 using System.IO.Compression;
-using Microsoft.Data.SqlClient;
+using System.Text;
+using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,7 +13,7 @@ using Vendorea.PartnerConnect.WorkerProcesses.Storage;
 namespace Vendorea.PartnerConnect.WorkerProcesses.Services;
 
 /// <summary>
-/// Service for bulk importing SPR CSV files into the raw schema tables using SqlBulkCopy.
+/// Service for bulk importing SPR CSV files into the raw schema tables using PostgreSQL COPY.
 /// Supports both local file system and Azure Blob Storage as file source.
 /// </summary>
 public class SprCsvBulkImportService : ISprCsvBulkImportService
@@ -22,7 +23,7 @@ public class SprCsvBulkImportService : ISprCsvBulkImportService
     private readonly SprContentIngestionOptions _options;
     private readonly IIngestionFileStorage _storage;
 
-    // Table column mappings for SqlBulkCopy
+    // Table column mappings for the COPY column list
     private static readonly Dictionary<string, string[]> TableColumns = new()
     {
         ["product"] = new[] { "productid", "manufacturerid", "isactive", "mfgpartno", "categoryid", "isaccessory", "equivalency", "creationdate", "modifieddate", "lastupdated" },
@@ -182,25 +183,44 @@ public class SprCsvBulkImportService : ISprCsvBulkImportService
             }
 
             var connectionString = _dbContext.Database.GetConnectionString();
-            using var connection = new SqlConnection(connectionString);
+            await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
 
-            using var bulkCopy = new SqlBulkCopy(connection)
-            {
-                DestinationTableName = $"spr.{targetTable}",
-                BatchSize = _options.BulkInsertBatchSize,
-                BulkCopyTimeout = 600 // 10 minutes
-            };
+            // PostgreSQL COPY replaces SqlBulkCopy. Text (CSV) format rather than binary:
+            // every spr.* raw column is text, and SprCsvDataReader hands us strings, so there
+            // is nothing to type-convert - the server takes the values as-is. Streaming means
+            // BulkInsertBatchSize no longer applies; COPY is a single continuous transfer.
+            var columnList = string.Join(", ", columns);
+            var copyCommand = $"COPY spr.{targetTable} ({columnList}) FROM STDIN (FORMAT CSV)";
 
-            // Set up column mappings
-            for (int i = 0; i < columns.Length; i++)
-            {
-                bulkCopy.ColumnMappings.Add(i, columns[i]);
-            }
-
-            // Read CSV and bulk insert
             using var reader = new SprCsvDataReader(csvFilePath, columns.Length, delimiter);
-            await bulkCopy.WriteToServerAsync(reader, cancellationToken);
+
+            await using (var writer = await connection.BeginTextImportAsync(copyCommand, cancellationToken))
+            {
+                var line = new StringBuilder(512);
+                while (reader.Read())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    line.Clear();
+                    for (int i = 0; i < columns.Length; i++)
+                    {
+                        if (i > 0)
+                        {
+                            line.Append(',');
+                        }
+
+                        // An unquoted empty field is NULL in CSV mode; a quoted one is the empty
+                        // string. That mirrors SqlBulkCopy's handling of the reader's DBNull.
+                        if (!reader.IsDBNull(i))
+                        {
+                            line.Append('"').Append(reader.GetString(i).Replace("\"", "\"\"")).Append('"');
+                        }
+                    }
+
+                    line.Append('\n');
+                    await writer.WriteAsync(line.ToString());
+                }
+            }
 
             result.Success = true;
             result.RowsInserted = reader.RecordsRead;
