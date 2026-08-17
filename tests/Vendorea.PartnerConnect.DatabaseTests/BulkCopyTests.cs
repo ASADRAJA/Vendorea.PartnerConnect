@@ -109,6 +109,37 @@ public class BulkCopyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Copy_succeeds_for_a_record_with_only_required_fields_set()
+    {
+        // Four NOT NULL columns on this table - ProductDescription, ProductStatus,
+        // SellingUnitOfMeasure, StockNumberStripped - carried DEFAULT '' on SQL Server but do not
+        // on PostgreSQL, because that default lived in a migration rather than the model and was
+        // dropped when the chain was rebaselined.
+        //
+        // It is harmless, and this test is what says so rather than an argument. COPY names every
+        // non-primary-key property, so a value is always supplied and the default is never
+        // consulted; the entity's string.Empty initialisers keep those columns non-null. If either
+        // of those changed - a nullable property, or a narrower COPY column list - this fails.
+        await using var db = _pg.CreateContext();
+        var repo = new SprPriceRecordRepository(db);
+
+        var minimal = new SprPriceRecord
+        {
+            PriceFeedUploadId = _uploadId,
+            DealerId = 1,
+            StockNumber = "MINIMAL-1"
+        };
+
+        await repo.BulkInsertAsync(new[] { minimal });
+
+        var stored = await db.Set<SprPriceRecord>().SingleAsync(r => r.StockNumber == "MINIMAL-1");
+        stored.ProductDescription.Should().BeEmpty();
+        stored.ProductStatus.Should().BeEmpty();
+        stored.SellingUnitOfMeasure.Should().BeEmpty();
+        stored.StockNumberStripped.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Copy_of_an_empty_set_is_a_no_op()
     {
         await using var db = _pg.CreateContext();
