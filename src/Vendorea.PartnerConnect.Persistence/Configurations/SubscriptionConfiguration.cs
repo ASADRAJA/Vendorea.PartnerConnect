@@ -34,7 +34,7 @@ public class SubscriptionConfiguration : IEntityTypeConfiguration<Subscription>
 
         // Unique constraint - one active subscription per dealer
         builder.HasIndex(s => new { s.DealerId, s.Status })
-            .HasFilter("[Status] IN (0, 1)"); // Active or Trialing
+            .HasFilter("\"Status\" IN (0, 1)"); // Active or Trialing
 
         // Index on DealerId for lookups
         builder.HasIndex(s => s.DealerId);
@@ -47,7 +47,7 @@ public class SubscriptionConfiguration : IEntityTypeConfiguration<Subscription>
 
         // Index on TrialEndAt for trial expiration
         builder.HasIndex(s => s.TrialEndAt)
-            .HasFilter("[TrialEndAt] IS NOT NULL");
+            .HasFilter("\"TrialEndAt\" IS NOT NULL");
     }
 }
 
@@ -101,11 +101,11 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
         // Index on DueDate for payment reminders
         builder.HasIndex(i => i.DueDate)
-            .HasFilter("[DueDate] IS NOT NULL");
+            .HasFilter("\"DueDate\" IS NOT NULL");
 
         // Composite index for unpaid invoices
         builder.HasIndex(i => new { i.Status, i.DueDate })
-            .HasFilter("[Status] = 1"); // Open invoices
+            .HasFilter("\"Status\" = 1"); // Open invoices
     }
 }
 

@@ -16,7 +16,7 @@ public class SprProductSpecificationConfiguration : IEntityTypeConfiguration<Spr
             .IsRequired();
 
         builder.Property(e => e.SpecificationsHtml)
-            .HasColumnType("nvarchar(max)")
+            .HasColumnType("text")
             .IsRequired();
 
         // Index on parent

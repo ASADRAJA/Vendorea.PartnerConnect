@@ -59,7 +59,7 @@ public class SprProductContentConfiguration : IEntityTypeConfiguration<SprProduc
             .HasMaxLength(1000);
 
         builder.Property(e => e.MarketingText)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         // Manufacturer
         builder.Property(e => e.ManufacturerId)
@@ -124,7 +124,7 @@ public class SprProductContentConfiguration : IEntityTypeConfiguration<SprProduc
 
         // Search
         builder.Property(e => e.Keywords)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         // Relationships
         builder.HasOne(e => e.ContentUpload)
@@ -163,7 +163,7 @@ public class SprProductContentConfiguration : IEntityTypeConfiguration<SprProduc
         // Filtered: the fallback rows are null here by design and are ~39% of the table, so keeping
         // them out of the index makes it materially smaller for the price-to-content join.
         builder.HasIndex(e => new { e.StockNumberStripped, e.LocaleId })
-            .HasFilter("[StockNumberStripped] IS NOT NULL")
+            .HasFilter("\"StockNumberStripped\" IS NOT NULL")
             .HasDatabaseName("IX_SprProductContent_StockNumberStripped_Locale");
 
         builder.HasIndex(e => new { e.Upc, e.LocaleId })

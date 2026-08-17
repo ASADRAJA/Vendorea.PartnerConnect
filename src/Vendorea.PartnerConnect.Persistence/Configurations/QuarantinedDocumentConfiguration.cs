@@ -34,7 +34,7 @@ public class QuarantinedDocumentConfiguration : IEntityTypeConfiguration<Quarant
             .HasMaxLength(2000);
 
         builder.Property(x => x.ErrorDetails)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(x => x.ReviewedBy)
             .HasMaxLength(100);

@@ -135,7 +135,9 @@ public class OutboxRepository : IOutboxRepository
         // Calculate average delivery time for recent deliveries
         var avgDeliveryTime = await _context.OutboxMessages
             .Where(m => m.Status == OutboxMessageStatus.Delivered && m.DeliveredAt >= yesterday)
-            .Select(m => EF.Functions.DateDiffMillisecond(m.CreatedAt, m.DeliveredAt!.Value))
+            // SPIKE: EF.Functions.DateDiffMillisecond is SQL Server-only. Npgsql translates plain
+            // DateTime subtraction to an interval, so express it that way instead.
+            .Select(m => (m.DeliveredAt!.Value - m.CreatedAt).TotalMilliseconds)
             .DefaultIfEmpty(0)
             .AverageAsync(cancellationToken);
 

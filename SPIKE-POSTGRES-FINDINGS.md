@@ -1,0 +1,60 @@
+# PostgreSQL spike — PartnerConnect findings
+
+Target: PostgreSQL 18.4 (local). Branch: `spike/postgres`.
+Companion to Merchant360's spike; same recipe, same measurements.
+
+## Result
+
+- Solution builds against Npgsql: **0 compile errors**
+- Schema applies: **107 tables**
+- `SqlBulkCopy` → Npgsql binary `COPY` ported and measured:
+  **95,000 SprPriceRecords in 1,204 ms (78,904 rows/sec)**, all rows verified
+
+## Failures encountered, in order
+
+| # | Stage | Failure | Fix | Sites |
+|---|-------|---------|-----|-------|
+| 1 | compile | `Microsoft.Data` namespace missing — `SqlBulkCopy` | port to Npgsql binary `COPY` | 1 method |
+| 2 | compile | `DbFunctions` has no `DateDiffMillisecond` (SQL Server-only) | plain `DateTime` subtraction → `.TotalMilliseconds` | 1 |
+| 3 | schema | `type "nvarchar" does not exist` | `nvarchar(max)`→`text` | 18 |
+| 4 | schema | `syntax error at or near "["` | `HasFilter`: `[X]`→`"X"` (no booleans, so no `true`/`false` conversion) | 13 |
+
+## PartnerConnect vs Merchant360
+
+| | Merchant360 | PartnerConnect |
+|---|---|---|
+| Migrations | 154 | 43 |
+| DbSets | 183 | 104 |
+| `UseSqlServer` sites | 5 | **1** |
+| `HasFilter` | 57 | 13 |
+| Computed columns | 2 | 0 |
+| `HasDefaultValueSql` | 5 | 0 |
+| Column types | 30 | 18 |
+| Hangfire | yes | none |
+| `SqlBulkCopy` | none | **2 implementations** |
+| Tests | 1,233 InMemory | 167 InMemory |
+
+PC's EF surface is roughly half M360's, and EF is confined to the `Persistence` project —
+one provider call site instead of five. The bulk copy is the only thing that is genuinely
+harder, and one of the two is now done.
+
+## The bulk copy port
+
+`SprPriceRecordRepository.BulkInsertAsync` was already generic — it reflects over EF metadata
+to build a `DataTable` rather than hard-coding columns. The Npgsql version drops the
+`DataTable` entirely and streams straight into `BeginBinaryImportAsync`, so it is **shorter**
+than the original. The comment's original rationale (EF change detection is O(n²) and blows
+past App Service's 230 s limit) holds and is better served: 95k rows in 1.2 s.
+
+## Still outstanding
+
+1. **`SprCsvBulkImportService` (314 lines) + `SprCsvDataReader` (189 lines)** — the second
+   `SqlBulkCopy` path, importing SPR CSVs into the raw schema tables. Not ported. It still
+   compiles because `WorkerProcesses` keeps its own `Microsoft.Data.SqlClient` reference, but
+   it would fail at runtime. `SprCsvDataReader` is an `IDataReader` built for `SqlBulkCopy`;
+   Npgsql's COPY is write-based, so that abstraction does not carry over — though the CSV
+   parsing logic does.
+2. **Raw SQL T-SQL** across 3 files: 16 × `GETUTCDATE()`, 10 × `TOP 1`, 3 × `ISNULL(`,
+   2 × `sys.indexes`. All mechanical.
+3. Not exercised: running the API/workers, the 167 InMemory tests, case-insensitivity,
+   `DateTime.Kind` (M360 needed the legacy switch; PC untested).

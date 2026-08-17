@@ -20,7 +20,7 @@ public static class DependencyInjection
 
         services.AddDbContext<PartnerConnectDbContext>((sp, options) =>
         {
-            options.UseSqlServer(connectionString, sqlOptions =>
+            options.UseNpgsql(connectionString, sqlOptions =>
             {
                 sqlOptions.MigrationsAssembly(typeof(PartnerConnectDbContext).Assembly.FullName);
                 sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);

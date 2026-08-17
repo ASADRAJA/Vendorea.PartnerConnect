@@ -39,7 +39,7 @@ public class DocumentFingerprintConfiguration : IEntityTypeConfiguration<Documen
         // Index for cleanup of expired fingerprints
         builder.HasIndex(x => x.ExpiresAt)
             .HasDatabaseName("IX_DocumentFingerprints_ExpiresAt")
-            .HasFilter("[ExpiresAt] IS NOT NULL");
+            .HasFilter("\"ExpiresAt\" IS NOT NULL");
 
         // Index for lookup by original document
         builder.HasIndex(x => x.OriginalDocumentId)

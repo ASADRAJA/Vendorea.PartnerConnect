@@ -34,7 +34,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasConversion<int>();
 
         builder.Property(u => u.Preferences)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         // Unique constraint on Email
         builder.HasIndex(u => u.Email)
@@ -42,7 +42,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 
         // Index on ExternalId for identity provider lookups
         builder.HasIndex(u => u.ExternalId)
-            .HasFilter("[ExternalId] IS NOT NULL");
+            .HasFilter("\"ExternalId\" IS NOT NULL");
 
         // Index on DealerId for filtering
         builder.HasIndex(u => u.DealerId);
@@ -78,6 +78,6 @@ public class UserRoleConfiguration : IEntityTypeConfiguration<UserRole>
 
         // Index on ExpiresAt for cleanup
         builder.HasIndex(ur => ur.ExpiresAt)
-            .HasFilter("[ExpiresAt] IS NOT NULL");
+            .HasFilter("\"ExpiresAt\" IS NOT NULL");
     }
 }

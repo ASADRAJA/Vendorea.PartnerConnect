@@ -52,7 +52,7 @@ public class PartnerDocumentConfiguration : IEntityTypeConfiguration<PartnerDocu
             .HasMaxLength(50);
 
         builder.Property(e => e.ErrorDetails)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(e => e.CorrelationId)
             .HasMaxLength(100);

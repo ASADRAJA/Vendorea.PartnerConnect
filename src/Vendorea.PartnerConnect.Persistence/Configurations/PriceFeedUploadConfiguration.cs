@@ -59,7 +59,7 @@ public class PriceFeedUploadConfiguration : IEntityTypeConfiguration<PriceFeedUp
         // not occupy the unique slot and can therefore be retried.
         builder.HasIndex(e => new { e.DealerId, e.TradingPartnerId, e.FileHash })
             .IsUnique()
-            .HasFilter("[Status] IN ('Completed', 'PushedToMerchant360')");
+            .HasFilter("\"Status\" IN ('Completed', 'PushedToMerchant360')");
 
         // Relationship to TradingPartner
         builder.HasOne(e => e.TradingPartner)

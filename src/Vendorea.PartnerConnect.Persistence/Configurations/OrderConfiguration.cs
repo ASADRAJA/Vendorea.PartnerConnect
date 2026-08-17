@@ -102,7 +102,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         // Unique index for idempotency (scoped to organization)
         builder.HasIndex(e => new { e.OrganizationId, e.IdempotencyKey })
             .IsUnique()
-            .HasFilter("[IdempotencyKey] IS NOT NULL");
+            .HasFilter("\"IdempotencyKey\" IS NOT NULL");
 
         // Index for external order lookup
         builder.HasIndex(e => new { e.SourcePlatform, e.ExternalOrderId });

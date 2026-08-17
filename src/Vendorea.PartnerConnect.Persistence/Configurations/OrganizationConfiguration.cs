@@ -76,7 +76,7 @@ public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
         // Unique lookup for inbound org API-key auth (only rows that have a key set).
         builder.HasIndex(e => e.PortalApiKeyHash)
             .IsUnique()
-            .HasFilter("[PortalApiKeyHash] IS NOT NULL");
+            .HasFilter("\"PortalApiKeyHash\" IS NOT NULL");
 
         builder.HasMany(e => e.Tenants)
             .WithOne(e => e.Organization)

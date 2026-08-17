@@ -1,0 +1,21 @@
+<manifest>
+  <manifest_header>
+    <manifest_id>MAN-0001</manifest_id>
+    <ship_date>20260619</ship_date>
+    <carrier_name>UPS</carrier_name>
+    <scac_code>UPSN</scac_code>
+    <tracking_no>1Z999AA10123456784</tracking_no>
+    <total_weight>12.5</total_weight>
+    <weight_uom>LB</weight_uom>
+  </manifest_header>
+  <sales_order>
+    <customer_po_no>PO-REPLACE-ME</customer_po_no>
+    <so_no>38000001</so_no>
+    <soline_group>
+      <item_id>SKU-REPLACE</item_id>
+      <po_line_no>1</po_line_no>
+      <qty_shipped>5</qty_shipped>
+      <qty_ordered>5</qty_ordered>
+    </soline_group>
+  </sales_order>
+</manifest>

@@ -21,7 +21,7 @@ public class ContentSyncJobConfiguration : IEntityTypeConfiguration<ContentSyncJ
             .HasMaxLength(50);
 
         builder.Property(e => e.ErrorDetails)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(e => e.TriggerSource)
             .HasMaxLength(200);

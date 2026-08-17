@@ -1,0 +1,17 @@
+<Order EnterpriseCode="SPR" BuyerOrganizationCode="9999999.99" CustomerPONo="PO-REPLACE-ME" OrderNo="38000001">
+  <OrderLines>
+    <OrderLine PrimeLineNo="1">
+      <OrderLineTranQuantity TransactionalUOM="EA" OrderedQty="5" />
+      <Extn>
+        <EXTNSprOrderLineList>
+          <EXTNSprOrderLine AckStatus="A" />
+        </EXTNSprOrderLineList>
+      </Extn>
+    </OrderLine>
+  </OrderLines>
+  <Extn>
+    <EXTNSprOrderHeaderList>
+      <EXTNSprOrderHeader PoAckStatus="A" SprSoNum="38000001" />
+    </EXTNSprOrderHeaderList>
+  </Extn>
+</Order>

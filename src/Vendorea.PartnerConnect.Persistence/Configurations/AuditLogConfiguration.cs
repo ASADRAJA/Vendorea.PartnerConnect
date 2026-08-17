@@ -41,10 +41,10 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
             .HasMaxLength(500);
 
         builder.Property(a => a.OldValues)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(a => a.NewValues)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(a => a.ChangedProperties)
             .HasMaxLength(2000);

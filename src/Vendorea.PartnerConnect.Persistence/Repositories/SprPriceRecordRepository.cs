@@ -1,5 +1,5 @@
 using System.Data;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
@@ -326,11 +326,11 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             return;
         }
 
-        // Use SqlBulkCopy rather than EF AddRange/SaveChanges. EF tracks every entity and
-        // re-runs change detection over the whole (growing) set on each batch, which is
-        // O(n^2) and far too slow over Azure SQL's network latency for full price files —
-        // it blows past the App Service 230s request limit. SqlBulkCopy streams the rows
-        // directly and finishes in seconds.
+        // SPIKE: ported from SqlBulkCopy to Npgsql binary COPY. Same rationale as before -
+        // EF AddRange/SaveChanges tracks every entity and re-runs change detection over the
+        // whole growing set, which is O(n^2) and far too slow for full price files. Binary
+        // COPY streams rows straight into the table. Note this needs no DataTable at all,
+        // so it is actually less code than the SqlBulkCopy version.
         var entityType = _context.Model.FindEntityType(typeof(SprPriceRecord))
             ?? throw new InvalidOperationException("SprPriceRecord is not mapped.");
 
@@ -339,28 +339,12 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
             .Where(p => !p.IsPrimaryKey() && p.PropertyInfo != null)
             .ToList();
 
-        var table = new DataTable();
-        foreach (var p in properties)
-        {
-            var columnType = Nullable.GetUnderlyingType(p.ClrType) ?? p.ClrType;
-            table.Columns.Add(p.GetColumnName(), columnType);
-        }
-
-        foreach (var record in recordList)
-        {
-            var row = table.NewRow();
-            for (int c = 0; c < properties.Count; c++)
-            {
-                row[c] = properties[c].PropertyInfo!.GetValue(record) ?? DBNull.Value;
-            }
-            table.Rows.Add(row);
-        }
-
         var schema = entityType.GetSchema();
         var tableName = entityType.GetTableName()!;
-        var destination = schema != null ? $"[{schema}].[{tableName}]" : $"[{tableName}]";
+        var destination = schema != null ? $"\"{schema}\".\"{tableName}\"" : $"\"{tableName}\"";
+        var columnList = string.Join(", ", properties.Select(p => $"\"{p.GetColumnName()}\""));
 
-        var connection = (SqlConnection)_context.Database.GetDbConnection();
+        var connection = (NpgsqlConnection)_context.Database.GetDbConnection();
         var wasOpen = connection.State == ConnectionState.Open;
         if (!wasOpen)
         {
@@ -369,20 +353,27 @@ public class SprPriceRecordRepository : ISprPriceRecordRepository
 
         try
         {
-            using var bulkCopy = new SqlBulkCopy(connection)
-            {
-                DestinationTableName = destination,
-                BatchSize = 5000,
-                BulkCopyTimeout = 300
-            };
+            await using var writer = await connection.BeginBinaryImportAsync(
+                $"COPY {destination} ({columnList}) FROM STDIN (FORMAT BINARY)", cancellationToken);
 
-            // Map by name so column order in the DataTable doesn't matter.
-            foreach (DataColumn column in table.Columns)
+            foreach (var record in recordList)
             {
-                bulkCopy.ColumnMappings.Add(column.ColumnName, column.ColumnName);
+                await writer.StartRowAsync(cancellationToken);
+                foreach (var prop in properties)
+                {
+                    var value = prop.PropertyInfo!.GetValue(record);
+                    if (value is null)
+                    {
+                        await writer.WriteNullAsync(cancellationToken);
+                    }
+                    else
+                    {
+                        await writer.WriteAsync(value, cancellationToken);
+                    }
+                }
             }
 
-            await bulkCopy.WriteToServerAsync(table, cancellationToken);
+            await writer.CompleteAsync(cancellationToken);
         }
         finally
         {

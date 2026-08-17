@@ -50,16 +50,16 @@ public class EdiDocumentConfiguration : IEntityTypeConfiguration<EdiDocument>
             .HasMaxLength(100);
 
         builder.Property(e => e.CanonicalJson)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(e => e.RawEdiContent)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(e => e.BusinessReference)
             .HasMaxLength(100);
 
         builder.Property(e => e.ProcessingErrors)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(e => e.TotalAmount)
             .HasPrecision(18, 2);

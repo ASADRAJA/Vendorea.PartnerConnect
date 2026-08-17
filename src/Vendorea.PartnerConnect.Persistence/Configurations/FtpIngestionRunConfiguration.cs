@@ -27,7 +27,7 @@ public class FtpIngestionRunConfiguration : IEntityTypeConfiguration<FtpIngestio
             .HasConversion(
                 v => string.Join("|||", v),
                 v => v.Split("|||", StringSplitOptions.RemoveEmptyEntries).ToList())
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.HasIndex(r => r.StartedAt)
             .IsDescending();

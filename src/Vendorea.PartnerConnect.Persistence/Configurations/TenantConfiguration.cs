@@ -47,7 +47,7 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         // tenants without an ExternalId don't collide.
         builder.HasIndex(e => new { e.OrganizationId, e.ExternalId })
             .IsUnique()
-            .HasFilter("[ExternalId] IS NOT NULL");
+            .HasFilter("\"ExternalId\" IS NOT NULL");
 
         builder.HasIndex(e => e.OrganizationId);
 

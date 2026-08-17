@@ -17,7 +17,7 @@ public class PriceFeedBatchConfiguration : IEntityTypeConfiguration<PriceFeedBat
             .HasMaxLength(50);
 
         builder.Property(e => e.ErrorSummary)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.HasIndex(e => e.DealerId);
         builder.HasIndex(e => e.TradingPartnerId);

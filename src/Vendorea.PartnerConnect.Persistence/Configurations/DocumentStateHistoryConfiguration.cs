@@ -38,7 +38,7 @@ public class DocumentStateHistoryConfiguration : IEntityTypeConfiguration<Docume
             .HasMaxLength(100);
 
         builder.Property(x => x.Metadata)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(x => x.OccurredAt)
             .IsRequired();

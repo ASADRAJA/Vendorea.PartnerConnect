@@ -48,7 +48,7 @@ public class TenantPartnerAccountConfiguration : IEntityTypeConfiguration<Tenant
         // Account number uniqueness applies once a tenant exists (approved connections).
         builder.HasIndex(e => new { e.TenantId, e.TradingPartnerId, e.AccountNumber })
             .IsUnique()
-            .HasFilter("[TenantId] IS NOT NULL");
+            .HasFilter("\"TenantId\" IS NOT NULL");
 
         builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => e.TradingPartnerId);

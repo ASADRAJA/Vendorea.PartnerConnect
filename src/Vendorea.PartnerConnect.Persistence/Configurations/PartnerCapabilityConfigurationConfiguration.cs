@@ -17,7 +17,7 @@ public class PartnerCapabilityConfigurationConfiguration : IEntityTypeConfigurat
             .HasMaxLength(50);
 
         builder.Property(e => e.ConfigurationJson)
-            .HasColumnType("nvarchar(max)");
+            .HasColumnType("text");
 
         builder.Property(e => e.AdapterType)
             .HasMaxLength(200);

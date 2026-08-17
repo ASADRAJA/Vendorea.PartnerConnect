@@ -1,0 +1,24 @@
+<EZINV4>
+  <FileHeader>
+    <FileId>FILE-0001</FileId>
+    <FileDate>20260619</FileDate>
+    <VendorId>SPR</VendorId>
+    <VendorName>S.P. Richards</VendorName>
+  </FileHeader>
+  <Invoice>
+    <InvNo>INV-100001</InvNo>
+    <InvDate>20260619</InvDate>
+    <SOHeader>
+      <CustomerPONo>PO-REPLACE-ME</CustomerPONo>
+      <SONo>38000001</SONo>
+    </SOHeader>
+    <ItemDetail>
+      <ItemId>SKU-REPLACE</ItemId>
+      <Qty>5</Qty>
+      <UnitPrice>78.21</UnitPrice>
+    </ItemDetail>
+    <TaxAmount>0.00</TaxAmount>
+    <FreightAmount>0.00</FreightAmount>
+    <TotalAmount>391.05</TotalAmount>
+  </Invoice>
+</EZINV4>
