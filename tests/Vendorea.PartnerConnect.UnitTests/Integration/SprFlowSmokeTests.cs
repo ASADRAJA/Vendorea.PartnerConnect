@@ -25,6 +25,7 @@ namespace Vendorea.PartnerConnect.UnitTests.Integration;
 public class SprFlowSmokeTests
 {
     private const int ConnectionId = 1;
+    private const string BuyerOrgCode = "9999999.99";
     private const int DealerId = 7;
     private const int TradingPartnerId = 3;
 
@@ -193,7 +194,13 @@ public class SprFlowSmokeTests
     {
         var harness = CreateHarness(NewOrder("PO-OUT-1", OrderStatus.Submitted));
 
-        var result = await harness.Service.CreateOutboundOrderAsync(ConnectionId, ValidPurchaseOrder("PO-OUT-1"));
+        // BuyerOrganizationCode is per-tenant and supplied by the caller - in production
+        // SprOutboundOrderService passes order.TenantPartnerAccount.SpecialIdentifyingCode.
+        // The mocked TradingPartner carries no TransportConfigJson, so there is no partner-level
+        // fallback and the generator correctly rejects an order without one. Matches the account
+        // number the inbound fixtures in this file use.
+        var result = await harness.Service.CreateOutboundOrderAsync(
+            ConnectionId, ValidPurchaseOrder("PO-OUT-1"), BuyerOrgCode);
 
         // CreateOutboundOrderAsync only succeeds if the generated EZPO4 passes strict XSD validation.
         result.Success.Should().BeTrue(because: string.Join("; ", result.Errors));
