@@ -168,7 +168,12 @@ public class SprContentFileParser
     {
         if (string.IsNullOrWhiteSpace(value))
             return null;
-        return DateTime.TryParse(value, out var result) ? result : null;
+        // Npgsql maps DateTime to timestamptz and rejects any Kind other than Utc. TryParse
+        // yields Unspecified, so label the result rather than shifting it - the value SPR wrote
+        // is what SQL Server stored, and the port must not move it by the server's offset.
+        return DateTime.TryParse(value, out var result)
+            ? DateTime.SpecifyKind(result, DateTimeKind.Utc)
+            : null;
     }
 
     /// <summary>

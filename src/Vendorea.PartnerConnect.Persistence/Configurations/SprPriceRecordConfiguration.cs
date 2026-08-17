@@ -25,10 +25,12 @@ public class SprPriceRecordConfiguration : IEntityTypeConfiguration<SprPriceReco
 
         builder.Property(e => e.StockNumber)
             .HasMaxLength(50)
-            .IsRequired();
+            .IsRequired()
+            .HasColumnType("citext");
 
         builder.Property(e => e.StockNumberStripped)
-            .HasMaxLength(50);
+            .HasMaxLength(50)
+            .HasColumnType("citext");
 
         builder.Property(e => e.ProductDescription)
             .HasMaxLength(500);

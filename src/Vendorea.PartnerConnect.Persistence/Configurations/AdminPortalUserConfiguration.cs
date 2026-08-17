@@ -15,9 +15,9 @@ public class AdminPortalUserConfiguration : IEntityTypeConfiguration<AdminPortal
         builder.Property(u => u.Username)
             .IsRequired()
             .HasMaxLength(100)
-            // Logins were case-insensitive on SQL Server; keep that, and keep the unique
-            // index below rejecting case-variant duplicates.
-            .UseCollation("ci");
+            // Logins were case-insensitive on SQL Server. citext keeps that, and keeps the
+            // unique index below rejecting case-variant duplicates.
+            .HasColumnType("citext");
 
         builder.HasIndex(u => u.Username)
             .IsUnique();

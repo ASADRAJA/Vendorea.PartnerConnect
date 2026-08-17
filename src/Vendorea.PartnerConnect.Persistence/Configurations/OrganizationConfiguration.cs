@@ -14,7 +14,8 @@ public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
 
         builder.Property(e => e.Code)
             .HasMaxLength(50)
-            .IsRequired();
+            .IsRequired()
+            .HasColumnType("citext");
 
         builder.Property(e => e.Name)
             .HasMaxLength(200)

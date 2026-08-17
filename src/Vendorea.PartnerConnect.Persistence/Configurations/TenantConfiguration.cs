@@ -14,7 +14,8 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
 
         builder.Property(e => e.Code)
             .HasMaxLength(50)
-            .IsRequired();
+            .IsRequired()
+            .HasColumnType("citext");
 
         builder.Property(e => e.Name)
             .HasMaxLength(200)
@@ -37,7 +38,8 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasMaxLength(50);
 
         builder.Property(e => e.ExternalId)
-            .HasMaxLength(100);
+            .HasMaxLength(100)
+            .HasColumnType("citext");
 
         // Unique constraint: Code must be unique within organization
         builder.HasIndex(e => new { e.OrganizationId, e.Code })

@@ -397,12 +397,14 @@ public class SprEzinv4Parser : ISprEzinv4Parser
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out var date))
             {
-                return date;
+                // Unspecified Kind; Npgsql only accepts Utc for timestamptz. Labelled,
+                // not shifted, so the stored instant matches what SQL Server held.
+                return DateTime.SpecifyKind(date, DateTimeKind.Utc);
             }
         }
 
         if (DateTime.TryParse(dateStr, out var generalDate))
-            return generalDate;
+            return DateTime.SpecifyKind(generalDate, DateTimeKind.Utc);
 
         return null;
     }

@@ -21,7 +21,8 @@ public class ExternalDealerConfiguration : IEntityTypeConfiguration<ExternalDeal
 
         builder.Property(e => e.Email)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(200)
+            .HasColumnType("citext");
 
         builder.Property(e => e.Phone)
             .HasMaxLength(50);

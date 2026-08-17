@@ -22,6 +22,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.Persistence\Vendorea.PartnerConnect.Persistence.csproj" />
     <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.WorkerProcesses\Vendorea.PartnerConnect.WorkerProcesses.csproj" />
+    <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.Infrastructure\Vendorea.PartnerConnect.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Vendorea.PartnerConnect.PartnerAdapters\Vendorea.PartnerConnect.PartnerAdapters.csproj" />
   </ItemGroup>
 
 </Project>

@@ -147,12 +147,20 @@ public class PartnerConnectDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // SQL Server ran under a case-insensitive collation; PostgreSQL is case-sensitive by
-        // default and will not accept a non-deterministic collation as the database default.
-        // Declare one here and apply it per column to the identity fields that relied on the
-        // old behaviour. "und-u-ks-level2" is case-insensitive but accent-sensitive, matching
-        // SQL_Latin1_General_CP1_CI_AS. Requires PostgreSQL 18+ for LIKE support.
-        modelBuilder.HasCollation("ci", locale: "und-u-ks-level2", provider: "icu", deterministic: false);
+        // SQL Server ran under SQL_Latin1_General_CP1_CI_AS, so every string comparison was
+        // case-insensitive. PostgreSQL is case-sensitive by default and will not accept a
+        // non-deterministic collation as the database default, so the behaviour is restored per
+        // column with citext.
+        //
+        // citext rather than an ICU non-deterministic collation: collations only support LIKE
+        // from PostgreSQL 18, and pinning the whole design to a major version we do not control
+        // yet is not worth it. citext works on every supported release.
+        //
+        // Applied only to identifiers a person types or that key a unique index - see the
+        // HasColumnType("citext") calls in Configurations. Deliberately NOT applied to
+        // ApiKey.KeyHash: that is a hash compared for exact equality, and case-insensitivity
+        // there is an accident of the old collation rather than intended behaviour.
+        modelBuilder.HasPostgresExtension("citext");
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PartnerConnectDbContext).Assembly);
     }

@@ -14,7 +14,8 @@ public class TenantPartnerAccountConfiguration : IEntityTypeConfiguration<Tenant
 
         builder.Property(e => e.AccountNumber)
             .HasMaxLength(100)
-            .IsRequired();
+            .IsRequired()
+            .HasColumnType("citext");
 
         builder.Property(e => e.DisplayName)
             .HasMaxLength(200);

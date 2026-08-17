@@ -18,14 +18,14 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                 name: "spr");
 
             migrationBuilder.AlterDatabase()
-                .Annotation("Npgsql:CollationDefinition:ci", "und-u-ks-level2,und-u-ks-level2,icu,False");
+                .Annotation("Npgsql:PostgresExtension:citext", ",,");
 
             migrationBuilder.CreateTable(
                 name: "AdminPortalUsers",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Username = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, collation: "ci"),
+                    Username = table.Column<string>(type: "citext", maxLength: 100, nullable: false),
                     PasswordHash = table.Column<string>(type: "character varying(400)", maxLength: 400, nullable: false),
                     Role = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     DisplayName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
@@ -305,7 +305,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     CompanyName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    Email = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Email = table.Column<string>(type: "citext", maxLength: 200, nullable: false),
                     Phone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
                     Address = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     City = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
@@ -466,7 +466,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Code = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    Code = table.Column<string>(type: "citext", maxLength: 50, nullable: false),
                     Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Status = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     BillingPlanId = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
@@ -797,7 +797,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Code = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Code = table.Column<string>(type: "citext", maxLength: 100, nullable: false),
                     Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Description = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     IsSystemRole = table.Column<bool>(type: "boolean", nullable: false),
@@ -906,7 +906,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Code = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    Code = table.Column<string>(type: "citext", maxLength: 50, nullable: false),
                     Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     PartnerType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
@@ -1124,7 +1124,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     OrganizationId = table.Column<int>(type: "integer", nullable: false),
-                    Email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    Email = table.Column<string>(type: "citext", maxLength: 256, nullable: false),
                     PasswordHash = table.Column<string>(type: "character varying(400)", maxLength: 400, nullable: false),
                     DisplayName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Role = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
@@ -1185,7 +1185,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     OrganizationId = table.Column<int>(type: "integer", nullable: false),
-                    Code = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    Code = table.Column<string>(type: "citext", maxLength: 50, nullable: false),
                     Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Status = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     IsDefault = table.Column<bool>(type: "boolean", nullable: false),
@@ -1194,7 +1194,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     ContactEmail = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     ContactPhone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
                     Metadata = table.Column<string>(type: "text", nullable: true),
-                    ExternalId = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    ExternalId = table.Column<string>(type: "citext", maxLength: 100, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
@@ -1654,7 +1654,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     OrganizationId = table.Column<int>(type: "integer", nullable: true),
                     ExternalTenantId = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     TradingPartnerId = table.Column<int>(type: "integer", nullable: false),
-                    AccountNumber = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    AccountNumber = table.Column<string>(type: "citext", maxLength: 100, nullable: false),
                     ApprovalStatus = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     DecisionReason = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     DecidedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -2276,8 +2276,8 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     PriceFeedUploadId = table.Column<int>(type: "integer", nullable: false),
                     DealerId = table.Column<int>(type: "integer", nullable: false),
-                    StockNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                    StockNumberStripped = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    StockNumber = table.Column<string>(type: "citext", maxLength: 50, nullable: false),
+                    StockNumberStripped = table.Column<string>(type: "citext", maxLength: 50, nullable: false),
                     ProductDescription = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     ProductStatus = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
                     NewItemNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),

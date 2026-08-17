@@ -14,7 +14,8 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
 
         builder.Property(r => r.Code)
             .IsRequired()
-            .HasMaxLength(100);
+            .HasMaxLength(100)
+            .HasColumnType("citext");
 
         builder.Property(r => r.Name)
             .IsRequired()

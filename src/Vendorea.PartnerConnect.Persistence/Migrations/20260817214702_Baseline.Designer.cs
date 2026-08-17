@@ -12,7 +12,7 @@ using Vendorea.PartnerConnect.Persistence;
 namespace Vendorea.PartnerConnect.Persistence.Migrations
 {
     [DbContext(typeof(PartnerConnectDbContext))]
-    [Migration("20260817193234_Baseline")]
+    [Migration("20260817214702_Baseline")]
     partial class Baseline
     {
         /// <inheritdoc />
@@ -20,10 +20,10 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("Npgsql:CollationDefinition:ci", "und-u-ks-level2,und-u-ks-level2,icu,False")
                 .HasAnnotation("ProductVersion", "8.0.29")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "citext");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Billing.Models.BillingPlan", b =>
@@ -451,8 +451,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .UseCollation("ci");
+                        .HasColumnType("citext");
 
                     b.HasKey("Id");
 
@@ -1341,7 +1340,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("citext");
 
                     b.Property<DateTime?>("EmailVerifiedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2004,7 +2003,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("citext");
 
                     b.Property<int>("FailedLoginAttempts")
                         .HasColumnType("integer");
@@ -2195,7 +2194,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("citext");
 
                     b.Property<string>("ContactEmail")
                         .HasMaxLength(255)
@@ -3390,7 +3389,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasColumnType("citext");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -4372,12 +4371,12 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("StockNumber")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("citext");
 
                     b.Property<string>("StockNumberStripped")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("citext");
 
                     b.Property<string>("UnitedPrefixStockNumber")
                         .HasMaxLength(50)
@@ -7475,7 +7474,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("citext");
 
                     b.Property<string>("ContactEmail")
                         .HasMaxLength(255)
@@ -7498,7 +7497,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
 
                     b.Property<string>("ExternalId")
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasColumnType("citext");
 
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
@@ -7551,7 +7550,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("AccountNumber")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasColumnType("citext");
 
                     b.Property<string>("ApprovalStatus")
                         .IsRequired()
@@ -7654,7 +7653,7 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("citext");
 
                     b.Property<string>("ContactEmail")
                         .HasMaxLength(255)

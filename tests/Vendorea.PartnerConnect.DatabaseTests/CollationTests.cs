@@ -6,14 +6,19 @@ using Xunit;
 namespace Vendorea.PartnerConnect.DatabaseTests;
 
 /// <summary>
-/// SQL Server ran under SQL_Latin1_General_CP1_CI_AS, so string comparison was case-insensitive
-/// everywhere. PostgreSQL is case-sensitive by default and refuses a non-deterministic collation
-/// as the database default, so the behaviour has to be restored per column.
+/// SQL Server ran under SQL_Latin1_General_CP1_CI_AS, so every string comparison was
+/// case-insensitive. PostgreSQL is case-sensitive by default and will not take a
+/// non-deterministic collation as the database default, so the behaviour is restored per column
+/// with citext.
 /// </summary>
 /// <remarks>
-/// Without this, two things break silently: a login lookup stops matching on different casing,
-/// and - worse - a unique index stops rejecting case-variant duplicates, so you get two admin
-/// accounts differing only by case. Neither throws, so only a test catches it.
+/// citext rather than an ICU non-deterministic collation: collations only gained LIKE support in
+/// PostgreSQL 18, and citext works on every release, so the design does not depend on a version
+/// we might not control at every stage.
+///
+/// Two things break without this, and neither throws. A login lookup stops matching on different
+/// casing, and a unique index stops rejecting case-variant duplicates - so you get two
+/// administrator accounts differing only by case. Only a test catches either.
 /// </remarks>
 [Collection(PostgresCollection.Name)]
 public class CollationTests : IAsyncLifetime
@@ -43,20 +48,54 @@ public class CollationTests : IAsyncLifetime
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
-    public async Task Collation_is_non_deterministic_on_the_username_column()
+    public async Task Citext_extension_is_installed()
     {
         await using var db = _pg.CreateContext();
 
-        var collation = await db.Database.SqlQueryRaw<string>(
-            @"SELECT collation_name AS ""Value"" FROM information_schema.columns
-              WHERE table_name = 'AdminPortalUsers' AND column_name = 'Username'").FirstAsync();
+        var installed = await db.Database.SqlQueryRaw<long>(
+            @"SELECT count(*)::bigint AS ""Value"" FROM pg_extension WHERE extname = 'citext'").FirstAsync();
 
-        collation.Should().Be("ci");
+        installed.Should().Be(1, "the migration must create the extension before any citext column");
+    }
 
-        var deterministic = await db.Database.SqlQueryRaw<bool>(
-            @"SELECT collisdeterministic AS ""Value"" FROM pg_collation WHERE collname = 'ci'").FirstAsync();
+    [Theory]
+    // Identifiers a person types, or that key a unique index, and so relied on the old
+    // case-insensitive collation.
+    [InlineData("AdminPortalUsers", "Username")]
+    [InlineData("OrgPortalUsers", "Email")]
+    [InlineData("ExternalDealers", "Email")]
+    [InlineData("Organizations", "Code")]
+    [InlineData("TradingPartners", "Code")]
+    [InlineData("Tenants", "Code")]
+    [InlineData("Tenants", "ExternalId")]
+    [InlineData("TenantPartnerAccounts", "AccountNumber")]
+    [InlineData("Roles", "Code")]
+    [InlineData("SprPriceRecords", "StockNumber")]
+    [InlineData("SprPriceRecords", "StockNumberStripped")]
+    public async Task Identity_columns_are_citext(string table, string column)
+    {
+        await using var db = _pg.CreateContext();
 
-        deterministic.Should().BeFalse("a deterministic collation would still compare case-sensitively");
+        var type = await db.Database.SqlQueryRaw<string>(
+            $@"SELECT udt_name AS ""Value"" FROM information_schema.columns
+               WHERE table_name = '{table}' AND column_name = '{column}'").FirstAsync();
+
+        type.Should().Be("citext");
+    }
+
+    [Fact]
+    public async Task Key_hash_is_deliberately_left_case_sensitive()
+    {
+        // ApiKey.KeyHash was case-insensitive on SQL Server only as a side effect of the database
+        // collation. It is a hash compared for exact equality; making it case-insensitive would be
+        // propagating an accident, not preserving intent.
+        await using var db = _pg.CreateContext();
+
+        var type = await db.Database.SqlQueryRaw<string>(
+            @"SELECT udt_name AS ""Value"" FROM information_schema.columns
+              WHERE table_name = 'ApiKeys' AND column_name = 'KeyHash'").FirstAsync();
+
+        type.Should().NotBe("citext");
     }
 
     [Theory]
@@ -76,13 +115,11 @@ public class CollationTests : IAsyncLifetime
     [Fact]
     public async Task Like_matches_regardless_of_case()
     {
-        // PostgreSQL 18 is the first release to support LIKE against a non-deterministic
-        // collation; on 16 or 17 this throws and the design has to switch to citext.
         await using var db = _pg.CreateContext();
 
         var found = await db.AdminPortalUsers.CountAsync(u => u.Username.Contains("ADMIN"));
 
-        found.Should().Be(1);
+        found.Should().Be(1, "citext supports LIKE, which is why it was chosen over a collation");
     }
 
     [Fact]

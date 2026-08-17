@@ -14,7 +14,8 @@ public class OrgPortalUserConfiguration : IEntityTypeConfiguration<OrgPortalUser
 
         builder.Property(u => u.Email)
             .IsRequired()
-            .HasMaxLength(256);
+            .HasMaxLength(256)
+            .HasColumnType("citext");
 
         // Login is org-scoped: an email is unique within an organization.
         builder.HasIndex(u => new { u.OrganizationId, u.Email })

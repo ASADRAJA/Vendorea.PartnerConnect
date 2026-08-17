@@ -424,7 +424,8 @@ public class SprPriceFeedParser
             DateTimeStyles.None,
             out var result))
         {
-            return result;
+            // Unspecified Kind; Npgsql requires Utc for timestamptz. Labelled, not shifted.
+            return DateTime.SpecifyKind(result, DateTimeKind.Utc);
         }
 
         return null;

@@ -215,14 +215,19 @@ public class SprInventoryFeedParser
 
         DateTime? expectedRestockDate = null;
         var restockDateStr = GetValue(values, columnMap, Columns.ExpectedRestockDate);
-        if (DateTime.TryParse(restockDateStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var rd))
+        // AssumeUniversal on its own converts to local time and yields Kind=Local, which
+        // Npgsql rejects. AdjustToUniversal keeps it in UTC, and is a no-op wherever the
+        // host runs UTC - App Service does by default - so deployed values do not move.
+        if (DateTime.TryParse(restockDateStr, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var rd))
         {
             expectedRestockDate = rd;
         }
 
         DateTime? partnerUpdatedAt = null;
         var lastUpdatedStr = GetValue(values, columnMap, Columns.LastUpdated);
-        if (DateTime.TryParse(lastUpdatedStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var lu))
+        if (DateTime.TryParse(lastUpdatedStr, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var lu))
         {
             partnerUpdatedAt = lu;
         }
