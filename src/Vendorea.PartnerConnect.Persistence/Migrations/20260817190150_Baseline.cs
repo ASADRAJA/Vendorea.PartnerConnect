@@ -1483,10 +1483,10 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     PushedToM360At = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     M360PushStatus = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "None"),
                     M360PushClaimedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    M360PushTotalProducts = table.Column<int>(type: "integer", nullable: false),
-                    M360PushProductsPushed = table.Column<int>(type: "integer", nullable: false),
-                    M360PushCurrentBatch = table.Column<int>(type: "integer", nullable: false),
-                    M360PushTotalBatches = table.Column<int>(type: "integer", nullable: false),
+                    M360PushTotalProducts = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    M360PushProductsPushed = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    M360PushCurrentBatch = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    M360PushTotalBatches = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
                     M360PushError = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true)
                 },
                 constraints: table =>

@@ -70,9 +70,64 @@ Extrapolated, the full 5.3M-row `productattribute` import is roughly 40 seconds.
 **`Microsoft.Data.SqlClient` has been removed from `WorkerProcesses`. PartnerConnect now has
 no SQL Server dependency anywhere, and the solution builds clean.**
 
-## Still outstanding
+## The T-SQL port (SprRawToCanonicalTransformService) — DONE
 
-1. **Raw SQL T-SQL** across 3 files: 16 × `GETUTCDATE()`, 10 × `TOP 1`, 3 × `ISNULL(`,
-   2 × `sys.indexes`. All mechanical.
+I originally described this as "31 mechanical fragments". That was wrong. Reading the file,
+almost every SQL statement in it needed rewriting, and three things had no direct equivalent.
+The whole transform pipeline now runs on PostgreSQL, verified end to end.
+
+**Genuinely mechanical:** `GETUTCDATE()` → `now()` (16), `ISNULL` → `COALESCE`, `LEN` →
+`length`, `NVARCHAR(n)` → `VARCHAR(n)`, string `+` → `||`.
+
+**Positional, not substitution:** `SELECT TOP 1 … ` → `… LIMIT 1` (10 sites, all correlated
+subqueries spanning several lines).
+
+**Genuine rewrites:**
+| T-SQL | PostgreSQL |
+|---|---|
+| `UPDATE c SET c.X FROM T c JOIN …` | target named in `UPDATE`, join moved to `WHERE`, no alias on `SET` |
+| `WITH Hierarchy AS (… UNION ALL …)` | `WITH RECURSIVE` — required explicitly |
+| `OUTPUT INSERTED.Id` | `RETURNING "Id" AS "Value"` (aliased for EF's `SqlQueryRaw<int>`) |
+| `STRING_AGG(x, '') WITHIN GROUP (ORDER BY …)` | `string_agg(x, '' ORDER BY …)` — ordering moves inside |
+| `FORMAT(GETUTCDATE(),'yyyy.MM.dd')` | `to_char(now(),'YYYY.MM.DD')` |
+| `IF NOT EXISTS (… sys.indexes …) CREATE NONCLUSTERED INDEX` | `CREATE INDEX IF NOT EXISTS` — the check is deleted, not translated |
+| `TRY_CAST(x AS INT)` | **no equivalent** — regex-guarded `CASE` at 3 sites |
+
+**Plus the thing no grep would have found:** every EF-created table and column had to be
+quoted. Npgsql folds unquoted identifiers to lower case, so `SprProductContent` becomes
+`sprproductcontent` and does not exist. The `spr.*` raw tables are already lower case and
+were fine; every canonical one was not.
+
+Also removed a 27-line dead SQL block (`CS0219`, pre-existing on `main`).
+
+### Verified end to end
+
+Seeded the `spr.*` raw tables and ran the whole pipeline:
+
+```
+TransformCategoriesAsync     -> 3      FullPath "10/11/12"  (recursive CTE + UPDATE..FROM)
+TransformProductsAsync       -> 2      Sku SPR1001, fallback MPN-2  (10x TOP 1 -> LIMIT 1)
+TransformFeaturesAsync       -> 2      non-numeric sequenceno fell back to ROW_NUMBER
+TransformRelationshipsAsync  -> 3      1 bidirectional (boolean conversion correct)
+TransformSpecificationsAsync -> 1      HTML ordered + escaped identically
+```
+
+Spec HTML output, with the `'oops'` display-order sorting last exactly as `TRY_CAST` made it:
+`<table class="specs"><tr><th>Colour</th>…<tr><th>Weight</th>…</table>`
+
+### The subtle one: a lost column default
+
+`TransformProductsAsync` failed at first with a NOT NULL violation on
+`M360PushTotalProducts`. Not a translation bug — those four columns carried `DEFAULT ((0))`
+on SQL Server *only* because migration `20260709195214_AddM360ContentPushStatus` passed
+`defaultValue: 0` to `AddColumn`. That is a backfill value for existing rows, **not part of
+the model**, so rebaselining regenerated the schema without it. Fixed by declaring the
+defaults in `SprContentUploadConfiguration` so they survive future rebaselines.
+
+This is the category of problem that only running the code finds: the schema applied
+cleanly, the code compiled, and the defect was a missing default that production SQL
+silently depended on.
+
+## Still outstanding
 3. Not exercised: running the API/workers, the 167 InMemory tests, case-insensitivity,
    `DateTime.Kind` (M360 needed the legacy switch; PC untested).

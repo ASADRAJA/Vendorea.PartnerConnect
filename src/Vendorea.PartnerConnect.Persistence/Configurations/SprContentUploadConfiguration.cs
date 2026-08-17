@@ -57,6 +57,17 @@ public class SprContentUploadConfiguration : IEntityTypeConfiguration<SprContent
         builder.Property(e => e.M360PushError)
             .HasMaxLength(1024);
 
+        // These four carried DEFAULT ((0)) on SQL Server, but only because migration
+        // 20260709195214_AddM360ContentPushStatus passed defaultValue: 0 to AddColumn -
+        // that is a backfill value for existing rows, not part of the model. Rebaselining
+        // regenerates from the model, so the constraint vanished and inserts that omit
+        // these columns (SprRawToCanonicalTransformService) hit a NOT NULL violation.
+        // Declared in the model so the default survives any future rebaseline.
+        builder.Property(e => e.M360PushTotalProducts).HasDefaultValue(0);
+        builder.Property(e => e.M360PushProductsPushed).HasDefaultValue(0);
+        builder.Property(e => e.M360PushCurrentBatch).HasDefaultValue(0);
+        builder.Property(e => e.M360PushTotalBatches).HasDefaultValue(0);
+
         // Relationship to TradingPartner
         builder.HasOne(e => e.TradingPartner)
             .WithMany()

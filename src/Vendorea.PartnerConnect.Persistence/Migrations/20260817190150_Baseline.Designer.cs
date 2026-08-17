@@ -12,7 +12,7 @@ using Vendorea.PartnerConnect.Persistence;
 namespace Vendorea.PartnerConnect.Persistence.Migrations
 {
     [DbContext(typeof(PartnerConnectDbContext))]
-    [Migration("20260817174222_Baseline")]
+    [Migration("20260817190150_Baseline")]
     partial class Baseline
     {
         /// <inheritdoc />
@@ -3958,14 +3958,18 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("M360PushCurrentBatch")
-                        .HasColumnType("integer");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("M360PushError")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
 
                     b.Property<int>("M360PushProductsPushed")
-                        .HasColumnType("integer");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("M360PushStatus")
                         .IsRequired()
@@ -3975,10 +3979,14 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasDefaultValue("None");
 
                     b.Property<int>("M360PushTotalBatches")
-                        .HasColumnType("integer");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<int>("M360PushTotalProducts")
-                        .HasColumnType("integer");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<int>("NewProducts")
                         .HasColumnType("integer");
