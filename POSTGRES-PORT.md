@@ -1,7 +1,18 @@
-# PostgreSQL spike — PartnerConnect findings
+# PostgreSQL port — PartnerConnect
 
-Target: PostgreSQL 18.4 (local). Branch: `spike/postgres`.
-Companion to Merchant360's spike; same recipe, same measurements.
+Target: PostgreSQL 18. Branch: `feature/postgres-port`. `main` is untouched and still SQL Server.
+
+**Status: complete on this side.** The solution builds against Npgsql, the schema applies,
+both bulk-copy paths are ported, the raw-to-canonical transform is rewritten, the API and
+workers run clean, and 46 Testcontainers-backed tests cover what changed. What is left is
+environmental and shared with Merchant360.
+
+**For how to resume — rebuilding the databases, starting all five processes, the open
+decisions, the known traps — read `POSTGRES-PORT.md` in the Merchant360 repo.** That is the
+handoff document for both systems. This file is the per-change record for PartnerConnect:
+what broke, what it was changed to, and what the bulk paths measured.
+
+Everything below was written as the work happened and is kept as the detail behind that summary.
 
 ## Result
 
@@ -9,6 +20,10 @@ Companion to Merchant360's spike; same recipe, same measurements.
 - Schema applies: **107 tables**
 - `SqlBulkCopy` → Npgsql binary `COPY` ported and measured:
   **95,000 SprPriceRecords in 1,204 ms (78,904 rows/sec)**, all rows verified
+
+Both throughput figures in this file are same-machine. They have to be re-measured against a
+managed instance before they mean anything — the `SqlBulkCopy` these replaced existed because
+of network latency, which is exactly what a local test removes.
 
 ## Failures encountered, in order
 
