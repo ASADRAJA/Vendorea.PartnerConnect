@@ -191,3 +191,54 @@ Only `Username` is converted so far; the other identity columns (`Organizations.
 ## Still outstanding
 3. Not exercised: running the API/workers, the 167 InMemory tests, case-insensitivity,
    `DateTime.Kind` (M360 needed the legacy switch; PC untested).
+
+## Cross-system price push - verified end to end on PostgreSQL
+
+Both systems running on PostgreSQL, PartnerConnect pushing a real price feed into
+Merchant360 through the production path: OAuth2 client-credentials token, the batch
+endpoint, EFCore.BulkExtensions ingest, and the `JoinKey` generated column.
+
+Sequence exercised:
+
+1. PartnerConnect obtains a token from Merchant360's `/oauth2/token`
+   (`partnerconnect-service`, scope `merchant360.prices.write`).
+2. A `PriceFeedUpload` in `Completed` moves to `PushQueued`.
+3. `PriceFeedUploadProcessingWorker` claims it and calls `ProcessQueuedPushAsync`.
+4. `Merchant360ApiClient` POSTs to
+   `/api/v1/partner-connect/merchants/{merchantId}/prices/batch`.
+5. Merchant360 ingests into `PC_MerchantPrices`; the upload becomes
+   `PushedToMerchant360`.
+
+Verified in Merchant360's database afterwards:
+
+| Check | Result |
+|---|---|
+| Rows arrived | 2 of 2 |
+| `merchantId` resolved from PC `Tenant.ExternalId` | 3 (not PartnerConnect's DealerId) |
+| `JoinKey` computed | `XSYS-100-A` -> `XSYS100A`, `XSYS-200` -> `XSYS200` |
+| Effective cost | promo 19.75 beat reference 25.00; promo 0 fell back to 60.00 |
+| Sync log | Prices / Completed / 2 received / 2 created |
+
+Separately, pushing price and content batches that key on *different* stock numbers -
+priced as `HAM10501-5`, described as `HAM105015` - confirmed the two feeds still join
+through `JoinKey`, which is the reason that column exists.
+
+### Finding: the trading-partner id is an implicit contract, not a mapping
+
+The first push failed with `Trading partner 1 not found or inactive`.
+
+PartnerConnect sends its own `upload.TradingPartnerId`. Merchant360 matches on
+`tp.Id == request.TradingPartnerId` - its own primary key. So the contract silently
+requires the two systems to have assigned the *same integer* to the same partner.
+
+Merchant360's `TradingPartners.PartnerConnectId` column exists to hold PartnerConnect's
+id, and this lookup does not use it.
+
+It works today only because both databases happen to have SPR at id 1. It surfaced here
+because a fresh Merchant360 database assigned id 2. Nothing to do with PostgreSQL - the
+same mismatch would break the push on SQL Server the moment a new environment assigns
+ids in a different order, which is exactly what happens when standing up preprod or
+production.
+
+Worth resolving deliberately: either match on `PartnerConnectId`, or state the shared-id
+requirement in the contract and enforce it at onboarding.
