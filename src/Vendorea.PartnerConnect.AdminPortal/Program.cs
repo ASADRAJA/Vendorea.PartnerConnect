@@ -4,6 +4,30 @@ using Vendorea.PartnerConnect.AdminPortal.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Pin the culture before anything formats a value. The host's locale would otherwise decide it:
+// Ubuntu server defaults to LANG=C.UTF-8, which .NET maps to the invariant culture, whose
+// currency symbol is empty - money then renders with the generic sign rather than a dollar sign.
+// DefaultThreadCurrentCulture rather than RequestLocalization so background work is covered too.
+{
+    var cultureName = builder.Configuration["Localization:DefaultCulture"];
+    System.Globalization.CultureInfo culture;
+    try
+    {
+        culture = new System.Globalization.CultureInfo(
+            string.IsNullOrWhiteSpace(cultureName) ? "en-US" : cultureName);
+    }
+    catch (System.Globalization.CultureNotFoundException)
+    {
+        // A typo must not drop the process back to invariant and reintroduce the bug.
+        culture = new System.Globalization.CultureInfo("en-US");
+    }
+
+    System.Globalization.CultureInfo.DefaultThreadCurrentCulture = culture;
+    System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = culture;
+    System.Globalization.CultureInfo.CurrentCulture = culture;
+    System.Globalization.CultureInfo.CurrentUICulture = culture;
+}
+
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
