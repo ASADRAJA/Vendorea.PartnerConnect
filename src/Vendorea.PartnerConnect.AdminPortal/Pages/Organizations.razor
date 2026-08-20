@@ -257,6 +257,8 @@
                                 <small class="text-muted">
                                     PartnerConnect &rarr; org. Sent as X-Api-Key when PC calls the org's portal.
                                     Stored encrypted.
+                                    <strong>The organization owns this value</strong> &mdash; it must match what
+                                    they already expect. Setting it here does not change what they accept.
                                 </small>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -265,6 +267,8 @@
                                        placeholder="@(isEdit && selectedOrganization?.HasInboundApiKey == true ? "•••••• (leave blank to keep)" : "")" />
                                 <small class="text-muted">
                                     Org &rarr; PartnerConnect. The org presents this when calling PC.
+                                    <strong>PartnerConnect owns this value</strong> &mdash; whatever you set here
+                                    takes effect immediately, and the org must be told to use it.
                                     Stored as a hash, so it cannot be shown again &mdash; record it now.
                                 </small>
                             </div>
