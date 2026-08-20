@@ -51,16 +51,27 @@ public class Organization
     public string? PortalBaseUrl { get; set; }
 
     /// <summary>
-    /// Encrypted API key PartnerConnect sends (X-Api-Key) when calling the org's portal.
-    /// Stored encrypted at rest; decrypt via ICredentialProtector before use.
-    /// The SAME key authenticates the org's INBOUND calls to PartnerConnect (org-facing API).
+    /// OUTBOUND key. Sent as X-Api-Key when PartnerConnect calls the org's portal.
     /// </summary>
+    /// <remarks>
+    /// Encrypted rather than hashed because PartnerConnect has to present the plaintext later;
+    /// decrypt via ICredentialProtector before use.
+    ///
+    /// This is a different secret from <see cref="PortalApiKeyHash"/>. The two were once derived
+    /// from a single admin field, which forced both directions to share one key and let either
+    /// side present the other's credential.
+    /// </remarks>
     public string? PortalApiKey { get; set; }
 
     /// <summary>
-    /// SHA-256 hash (hex) of the org's plaintext API key, used to resolve the org from an inbound
-    /// X-Api-Key without decrypting every org's key. Set alongside <see cref="PortalApiKey"/>.
+    /// INBOUND key, as a SHA-256 hex hash. The org presents the plaintext as X-Api-Key when
+    /// calling PartnerConnect's org-facing API.
     /// </summary>
+    /// <remarks>
+    /// Hashed rather than encrypted because it is only ever compared, never replayed, and the
+    /// hash is what the unique index resolves an org by. The plaintext is therefore unrecoverable
+    /// once saved — rotating it means issuing a new one.
+    /// </remarks>
     public string? PortalApiKeyHash { get; set; }
 
     /// <summary>

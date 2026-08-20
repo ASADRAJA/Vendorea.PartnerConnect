@@ -244,16 +244,36 @@
                     @if (form.ExternalPortalEnabled)
                     {
                         <div class="row">
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-12 mb-3">
                                 <label class="form-label">Portal Base URL <span class="text-danger">*</span></label>
                                 <input type="url" class="form-control" @bind="form.PortalBaseUrl" placeholder="https://..." />
                             </div>
+                        </div>
+                        <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Portal API Key</label>
+                                <label class="form-label">Outbound API Key</label>
                                 <input type="password" class="form-control" @bind="form.PortalApiKey"
                                        placeholder="@(isEdit && selectedOrganization?.HasPortalApiKey == true ? "•••••• (leave blank to keep)" : "")" />
-                                <small class="text-muted">Sent as X-Api-Key when PC calls the org's portal. Stored encrypted.</small>
+                                <small class="text-muted">
+                                    PartnerConnect &rarr; org. Sent as X-Api-Key when PC calls the org's portal.
+                                    Stored encrypted.
+                                </small>
                             </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Inbound API Key</label>
+                                <input type="password" class="form-control" @bind="form.InboundApiKey"
+                                       placeholder="@(isEdit && selectedOrganization?.HasInboundApiKey == true ? "•••••• (leave blank to keep)" : "")" />
+                                <small class="text-muted">
+                                    Org &rarr; PartnerConnect. The org presents this when calling PC.
+                                    Stored as a hash, so it cannot be shown again &mdash; record it now.
+                                </small>
+                            </div>
+                        </div>
+                        <div class="alert alert-light border small mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            These are two separate secrets, one per direction. Leaving either blank on an
+                            existing organization keeps the stored key, so one can be rotated without
+                            disturbing the other.
                         </div>
                     }
                 </div>
@@ -383,7 +403,8 @@
             IsMultiTenant = org.IsMultiTenant,
             ExternalPortalEnabled = org.ExternalPortalEnabled,
             PortalBaseUrl = org.PortalBaseUrl,
-            PortalApiKey = null
+            PortalApiKey = null,
+            InboundApiKey = null
         };
         selectedBillingPlanId = org.BillingPlanId?.ToString() ?? "";
         selectedPartnerIds.Clear();
@@ -432,6 +453,7 @@
                     ExternalPortalEnabled = form.ExternalPortalEnabled,
                     PortalBaseUrl = form.PortalBaseUrl,
                     PortalApiKey = string.IsNullOrEmpty(form.PortalApiKey) ? null : form.PortalApiKey,
+                    InboundApiKey = string.IsNullOrEmpty(form.InboundApiKey) ? null : form.InboundApiKey,
                     TradingPartnerIds = selectedPartnerIds.ToList()
                 };
                 if (await Api.UpdateOrganizationAsync(selectedOrganization.Id, req))
@@ -453,6 +475,7 @@
                     ExternalPortalEnabled = form.ExternalPortalEnabled,
                     PortalBaseUrl = form.PortalBaseUrl,
                     PortalApiKey = form.PortalApiKey,
+                    InboundApiKey = form.InboundApiKey,
                     TradingPartnerIds = selectedPartnerIds.ToList()
                 };
                 if (await Api.CreateOrganizationAsync(req) != null)
@@ -516,5 +539,6 @@
         public bool ExternalPortalEnabled { get; set; }
         public string? PortalBaseUrl { get; set; }
         public string? PortalApiKey { get; set; }
+        public string? InboundApiKey { get; set; }
     }
 }

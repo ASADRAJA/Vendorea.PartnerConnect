@@ -552,6 +552,7 @@ public class OrganizationDto
     public bool ExternalPortalEnabled { get; set; }
     public string? PortalBaseUrl { get; set; }
     public bool HasPortalApiKey { get; set; }
+    public bool HasInboundApiKey { get; set; }
     public int TenantCount { get; set; }
     public List<int> TradingPartnerIds { get; set; } = new();
     public DateTime CreatedAt { get; set; }
@@ -582,6 +583,7 @@ public class CreateOrganizationRequest
     public bool ExternalPortalEnabled { get; set; }
     public string? PortalBaseUrl { get; set; }
     public string? PortalApiKey { get; set; }
+    public string? InboundApiKey { get; set; }
     public List<int> TradingPartnerIds { get; set; } = new();
 }
 
@@ -595,6 +597,7 @@ public class UpdateOrganizationRequest
     public bool ExternalPortalEnabled { get; set; }
     public string? PortalBaseUrl { get; set; }
     public string? PortalApiKey { get; set; }
+    public string? InboundApiKey { get; set; }
     public List<int> TradingPartnerIds { get; set; } = new();
 }
 

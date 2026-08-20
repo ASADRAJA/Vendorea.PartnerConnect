@@ -129,9 +129,11 @@ public class AdminOrganizationsController : ControllerBase
             IsMultiTenant = request.IsMultiTenant,
             ExternalPortalEnabled = request.ExternalPortalEnabled,
             PortalBaseUrl = request.ExternalPortalEnabled ? request.PortalBaseUrl : null,
+            // Outbound: encrypted, because PartnerConnect has to present it verbatim later.
             PortalApiKey = request.ExternalPortalEnabled ? _credentialProtector.Protect(request.PortalApiKey) : null,
-            // Hash of the plaintext key for inbound org-facing auth (set alongside the encrypted key).
-            PortalApiKeyHash = request.ExternalPortalEnabled ? ApiKeyHasher.Hash(request.PortalApiKey) : null,
+            // Inbound: hashed, because it is only ever compared, never replayed. Derived from its
+            // own field - deriving both from one input made the two directions share a secret.
+            PortalApiKeyHash = request.ExternalPortalEnabled ? ApiKeyHasher.Hash(request.InboundApiKey) : null,
             Status = OrganizationStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
@@ -240,11 +242,17 @@ public class AdminOrganizationsController : ControllerBase
             org.PortalApiKey = null;
             org.PortalApiKeyHash = null;
         }
-        else if (!string.IsNullOrEmpty(request.PortalApiKey))
+        else
         {
-            // Only re-encrypt when a new key is supplied; otherwise keep the stored one.
-            org.PortalApiKey = _credentialProtector.Protect(request.PortalApiKey);
-            org.PortalApiKeyHash = ApiKeyHasher.Hash(request.PortalApiKey);
+            // Each direction is checked independently. Blank means "keep what is stored", so an
+            // operator can rotate one key without being forced to retype - or silently reset -
+            // the other. When they shared a field, saving the form to change the outbound key
+            // also rewrote the inbound hash and broke whoever was calling in.
+            if (!string.IsNullOrEmpty(request.PortalApiKey))
+                org.PortalApiKey = _credentialProtector.Protect(request.PortalApiKey);
+
+            if (!string.IsNullOrEmpty(request.InboundApiKey))
+                org.PortalApiKeyHash = ApiKeyHasher.Hash(request.InboundApiKey);
         }
 
         await _organizationRepository.UpdateAsync(org, cancellationToken);
@@ -354,6 +362,7 @@ public class AdminOrganizationsController : ControllerBase
             ExternalPortalEnabled = org.ExternalPortalEnabled,
             PortalBaseUrl = org.PortalBaseUrl,
             HasPortalApiKey = !string.IsNullOrEmpty(org.PortalApiKey),
+            HasInboundApiKey = !string.IsNullOrEmpty(org.PortalApiKeyHash),
             TenantCount = tenantCount,
             TradingPartnerIds = org.Partners?.Select(p => p.TradingPartnerId).ToList() ?? new List<int>(),
             CreatedAt = org.CreatedAt,
@@ -376,7 +385,11 @@ public class OrganizationDto
     public bool IsMultiTenant { get; set; }
     public bool ExternalPortalEnabled { get; set; }
     public string? PortalBaseUrl { get; set; }
+    /// <summary>Whether an outbound key is stored. The key itself is never returned.</summary>
     public bool HasPortalApiKey { get; set; }
+
+    /// <summary>Whether an inbound key is stored. Only its hash exists, so it cannot be shown.</summary>
+    public bool HasInboundApiKey { get; set; }
     public int TenantCount { get; set; }
     public List<int> TradingPartnerIds { get; set; } = new();
     public DateTime CreatedAt { get; set; }
@@ -413,7 +426,20 @@ public class CreateOrganizationRequest
     public bool IsMultiTenant { get; set; }
     public bool ExternalPortalEnabled { get; set; }
     public string? PortalBaseUrl { get; set; }
+
+    /// <summary>Outbound: sent as X-Api-Key when PartnerConnect calls the org's portal.</summary>
     public string? PortalApiKey { get; set; }
+
+    /// <summary>
+    /// Inbound: the key the org presents when calling PartnerConnect. Stored only as a hash.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="PortalApiKey"/> on purpose. Both used to be derived from one
+    /// input, which forced the two directions to share a secret and let either side present the
+    /// other's credential.
+    /// </remarks>
+    public string? InboundApiKey { get; set; }
+
     public List<int>? TradingPartnerIds { get; set; }
 }
 
@@ -426,7 +452,13 @@ public class UpdateOrganizationRequest
     public string? PaymentTerms { get; set; }
     public bool ExternalPortalEnabled { get; set; }
     public string? PortalBaseUrl { get; set; }
+
+    /// <summary>Outbound key. Null or blank leaves the stored one untouched.</summary>
     public string? PortalApiKey { get; set; }
+
+    /// <summary>Inbound key. Null or blank leaves the stored hash untouched.</summary>
+    public string? InboundApiKey { get; set; }
+
     public List<int>? TradingPartnerIds { get; set; }
 }
 
