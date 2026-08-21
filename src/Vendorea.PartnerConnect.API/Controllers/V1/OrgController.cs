@@ -1538,7 +1538,14 @@ public class OrgController : ControllerBase
                 : c.ApprovalStatus.ToString(),
             IsActive = c.IsActive && !reportPending,
             PcOrganizationId = c.OrganizationId,
-            PcMerchantId = c.TenantId,
+            // The organization's own id for this tenant, NOT PartnerConnect's Tenants.Id. This
+            // reported c.TenantId, which is the local primary key - and order intake resolves the
+            // merchant by Tenants.ExternalId, so the two could only agree by coincidence and
+            // supplier order submission failed with "Merchant/tenant not found". ExternalTenantId
+            // on this same connection is the value intake actually matches.
+            PcMerchantId = int.TryParse(c.ExternalTenantId, out var externalMerchantId)
+                ? externalMerchantId
+                : null,
             CreatedAt = c.CreatedAt,
             DecidedAt = c.DecidedAt
         };
@@ -1751,6 +1758,10 @@ public class OrgConnectionDto
     /// is non-null whenever <see cref="ApprovalStatus"/> is approved/active. Wire name: <c>pcMerchantID</c>.
     /// </summary>
     [JsonPropertyName("pcMerchantID")]
+    /// <summary>
+    /// The organization's own identifier for the tenant (Tenant.ExternalId), which is what
+    /// supplier order intake matches on. Not PartnerConnect's Tenants.Id.
+    /// </summary>
     public int? PcMerchantId { get; set; }
 
     public DateTime CreatedAt { get; set; }
