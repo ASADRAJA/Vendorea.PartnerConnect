@@ -114,36 +114,70 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
     {
         try
         {
-            // Find Freight Rate uses the <input>-wrapped (rpc/encoded struct) style with its own field names.
+            // FindFreightRates uses the <input>-wrapped (rpc/encoded struct) style. Field names below
+            // are taken from the service's own WSDL (FindFreightRateInputs / FindFreightRateRow at
+            // {host}/sprws/FindFreightRates.php?wsdl) rather than from the service's documentation -
+            // an earlier implementation guessed at both the service name and most of the field names,
+            // and none of them matched, so every call 404'd before anyone saw a response.
+            // ORDER IS SIGNIFICANT - this service decodes the struct POSITIONALLY and ignores the
+            // element names entirely. Verified against the live test endpoint by sending distinct
+            // marker values and reading back the parameter dump it echoes: every value lands in the
+            // slot matching its position, whatever the element is called. Reordering these lines
+            // silently changes which value SPR treats as the weight, the ZIP, or the carrier.
+            //
+            // The published WSDL is not a reliable guide here. It lists neither CtnWeight nor
+            // FrghtClass, and names two fields CarrierId / ServiceLevel that the running service
+            // reports as ReqCarrier / ReqSrvcLevel. The names below follow the deployed service, so
+            // they read correctly if SPR ever switches to name-based decoding.
+            //
+            // CtnWeight and FrghtClass are sent empty: the service accepts them so, and neither has
+            // a documented meaning we can supply a value for.
             var sb = new StringBuilder();
-            AppendTypedAuthFields(sb, config, action: "F");
+            AppendTypedAuthFields(sb, config, action: "F");   // GroupCode, UserID, Password, Action
             sb.Append(TypedField("CustNumber", config.CustNumber));
-            sb.Append(TypedField("Warehouse", query.ShipFromDc.ToString("D3")));
-            sb.Append(TypedField("State", query.State));
-            sb.Append(TypedField("ZipCode", query.PostalCode));
-            sb.Append(TypedField("Weight", query.Weight.ToString(CultureInfo.InvariantCulture)));
-            sb.Append(TypedField("Carrier", query.Carrier));
-            sb.Append(TypedField("Service", query.ServiceLevel));
+            sb.Append(TypedField("ShipFromDc", query.ShipFromDc.ToString("D3")));
+            sb.Append(TypedField("StateCode", query.State));
+            sb.Append(TypedField("PostalCode", query.PostalCode));
+            // TotWeight is Dec 10.2 per the developer's guide, and its example sends "1.00".
+            sb.Append(TypedField("TotWeight", query.Weight.ToString("0.00", CultureInfo.InvariantCulture)));
+            sb.Append(TypedField("CtnWeight", null));
+            // ReqCarrier and ReqSrvcLevel are both required ("Yes / One"), so they cannot be sent
+            // empty - that is what the service 500s on. Both reference tables define a dealer-default
+            // code for callers with no preference, which is what asking for every available rate
+            // means: Table 5 "SPR" = Dealer Default Carrier, Table 4 "00" = Dealer Default Level of
+            // Service. A caller that does specify one still wins.
+            sb.Append(TypedField("ReqCarrier", string.IsNullOrWhiteSpace(query.Carrier) ? "SPR" : query.Carrier));
+            sb.Append(TypedField("FrghtClass", null));
+            sb.Append(TypedField("ReqSrvcLevel", string.IsNullOrWhiteSpace(query.ServiceLevel) ? "00" : query.ServiceLevel));
             sb.Append(TypedField("Residential", query.Residential ? "Y" : "N"));
 
-            var envelope = BuildInputEnvelope("FindFreightRate", MethodNs("FindFreightRate"), sb.ToString());
-            var xml = await PostAsync(config, "FindFreightRate", $"{SoapAction("FindFreightRate")}#FindFreightRate", envelope, cancellationToken);
+            // Operation is plural, input struct is singular - SPR's own naming, per the WSDL.
+            var envelope = BuildInputEnvelope(
+                "FindFreightRates", MethodNs("FindFreightRates"), sb.ToString(), inputTypeName: "FindFreightRateInputs");
+            var xml = await PostAsync(config, "FindFreightRates", $"{SoapAction("FindFreightRates")}#FindFreightRates", envelope, cancellationToken);
 
             var doc = XDocument.Parse(xml);
             var result = NewFreightResult(doc);
+            // Rows arrive as the <item> children NuSOAP emits for ResultsRows (SOAP-ENC:Array).
             foreach (var item in doc.Descendants().Where(e => e.Name.LocalName == "item"))
             {
+                // Two spellings are accepted per row because the sources disagree and we cannot yet
+                // see a real response: the developer's guide response TABLE and the live WSDL both
+                // say DcNumber / CarrierId / FrghtRate / NumCartons, while the guide's own worked
+                // EXAMPLE in Appendix B shows WhseOut / CarrOut / Rate / NumberCartons. Reading
+                // either costs nothing and avoids silently returning rates with no price attached.
                 result.Rates.Add(new SprFreightRate
                 {
-                    ShipFromDc = Value(item, "WhseOut"),
-                    Carrier = Value(item, "CarrOut"),
+                    ShipFromDc = ValueAny(item, "DcNumber", "WhseOut"),
+                    Carrier = ValueAny(item, "CarrierId", "CarrOut"),
                     CarrierDescription = Value(item, "CarrierDesc"),
                     ShipVia = Value(item, "ShipVia"),
-                    Rate = ParseDecimal(Value(item, "Rate")),
+                    Rate = ParseDecimal(ValueAny(item, "FrghtRate", "Rate")),
                     DeliveryDays = ParseInt(Value(item, "DeliveryDays")),
-                    NumberOfCartons = ParseInt(Value(item, "NumberCartons")),
-                    ServiceLevel = Value(item, "SrvLevOut"),
-                    Residential = string.Equals(Value(item, "ResAdrInd"), "Y", StringComparison.OrdinalIgnoreCase)
+                    NumberOfCartons = ParseInt(ValueAny(item, "NumCartons", "NumberCartons")),
+                    ServiceLevel = ValueAny(item, "ServiceLevel", "SrvLevOut"),
+                    Residential = string.Equals(
+                        ValueAny(item, "Residential", "ResAdrInd"), "Y", StringComparison.OrdinalIgnoreCase)
                 });
             }
             return result;
@@ -339,12 +373,18 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
     // with RtnStatus 0009 "Invalid Service Action Request Code." This exactly reproduces SPR's
     // verified working request (2026-06-30), including the empty <soapenv:Header/> and the method
     // element's soapenv:encodingStyle marker.
-    private static string BuildInputEnvelope(string method, string methodNs, string fieldsXml) => $"""
+    /// <param name="inputTypeName">
+    /// The struct type declared in the service's WSDL. Usually "{method}Inputs", but not always:
+    /// FindFreightRates declares its operation in the plural and its types in the singular
+    /// ("FindFreightRateInputs"), so the caller can state the type when it does not follow from the
+    /// operation name.
+    /// </param>
+    private static string BuildInputEnvelope(string method, string methodNs, string fieldsXml, string? inputTypeName = null) => $"""
         <?xml version="1.0" encoding="UTF-8"?>
         <soapenv:Envelope xmlns:soapenv="{SoapNs}" xmlns:xsi="{XsiNs}" xmlns:xsd="{XsdNs}" xmlns:svc="{methodNs}">
           <soapenv:Header/>
           <soapenv:Body>
-            <svc:{method} soapenv:encodingStyle="{SoapEncodingNs}"><input xsi:type="svc:{method}Inputs">{fieldsXml}</input></svc:{method}>
+            <svc:{method} soapenv:encodingStyle="{SoapEncodingNs}"><input xsi:type="svc:{inputTypeName ?? method + "Inputs"}">{fieldsXml}</input></svc:{method}>
           </soapenv:Body>
         </soapenv:Envelope>
         """;
@@ -379,10 +419,44 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
 
         var response = await _httpClient.SendAsync(request, cts.Token);
         var content = await response.Content.ReadAsStringAsync(cts.Token);
-        if (!response.IsSuccessStatusCode)
-            _logger.LogWarning("SPR {Service} returned HTTP {Status}", service, (int)response.StatusCode);
         _logger.LogDebug("SPR {Service} raw response: {Body}", service, content);
+
+        // Fail on the status rather than handing the body to the XML parser.
+        //
+        // This used to log a warning and return the body regardless, so an HTTP error became an
+        // XmlException from XDocument.Parse. A 404 whose body was the sixteen characters
+        // "File not found." surfaced to the caller as "Data at the root level is invalid. Line 1,
+        // position 1." - which describes the parser's predicament rather than the actual problem,
+        // and cost a long investigation to get back to "that URL does not exist".
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning(
+                "SPR {Service} returned HTTP {Status} for {Url}. Body: {Body}",
+                service, (int)response.StatusCode, url, Truncate(content, 300));
+
+            throw new SprWebServiceException(
+                $"SPR {service} returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}) for {url}.");
+        }
+
+        // A 200 carrying something that is not XML is the same class of problem: an error page, a
+        // redirect body, or a maintenance notice. Say so plainly instead of failing in the parser.
+        if (!content.TrimStart().StartsWith('<'))
+        {
+            _logger.LogWarning(
+                "SPR {Service} returned a non-XML body from {Url}: {Body}", service, url, Truncate(content, 300));
+
+            throw new SprWebServiceException(
+                $"SPR {service} returned a non-XML response from {url}: {Truncate(content, 200)}");
+        }
+
         return content;
+    }
+
+    private static string Truncate(string? value, int max)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        var trimmed = value.Trim();
+        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
     }
 
     // The rpc/encoded operation namespace (and SOAPAction) is the canonical prod-host WSDL target
@@ -396,6 +470,17 @@ public class SprInteractiveServicesClient : ISprInteractiveServices
         var fault = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Fault");
         if (fault is null) return null;
         return Value(fault, "faultstring") ?? "SOAP fault";
+    }
+
+    /// <summary>First of <paramref name="localNames"/> present on the element, or null.</summary>
+    private static string? ValueAny(XElement? root, params string[] localNames)
+    {
+        foreach (var name in localNames)
+        {
+            var v = Value(root, name);
+            if (v is not null) return v;
+        }
+        return null;
     }
 
     private static string? Value(XElement? root, string localName)

@@ -1,6 +1,21 @@
 namespace Vendorea.PartnerConnect.PartnerAdapters.SPR.Soap;
 
 /// <summary>
+/// A transport-level failure talking to an SPR interactive web service: an HTTP error status, or a
+/// 200 whose body is not XML.
+/// </summary>
+/// <remarks>
+/// Distinct from a SOAP fault or an RtnStatus the service itself returns - those mean SPR understood
+/// the request and declined it, and are carried on the result object. This means the request never
+/// reached a working service, which is a different thing for an operator to act on.
+/// </remarks>
+public class SprWebServiceException : Exception
+{
+    public SprWebServiceException(string message) : base(message) { }
+    public SprWebServiceException(string message, Exception inner) : base(message, inner) { }
+}
+
+/// <summary>
 /// Result of a stock-check family call (Stock Check / Dealer Stock Check / Quick Check Plus).
 /// Dealer pricing fields are populated only when the service returns them (dealer / quick-check).
 /// </summary>
