@@ -303,7 +303,8 @@ public class OrgController : ControllerBase
                 request.SpecialIdentifyingCode,
                 request.Notes,
                 request.ConfirmationFields,
-                request.BusinessName),
+                request.BusinessName,
+                request.ContactEmail),
             cancellationToken);
 
         if (!result.Success)
@@ -1739,6 +1740,9 @@ public class OrgConnectionRequest
 
     public string? ContactFirstName { get; set; }
     public string? ContactLastName { get; set; }
+
+    /// <summary>How to reach the contact. Without it the tenant has a name but no address.</summary>
+    public string? ContactEmail { get; set; }
     public string? SpecialIdentifyingCode { get; set; }
     public string? Notes { get; set; }
     public Dictionary<string, string>? ConfirmationFields { get; set; }

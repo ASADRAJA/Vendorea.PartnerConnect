@@ -75,6 +75,15 @@ public class TenantPartnerAccount
     public string? ContactLastName { get; set; }
 
     /// <summary>
+    /// Contact email entered on the connection (copied to the Tenant on approval).
+    /// </summary>
+    /// <remarks>
+    /// The connection carried a contact's name but no way to reach them, so every tenant created
+    /// this way had an empty ContactEmail - the requesting system knew it all along.
+    /// </remarks>
+    public string? ContactEmail { get; set; }
+
+    /// <summary>
     /// Optional special identifying code provided for partner confirmation.
     /// </summary>
     public string? SpecialIdentifyingCode { get; set; }

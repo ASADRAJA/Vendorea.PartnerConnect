@@ -160,6 +160,7 @@ public class AdminConnectionsController : ControllerBase
                 Name = BuildTenantName(connection),
                 ContactFirstName = connection.ContactFirstName,
                 ContactLastName = connection.ContactLastName,
+                ContactEmail = connection.ContactEmail,
                 Status = TenantStatus.Active,
                 CreatedAt = DateTime.UtcNow
             };
@@ -167,11 +168,28 @@ public class AdminConnectionsController : ControllerBase
             _logger.LogInformation("Created tenant {TenantId} (org {OrgId}, external {ExternalId}) on connection approval",
                 tenant.Id, tenant.OrganizationId, tenant.ExternalId);
         }
-        else if (string.IsNullOrEmpty(tenant.ContactFirstName) && !string.IsNullOrEmpty(connection.ContactFirstName))
+        else
         {
-            tenant.ContactFirstName = connection.ContactFirstName;
-            tenant.ContactLastName = connection.ContactLastName;
-            await _tenantRepository.UpdateAsync(tenant, cancellationToken);
+            // Fill gaps on an existing tenant from a newer connection, without overwriting anything
+            // already set - a later connection is a fresh source of detail, not an authority on what
+            // is already there.
+            var changed = false;
+
+            if (string.IsNullOrEmpty(tenant.ContactFirstName) && !string.IsNullOrEmpty(connection.ContactFirstName))
+            {
+                tenant.ContactFirstName = connection.ContactFirstName;
+                tenant.ContactLastName = connection.ContactLastName;
+                changed = true;
+            }
+
+            if (string.IsNullOrEmpty(tenant.ContactEmail) && !string.IsNullOrEmpty(connection.ContactEmail))
+            {
+                tenant.ContactEmail = connection.ContactEmail;
+                changed = true;
+            }
+
+            if (changed)
+                await _tenantRepository.UpdateAsync(tenant, cancellationToken);
         }
 
         connection.TenantId = tenant.Id;

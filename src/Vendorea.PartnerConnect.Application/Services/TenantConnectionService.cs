@@ -53,6 +53,7 @@ public class TenantConnectionService : ITenantConnectionService
             BusinessName = input.BusinessName,
             ContactFirstName = input.ContactFirstName,
             ContactLastName = input.ContactLastName,
+            ContactEmail = input.ContactEmail,
             // The SPR BuyerOrg/GroupCode (SpecialIdentifyingCode) is required to place orders but
             // isn't always supplied on the connection request. Fall back to the account number so a
             // connection is never born unable to order; an explicit value still takes precedence.
