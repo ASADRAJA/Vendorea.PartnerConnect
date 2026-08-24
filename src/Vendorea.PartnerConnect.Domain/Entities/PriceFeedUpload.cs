@@ -143,5 +143,18 @@ public enum PriceFeedUploadStatus
     /// <summary>
     /// A worker is currently pushing this upload to Merchant360.
     /// </summary>
-    Pushing = 8
+    Pushing = 8,
+
+    /// <summary>
+    /// The row exists but its file is still being written to storage.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <see cref="Pending"/>: the processing worker drains Pending rows
+    /// continuously, and a row inserted before its file is stored was picked up mid-write, found no
+    /// StoragePath, and failed the upload permanently. A 27MB feed lost that race on the first try.
+    /// The row is created in this state and moved to Pending once the bytes are safely stored, so
+    /// nothing can claim it early. A failure while storing still leaves the row behind, which is
+    /// what makes the failure diagnosable.
+    /// </remarks>
+    Storing = 9
 }

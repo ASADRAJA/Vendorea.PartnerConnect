@@ -102,9 +102,14 @@ public class PriceFeedService : IPriceFeedService
                 IsDuplicate: true);
         }
 
-        // Create the upload record as Pending and store the raw file. Parsing and inserting happen
-        // later in a background worker so the HTTP request returns immediately — a full price file
-        // takes far longer than the Azure App Service 230s request limit allows.
+        // Create the upload record and store the raw file. Parsing and inserting happen later in a
+        // background worker so the HTTP request returns immediately — a full price file takes far
+        // longer than the Azure App Service 230s request limit allows.
+        //
+        // Created as Storing, not Pending. The worker drains Pending rows continuously, so a row
+        // inserted as Pending is advertised as ready before its file exists: the worker claimed one
+        // less than a second after insert, while 27MB was still being written, found no StoragePath
+        // and failed the upload for good. It becomes Pending below, once the bytes are stored.
         var upload = new PriceFeedUpload
         {
             DealerId = dealerId,
@@ -112,7 +117,7 @@ public class PriceFeedService : IPriceFeedService
             FileName = fileName,
             FileHash = fileHash,
             FileSizeBytes = fileBytes.Length,
-            Status = PriceFeedUploadStatus.Pending,
+            Status = PriceFeedUploadStatus.Storing,
             UploadedAt = DateTime.UtcNow,
             UploadedByUserId = uploadedByUserId
         };
@@ -135,7 +140,11 @@ public class PriceFeedService : IPriceFeedService
             };
 
             await _documentStorage.StoreAsync(fileBytes, storagePath, metadata, cancellationToken);
+
+            // Path and readiness are published together: the worker must never see one without the
+            // other.
             upload.StoragePath = storagePath;
+            upload.Status = PriceFeedUploadStatus.Pending;
             await _uploadRepository.UpdateAsync(upload, cancellationToken);
         }
         catch (Exception ex)
@@ -195,6 +204,30 @@ public class PriceFeedService : IPriceFeedService
                 RecordCount: 0,
                 ErrorCount: 0,
                 ErrorMessage: "Upload not found.");
+        }
+
+        // Not ready is not the same as broken. A row without a storage path is one whose file is
+        // still being written - the upload path publishes path and readiness together - so hand the
+        // claim back and let a later pass take it. Failing it here made a lost race permanent, and
+        // the operator's only recourse was to upload the whole file again.
+        //
+        // Released explicitly rather than left in Processing for the stale sweep, which would hold a
+        // healthy upload hostage for staleMinutes over a gap of well under a second.
+        if (string.IsNullOrEmpty(upload.StoragePath))
+        {
+            upload.Status = PriceFeedUploadStatus.Pending;
+            await _uploadRepository.UpdateAsync(upload, cancellationToken);
+
+            _logger.LogDebug(
+                "Price feed upload {UploadId} has no stored file yet; returned to Pending for a later pass",
+                uploadId);
+
+            return new PriceFeedUploadResult(
+                Success: false,
+                UploadId: uploadId,
+                RecordCount: 0,
+                ErrorCount: 0,
+                ErrorMessage: "Upload is still being stored.");
         }
 
         var partnerCode = upload.TradingPartner?.Code ?? string.Empty;
