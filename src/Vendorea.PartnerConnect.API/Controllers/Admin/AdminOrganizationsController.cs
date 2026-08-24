@@ -187,14 +187,23 @@ public class AdminOrganizationsController : ControllerBase
         if (activeOrgs.Any(o => string.Equals(o.Name, orgName, StringComparison.OrdinalIgnoreCase)))
             return Conflict(new { error = "An organization with this name already exists." });
 
+        // The org's own contact address, falling back to the admin's only when none was given —
+        // conflating the two is what makes an organization show up under its owner's name.
+        var contactEmail = request.ContactEmail?.Trim();
+        if (string.IsNullOrWhiteSpace(contactEmail))
+            contactEmail = adminEmail;
+        else if (!IsValidEmail(contactEmail))
+            return BadRequest(new { error = "The contact email is not a valid address." });
+
         // Create the org shell (Active is set by the onboarding service).
         var organization = new Organization
         {
             Code = await _organizationRepository.GenerateNextCodeAsync(cancellationToken),
             Name = orgName,
-            ContactEmail = adminEmail,
+            ContactEmail = contactEmail,
             ContactPhone = request.ContactPhone?.Trim(),
             BillingPlanId = plan.Id.ToString(),
+            IsMultiTenant = request.IsMultiTenant,
             Status = OrganizationStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
@@ -469,7 +478,20 @@ public class OnboardOrganizationRequest
     public string? PlanCode { get; set; }
     public string? AdminDisplayName { get; set; }
     public string? AdminEmail { get; set; }
+
+    /// <summary>
+    /// Where the organization itself is reached, as opposed to the person being invited to
+    /// administer it. Falls back to the admin's address when not supplied.
+    /// </summary>
+    public string? ContactEmail { get; set; }
+
     public string? ContactPhone { get; set; }
+
+    /// <summary>
+    /// Whether the organization trades under more than one tenant. Only settable here: changing it
+    /// once tenants exist would strand them, so the update endpoint deliberately ignores it.
+    /// </summary>
+    public bool IsMultiTenant { get; set; }
 }
 
 /// <summary>Response of the operator-led onboarding endpoint: the created org + invited-admin summary.</summary>

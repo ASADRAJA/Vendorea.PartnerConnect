@@ -8,7 +8,8 @@
 <p class="text-muted">
     Create an organization and stand it up in one step: it is activated immediately, its plan
     subscription is created, and an activation invite is emailed to the first admin. Use this for
-    operator-led onboarding instead of waiting for a self-service registration.
+    operator-led onboarding instead of waiting for a self-service registration. Portal URLs, API keys
+    and trading partners are set afterwards from <a href="organizations">Organizations</a>.
 </p>
 
 @if (!string.IsNullOrEmpty(message))
@@ -27,35 +28,66 @@
             </div>
             <div class="card-body">
                 <div class="mb-3">
-                    <label class="form-label">Organization Name <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" @bind="form.OrganizationName" placeholder="e.g., Acme Corporation" />
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Billing Plan <span class="text-danger">*</span></label>
-                    <select class="form-select" @bind="form.PlanCode">
-                        <option value="">Select a plan...</option>
-                        @foreach (var plan in billingPlans)
-                        {
-                            <option value="@plan.Code">@plan.Name (@plan.Code) - @plan.MonthlyPrice.ToString("C")/mo</option>
-                        }
-                    </select>
+                    <label class="form-label" for="orgName">Organization Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="orgName" @bind="form.OrganizationName" placeholder="e.g., Acme Corporation" />
                 </div>
 
                 <div class="row">
                     <div class="col-md-6 mb-3">
-                        <label class="form-label">Admin Display Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" @bind="form.AdminDisplayName" placeholder="e.g., Jane Smith" />
+                        <label class="form-label" for="planCode">Billing Plan <span class="text-danger">*</span></label>
+                        <select class="form-select" id="planCode" @bind="form.PlanCode">
+                            <option value="">Select a plan...</option>
+                            @foreach (var plan in billingPlans)
+                            {
+                                <option value="@plan.Code">@plan.Name (@plan.Code) - @plan.MonthlyPrice.ToString("C")/mo</option>
+                            }
+                        </select>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label class="form-label">Admin Email <span class="text-danger">*</span></label>
-                        <input type="email" class="form-control" @bind="form.AdminEmail" placeholder="admin@example.com" />
+                        <label class="form-label" for="isMultiTenant">Organization Type</label>
+                        <div class="form-check mt-2">
+                            <input type="checkbox" class="form-check-input" id="isMultiTenant"
+                                   @bind="form.IsMultiTenant" aria-describedby="isMultiTenantHelp" />
+                            <label class="form-check-label" for="isMultiTenant">Multi-tenant</label>
+                        </div>
+                        <div class="form-text" id="isMultiTenantHelp">
+                            Tick if the organization will trade under more than one tenant. This cannot be
+                            changed once the organization exists.
+                        </div>
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Contact Phone</label>
-                    <input type="text" class="form-control" @bind="form.ContactPhone" placeholder="Optional" />
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label" for="contactEmail">Contact Email</label>
+                        <input type="email" class="form-control" id="contactEmail" @bind="form.ContactEmail"
+                               placeholder="accounts@example.com" aria-describedby="contactEmailHelp" />
+                        <div class="form-text" id="contactEmailHelp">
+                            The organization's own address. Defaults to the administrator's if left blank.
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label" for="contactPhone">Contact Phone</label>
+                        <input type="text" class="form-control" id="contactPhone" @bind="form.ContactPhone" placeholder="Optional" />
+                    </div>
+                </div>
+
+                <hr class="my-4" />
+
+                <h2 class="h6 text-muted text-uppercase mb-3">First Administrator</h2>
+                <p class="text-muted small">
+                    This person receives an activation email and becomes the organization's first admin.
+                </p>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label" for="adminName">Admin Display Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="adminName" @bind="form.AdminDisplayName" placeholder="e.g., Jane Smith" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label" for="adminEmail">Admin Email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="adminEmail" @bind="form.AdminEmail" placeholder="admin@example.com" />
+                    </div>
                 </div>
 
                 <div class="d-flex justify-content-end">
@@ -105,7 +137,9 @@
             if (result is not null)
             {
                 succeeded = true;
-                message = $"Organization created — an activation invite was emailed to {result.InvitedAdminEmail}.";
+                message = $"{result.Organization.Name} created — an activation invite was emailed to "
+                        + $"{result.InvitedAdminEmail}. Set its portal, API keys and trading partners "
+                        + "from Organizations.";
                 form = new OnboardOrganizationRequest();
             }
             else

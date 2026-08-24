@@ -4,7 +4,10 @@
 <PageTitle>Organizations - PartnerConnect Admin</PageTitle>
 
 <h1>Organizations</h1>
-<p class="text-muted">Register and manage organizations. Tenants are provisioned by the connections workflow.</p>
+<p class="text-muted">
+    Review, configure and manage organizations. New ones are created through onboarding; tenants are
+    provisioned by the connections workflow.
+</p>
 
 <div class="row mb-4">
     <div class="col-12">
@@ -33,10 +36,13 @@
                         </button>
                     </li>
                 </ul>
-                <AuthorizeView Policy="RequireAdmin" Context="auth">
-                    <button class="btn btn-primary btn-sm" @onclick="ShowCreateModal">
-                        <span class="oi oi-plus me-1"></span> Register Organization
-                    </button>
+                @* Organizations are created through onboarding, which also activates them, creates the
+                   subscription and invites the first admin. Registering one here produced an org nobody
+                   could sign in to. *@
+                <AuthorizeView Policy="RequireOperator" Context="auth">
+                    <a class="btn btn-primary btn-sm" href="onboard-organization">
+                        <span class="oi oi-plus me-1"></span> Onboard Organization
+                    </a>
                 </AuthorizeView>
             </div>
             <div class="card-body">
@@ -141,30 +147,24 @@
     </div>
 </div>
 
-@* Register / Edit Organization Modal *@
-@if (showCreateModal || showEditModal)
+@* Edit Organization Modal. Creation lives on the Onboard Organization page, which also activates
+   the org, creates its subscription and invites the first admin — this modal only configures one
+   that already exists. *@
+@if (showEditModal)
 {
-    var isEdit = showEditModal;
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">@(isEdit ? "Edit Organization" : "Register Organization")</h5>
+                    <h5 class="modal-title">Edit Organization</h5>
                     <button type="button" class="btn-close" @onclick="CloseModals"></button>
                 </div>
                 <div class="modal-body">
-                    @if (isEdit)
-                    {
-                        <div class="mb-3">
-                            <label class="form-label">Code</label>
-                            <input type="text" class="form-control" value="@selectedOrganization?.Code" disabled />
-                            <small class="text-muted">System-generated; cannot be changed</small>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="alert alert-light border"><small><span class="oi oi-info me-1"></span> The organization code is generated automatically on save.</small></div>
-                    }
+                    <div class="mb-3">
+                        <label class="form-label">Code</label>
+                        <input type="text" class="form-control" value="@selectedOrganization?.Code" disabled />
+                        <small class="text-muted">System-generated; cannot be changed</small>
+                    </div>
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
@@ -174,9 +174,10 @@
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Organization Type</label>
                             <div class="form-check mt-2">
-                                <input type="checkbox" class="form-check-input" id="isMultiTenant" @bind="form.IsMultiTenant" disabled="@isEdit" />
+                                <input type="checkbox" class="form-check-input" id="isMultiTenant" @bind="form.IsMultiTenant" disabled />
                                 <label class="form-check-label" for="isMultiTenant">Multi-tenant</label>
                             </div>
+                            <div class="form-text">Fixed at onboarding; cannot be changed.</div>
                         </div>
                     </div>
 
@@ -253,7 +254,7 @@
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Outbound API Key</label>
                                 <input type="password" class="form-control" @bind="form.PortalApiKey"
-                                       placeholder="@(isEdit && selectedOrganization?.HasPortalApiKey == true ? "•••••• (leave blank to keep)" : "")" />
+                                       placeholder="@(selectedOrganization?.HasPortalApiKey == true ? "•••••• (leave blank to keep)" : "")" />
                                 <small class="text-muted">
                                     PartnerConnect &rarr; org. Sent as X-Api-Key when PC calls the org's portal.
                                     Stored encrypted.
@@ -264,7 +265,7 @@
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Inbound API Key</label>
                                 <input type="password" class="form-control" @bind="form.InboundApiKey"
-                                       placeholder="@(isEdit && selectedOrganization?.HasInboundApiKey == true ? "•••••• (leave blank to keep)" : "")" />
+                                       placeholder="@(selectedOrganization?.HasInboundApiKey == true ? "•••••• (leave blank to keep)" : "")" />
                                 <small class="text-muted">
                                     Org &rarr; PartnerConnect. The org presents this when calling PC.
                                     <strong>PartnerConnect owns this value</strong> &mdash; whatever you set here
@@ -288,7 +289,7 @@
                         {
                             <span class="spinner-border spinner-border-sm me-1"></span>
                         }
-                        @(isEdit ? "Save Changes" : "Register")
+                        Save Changes
                     </button>
                 </div>
             </div>
@@ -337,7 +338,6 @@
     private bool isLoading = true;
     private bool isSubmitting = false;
 
-    private bool showCreateModal = false;
     private bool showEditModal = false;
     private bool showRejectModal = false;
 
@@ -386,15 +386,6 @@
 
     private void SetTab(string tab) => activeTab = tab;
 
-    private void ShowCreateModal()
-    {
-        form = new OrgForm();
-        selectedBillingPlanId = "";
-        selectedPartnerIds.Clear();
-        selectedOrganization = null;
-        showCreateModal = true;
-    }
-
     private void ShowEditModal(OrganizationDto org)
     {
         selectedOrganization = org;
@@ -425,7 +416,6 @@
 
     private void CloseModals()
     {
-        showCreateModal = false;
         showEditModal = false;
         showRejectModal = false;
         selectedOrganization = null;
@@ -445,7 +435,7 @@
         {
             Guid? planId = Guid.TryParse(selectedBillingPlanId, out var pid) ? pid : null;
 
-            if (showEditModal && selectedOrganization != null)
+            if (selectedOrganization != null)
             {
                 var req = new UpdateOrganizationRequest
                 {
@@ -461,28 +451,6 @@
                     TradingPartnerIds = selectedPartnerIds.ToList()
                 };
                 if (await Api.UpdateOrganizationAsync(selectedOrganization.Id, req))
-                {
-                    CloseModals();
-                    await LoadOrganizations();
-                }
-            }
-            else
-            {
-                var req = new CreateOrganizationRequest
-                {
-                    Name = form.Name,
-                    ContactEmail = form.ContactEmail,
-                    ContactPhone = form.ContactPhone,
-                    BillingPlanId = planId,
-                    PaymentTerms = form.PaymentTerms,
-                    IsMultiTenant = form.IsMultiTenant,
-                    ExternalPortalEnabled = form.ExternalPortalEnabled,
-                    PortalBaseUrl = form.PortalBaseUrl,
-                    PortalApiKey = form.PortalApiKey,
-                    InboundApiKey = form.InboundApiKey,
-                    TradingPartnerIds = selectedPartnerIds.ToList()
-                };
-                if (await Api.CreateOrganizationAsync(req) != null)
                 {
                     CloseModals();
                     await LoadOrganizations();

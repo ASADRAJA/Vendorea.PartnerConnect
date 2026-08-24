@@ -608,7 +608,11 @@ public class OnboardOrganizationRequest
     public string PlanCode { get; set; } = string.Empty;
     public string AdminDisplayName { get; set; } = string.Empty;
     public string AdminEmail { get; set; } = string.Empty;
+    public string? ContactEmail { get; set; }
     public string? ContactPhone { get; set; }
+
+    /// <summary>Only settable at creation — the update endpoint ignores it.</summary>
+    public bool IsMultiTenant { get; set; }
 }
 
 public class OnboardOrganizationResult
