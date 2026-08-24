@@ -199,7 +199,11 @@ public class AdminFtpIngestionController : ControllerBase
         {
             IsRunning = isRunning,
             LastRunAt = lastRun?.StartedAt,
-            LastRunSuccess = lastRun?.Success,
+            // Null until the run actually finishes. Success is a bool on the run record, so a run
+            // still downloading carries the default false - reported here as a completed failure,
+            // which is how a healthy import showed "Last Result: Failed" while the panel directly
+            // above it said "Importing". No result is not the same as a bad one.
+            LastRunSuccess = lastRun?.CompletedAt == null ? null : lastRun.Success,
             NextScheduledRun = nextScheduledRun,
             CurrentPhase = isRunning ? lastRun?.Phase : null
         });

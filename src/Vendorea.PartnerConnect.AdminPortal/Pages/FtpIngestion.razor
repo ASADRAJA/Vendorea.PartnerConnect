@@ -619,8 +619,22 @@ else
 
         try
         {
-            // Start the import (returns immediately now)
-            runResult = await Api.RunFtpIngestionAsync();
+            // Start the import (returns immediately now).
+            //
+            // The response is an acknowledgement, not a result: the endpoint returns 202 Accepted with
+            // an id and "Queued", and no Success field at all - which deserialises to false and used to
+            // be bound straight to runResult, so the page announced "Import failed!" over a run that
+            // was downloading perfectly well. Only a genuine failure to queue is worth showing here;
+            // the outcome arrives below, when polling sees the finished run.
+            var queued = await Api.RunFtpIngestionAsync();
+
+            if (queued is { Errors.Count: > 0 })
+            {
+                // Could not be queued at all - the API refused it, e.g. another run is in flight.
+                runResult = queued;
+                isRunning = false;
+                return;
+            }
 
             // Poll for updates. A transient poll failure must never freeze the wheel, so we catch per
             // tick and retry, giving up only after several consecutive failures or a safety timeout.
