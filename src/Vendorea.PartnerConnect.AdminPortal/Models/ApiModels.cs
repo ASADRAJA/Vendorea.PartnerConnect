@@ -679,6 +679,7 @@ public class TenantDto
     public string? OrganizationName { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string? ContactEmail { get; set; }
     public string? ExternalId { get; set; }
     public string Status { get; set; } = string.Empty;
     public string OrganizationStatus { get; set; } = string.Empty;

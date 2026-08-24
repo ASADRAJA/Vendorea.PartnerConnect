@@ -344,6 +344,7 @@ public class AdminTenantsController : ControllerBase
             OrganizationName = tenant.Organization?.Name,
             Code = tenant.Code,
             Name = tenant.Name,
+            ContactEmail = tenant.ContactEmail,
             ExternalId = tenant.ExternalId,
             Status = tenant.Status.ToString(),
             OrganizationStatus = tenant.Organization?.Status.ToString() ?? string.Empty,
@@ -378,6 +379,10 @@ public class TenantDto
     public string? OrganizationName { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>Contact address for the tenant, sent by the requesting system on connection.</summary>
+    public string? ContactEmail { get; set; }
+
     public string? ExternalId { get; set; }
     public string Status { get; set; } = string.Empty;
     /// <summary>The parent organization's status — a tenant is only effectively active under an Active org.</summary>

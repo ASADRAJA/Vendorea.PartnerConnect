@@ -68,6 +68,7 @@
                                 <tr>
                                     <th>Code</th>
                                     <th>Name</th>
+                                    <th>Contact Email</th>
                                     <th>Organization</th>
                                     <th>Status</th>
                                     <th>Default</th>
@@ -83,6 +84,16 @@
                                     <tr>
                                         <td><code>@tenant.Code</code></td>
                                         <td><strong>@tenant.Name</strong></td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(tenant.ContactEmail))
+                                            {
+                                                <a href="mailto:@tenant.ContactEmail">@tenant.ContactEmail</a>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">&mdash;</span>
+                                            }
+                                        </td>
                                         <td>@tenant.OrganizationName</td>
                                         <td>
                                             <span class="badge @GetStatusBadgeClass(tenant.Status)">@tenant.Status</span>
