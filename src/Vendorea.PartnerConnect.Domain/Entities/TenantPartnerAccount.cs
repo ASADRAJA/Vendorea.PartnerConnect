@@ -54,6 +54,17 @@ public class TenantPartnerAccount
     public DateTime? DecidedAt { get; set; }
 
     /// <summary>
+    /// The dealer's business name, as the requesting system knows it (copied to the Tenant on
+    /// approval). Distinct from the contact: "Dealer1" is the business, "John Dealer" is its owner.
+    /// </summary>
+    /// <remarks>
+    /// Without this the tenant was named after whoever the contact happened to be, because that was
+    /// the only name the connection carried. Merchant360 owns the business name, so it sends it;
+    /// older connections have none and keep their contact-derived name until someone corrects it.
+    /// </remarks>
+    public string? BusinessName { get; set; }
+
+    /// <summary>
     /// Contact first name entered on the connection (copied to the Tenant on approval).
     /// </summary>
     public string? ContactFirstName { get; set; }

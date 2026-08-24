@@ -50,6 +50,7 @@ public class TenantConnectionService : ITenantConnectionService
             ExternalTenantId = input.ExternalTenantId,
             TradingPartnerId = input.TradingPartnerId,
             AccountNumber = input.AccountNumber,
+            BusinessName = input.BusinessName,
             ContactFirstName = input.ContactFirstName,
             ContactLastName = input.ContactLastName,
             // The SPR BuyerOrg/GroupCode (SpecialIdentifyingCode) is required to place orders but

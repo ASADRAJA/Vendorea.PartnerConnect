@@ -14,7 +14,9 @@ public record RequestConnectionInput(
     string? ContactLastName = null,
     string? SpecialIdentifyingCode = null,
     string? Notes = null,
-    Dictionary<string, string>? ConfirmationFields = null);
+    Dictionary<string, string>? ConfirmationFields = null,
+    /// <summary>The dealer's business name - not the contact's. Optional, so older callers still work.</summary>
+    string? BusinessName = null);
 
 /// <summary>Outcome of a connection request.</summary>
 public record RequestConnectionResult(bool Success, string? Error, TenantPartnerAccount? Connection)

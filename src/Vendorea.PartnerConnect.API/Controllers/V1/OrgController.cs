@@ -302,7 +302,8 @@ public class OrgController : ControllerBase
                 request.ContactLastName,
                 request.SpecialIdentifyingCode,
                 request.Notes,
-                request.ConfirmationFields),
+                request.ConfirmationFields,
+                request.BusinessName),
             cancellationToken);
 
         if (!result.Success)
@@ -1729,6 +1730,13 @@ public class OrgConnectionRequest
     public int TradingPartnerId { get; set; }
     public string ExternalTenantId { get; set; } = string.Empty;
     public string AccountNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The dealer's business name. Optional for compatibility, but supply it: without one the tenant
+    /// is named after its contact, so "Dealer1" shows up everywhere as "John Dealer".
+    /// </summary>
+    public string? BusinessName { get; set; }
+
     public string? ContactFirstName { get; set; }
     public string? ContactLastName { get; set; }
     public string? SpecialIdentifyingCode { get; set; }

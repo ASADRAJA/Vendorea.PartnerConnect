@@ -204,10 +204,23 @@ public class AdminConnectionsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// The tenant's display name: the business name when the requesting system sent one, otherwise
+    /// the contact, otherwise the external id.
+    /// </summary>
+    /// <remarks>
+    /// The contact fallback is what every tenant used to get, because the connection carried no
+    /// business name - so a dealer trading as "Dealer1" appeared throughout as "John Dealer", its
+    /// owner. Kept only for connections raised before BusinessName existed; the last fallback names
+    /// a tenant after a bare id, which is a sign the caller sent nothing useful at all.
+    /// </remarks>
     private static string BuildTenantName(TenantPartnerAccount c)
     {
-        var name = $"{c.ContactFirstName} {c.ContactLastName}".Trim();
-        return string.IsNullOrWhiteSpace(name) ? c.ExternalTenantId : name;
+        if (!string.IsNullOrWhiteSpace(c.BusinessName))
+            return c.BusinessName.Trim();
+
+        var contact = $"{c.ContactFirstName} {c.ContactLastName}".Trim();
+        return string.IsNullOrWhiteSpace(contact) ? c.ExternalTenantId : contact;
     }
 
     private static string Truncate(string value, int max) =>
