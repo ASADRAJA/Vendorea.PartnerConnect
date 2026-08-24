@@ -18,6 +18,74 @@
     top: -2px;
 }
 
+/* --- Collapsible sections -------------------------------------------------
+   Section headers are quieter than the links beneath them: smaller, uppercase
+   and dimmer, so the eye lands on destinations rather than on the scaffolding. */
+
+.nav-group {
+    margin-top: 0.25rem;
+}
+
+.nav-group-toggle {
+    display: flex;
+    align-items: center;
+    width: calc(100% - 2rem);
+    margin: 0 1rem;
+    padding: 0.5rem 0.5rem;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: #9aa3ad;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+}
+
+    .nav-group-toggle:hover {
+        background-color: rgba(255,255,255,0.06);
+        color: #e8e8e8;
+    }
+
+    .nav-group-toggle:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: -2px;
+        color: #fff;
+    }
+
+.nav-group-title {
+    flex: 1 1 auto;
+}
+
+.nav-group-chevron {
+    width: auto;
+    font-size: 0.65rem;
+    opacity: 0.8;
+}
+
+/* Indent a section's links so the hierarchy is readable without extra rules, and keep
+   the first one tucked under its header rather than inheriting the list's top padding. */
+.nav-group-items .nav-item {
+    padding-left: 0.75rem;
+}
+
+.nav-group-items .nav-item:first-of-type {
+    padding-top: 0;
+}
+
+.nav-group-items .nav-item:last-of-type {
+    padding-bottom: 0.5rem;
+}
+
+/* Links inside a section are shorter than top-level ones — more fit on screen without
+   the sidebar feeling cramped. */
+.nav-group-items ::deep a {
+    height: 2.5rem;
+    line-height: 2.5rem;
+}
+
 .nav-item {
     font-size: 0.9rem;
     padding-bottom: 0.5rem;

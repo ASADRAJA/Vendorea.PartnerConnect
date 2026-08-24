@@ -1,3 +1,6 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="">PartnerConnect Admin</a>
@@ -14,114 +17,143 @@
                 <span class="oi oi-dashboard" aria-hidden="true"></span> Dashboard
             </NavLink>
         </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="organizations">
-                <span class="oi oi-organization" aria-hidden="true"></span> Organizations
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="tenants">
-                <span class="oi oi-person" aria-hidden="true"></span> Tenants
-            </NavLink>
-        </div>
-        <AuthorizeView Policy="RequireOperator">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="onboard-organization">
-                    <span class="oi oi-plus" aria-hidden="true"></span> Onboard Organization
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="registration-requests">
-                    <span class="oi oi-inbox" aria-hidden="true"></span> Registration Requests
-                </NavLink>
-            </div>
-        </AuthorizeView>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="orders">
-                <span class="oi oi-cart" aria-hidden="true"></span> Orders
-            </NavLink>
-        </div>
-        <AuthorizeView Policy="RequireAdmin">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="partners">
-                    <span class="oi oi-people" aria-hidden="true"></span> Trading Partners
-                </NavLink>
-            </div>
-        </AuthorizeView>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="tenant-connections">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Partner Connections
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="documents">
-                <span class="oi oi-document" aria-hidden="true"></span> Documents
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="pricefeeds">
-                <span class="oi oi-spreadsheet" aria-hidden="true"></span> Price Feeds
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="content">
-                <span class="oi oi-box" aria-hidden="true"></span> Enhanced Content
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="ftp-ingestion">
-                <span class="oi oi-cloud-download" aria-hidden="true"></span> Content Ingestion
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="webhooks">
-                <span class="oi oi-bolt" aria-hidden="true"></span> Webhooks
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="billing">
-                <span class="oi oi-credit-card" aria-hidden="true"></span> Billing Plans
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="audit">
-                <span class="oi oi-clipboard" aria-hidden="true"></span> Audit Logs
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="cron-jobs">
-                <span class="oi oi-timer" aria-hidden="true"></span> Cron Jobs
-            </NavLink>
-        </div>
 
-        @* Admin-only: power/testing tools and user management *@
-        <AuthorizeView Policy="RequireAdmin">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="spr-simulation">
-                    <span class="oi oi-pulse" aria-hidden="true"></span> SPR Simulation
-                </NavLink>
+        @foreach (var group in Groups)
+        {
+            var isOpen = openGroups.Contains(group.Title);
+            var panelId = $"nav-group-{group.Title.ToLowerInvariant().Replace(" ", "-").Replace("&", "and")}";
+
+            <div class="nav-group">
+                <button type="button"
+                        class="nav-group-toggle"
+                        aria-expanded="@isOpen.ToString().ToLowerInvariant()"
+                        aria-controls="@panelId"
+                        @onclick="() => ToggleGroup(group.Title)"
+                        @onclick:stopPropagation="true">
+                    <span class="oi @group.Icon" aria-hidden="true"></span>
+                    <span class="nav-group-title">@group.Title</span>
+                    <span class="oi @(isOpen ? "oi-chevron-bottom" : "oi-chevron-right") nav-group-chevron" aria-hidden="true"></span>
+                </button>
+
+                <div id="@panelId" class="nav-group-items @(isOpen ? "" : "d-none")">
+                    @foreach (var entry in group.Items)
+                    {
+                        @if (entry.Policy is null)
+                        {
+                            @NavEntryLink(entry)
+                        }
+                        else
+                        {
+                            <AuthorizeView Policy="@entry.Policy">
+                                <Authorized>@NavEntryLink(entry)</Authorized>
+                            </AuthorizeView>
+                        }
+                    }
+                </div>
             </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="api-tester">
-                    <span class="oi oi-terminal" aria-hidden="true"></span> API Tester
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="users">
-                    <span class="oi oi-people" aria-hidden="true"></span> Users
-                </NavLink>
-            </div>
-        </AuthorizeView>
+        }
     </nav>
 </div>
 
 @code {
     private bool collapseNavMenu = true;
+    private readonly HashSet<string> openGroups = new();
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    /// <summary>A single destination. <see cref="Policy"/> gates it behind an authorization policy.</summary>
+    private sealed record NavEntry(string Href, string Icon, string Label, string? Policy = null);
+
+    /// <summary>A collapsible section of the sidebar.</summary>
+    private sealed record NavGroup(string Title, string Icon, NavEntry[] Items);
+
+    // The sidebar, in the order an operator works through it: who the customer is, what they trade
+    // under, what data flows in, what the system did, and finally the tools for running it.
+    private static readonly NavGroup[] Groups =
+    {
+        new("Organizations", "oi-organization", new NavEntry[]
+        {
+            new("organizations", "oi-list-rich", "All Organizations"),
+            new("registration-requests", "oi-inbox", "Registration Requests", "RequireOperator"),
+            new("onboard-organization", "oi-plus", "Onboard Organization", "RequireOperator"),
+            new("billing", "oi-credit-card", "Billing Plans")
+        }),
+        new("Tenants", "oi-person", new NavEntry[]
+        {
+            new("tenants", "oi-list-rich", "All Tenants"),
+            new("tenant-connections", "oi-link-intact", "Partner Connections")
+        }),
+        new("Partners & Content", "oi-box", new NavEntry[]
+        {
+            new("partners", "oi-people", "Trading Partners", "RequireAdmin"),
+            new("pricefeeds", "oi-spreadsheet", "Price Feeds"),
+            new("content", "oi-image", "Enhanced Content"),
+            new("ftp-ingestion", "oi-cloud-download", "Content Ingestion")
+        }),
+        new("Operations", "oi-cart", new NavEntry[]
+        {
+            new("orders", "oi-cart", "Orders"),
+            new("documents", "oi-document", "Documents"),
+            new("webhooks", "oi-bolt", "Webhooks"),
+            new("cron-jobs", "oi-timer", "Cron Jobs")
+        }),
+        new("System", "oi-cog", new NavEntry[]
+        {
+            new("audit", "oi-clipboard", "Audit Logs"),
+            new("users", "oi-people", "Users", "RequireAdmin"),
+            new("api-tester", "oi-terminal", "API Tester", "RequireAdmin"),
+            new("spr-simulation", "oi-pulse", "SPR Simulation", "RequireAdmin")
+        })
+    };
+
+    private RenderFragment NavEntryLink(NavEntry entry) =>
+        @<div class="nav-item px-3">
+            <NavLink class="nav-link" href="@entry.Href">
+                <span class="oi @entry.Icon" aria-hidden="true"></span> @entry.Label
+            </NavLink>
+        </div>;
+
+    protected override void OnInitialized()
+    {
+        OpenGroupForCurrentPage();
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Opening the section that owns the current page keeps the sidebar honest when a user
+        // arrives by link or bookmark rather than by clicking through the menu.
+        if (OpenGroupForCurrentPage())
+            StateHasChanged();
+    }
+
+    private bool OpenGroupForCurrentPage()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri)
+            .Split('?')[0].Split('/')[0];
+
+        if (string.IsNullOrEmpty(path))
+            return false;   // Dashboard sits outside the groups.
+
+        var owning = Groups.FirstOrDefault(g =>
+            g.Items.Any(i => string.Equals(i.Href, path, StringComparison.OrdinalIgnoreCase)));
+
+        return owning is not null && openGroups.Add(owning.Title);
+    }
+
+    private void ToggleGroup(string title)
+    {
+        if (!openGroups.Remove(title))
+            openGroups.Add(title);
+    }
 
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }
