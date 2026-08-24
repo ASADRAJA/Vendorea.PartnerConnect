@@ -19,8 +19,9 @@
 }
 
 /* --- Collapsible sections -------------------------------------------------
-   Section headers are quieter than the links beneath them: smaller, uppercase
-   and dimmer, so the eye lands on destinations rather than on the scaffolding. */
+   Section headers sit on the sidebar's own background and read as labels rather
+   than as buttons: white and bold, but smaller and uppercase so they still rank
+   above the links beneath them without competing for the click. */
 
 .nav-group {
     margin-top: 0.25rem;
@@ -32,27 +33,31 @@
     width: calc(100% - 2rem);
     margin: 0 1rem;
     padding: 0.5rem 0.5rem;
-    background: none;
+    background: transparent;
     border: none;
     border-radius: 4px;
-    color: #9aa3ad;
+    color: #fff;
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     text-align: left;
     cursor: pointer;
 }
 
+    /* No hover fill — the chevron brightening carries the affordance instead. */
     .nav-group-toggle:hover {
-        background-color: rgba(255,255,255,0.06);
-        color: #e8e8e8;
+        background: transparent;
     }
 
+        .nav-group-toggle:hover .nav-group-chevron {
+            opacity: 1;
+        }
+
     .nav-group-toggle:focus-visible {
+        background: transparent;
         outline: 2px solid #fff;
         outline-offset: -2px;
-        color: #fff;
     }
 
 .nav-group-title {
