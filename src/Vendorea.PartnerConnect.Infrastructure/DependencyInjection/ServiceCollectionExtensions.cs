@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Application.Services;
+using Vendorea.PartnerConnect.Validation;
 using Vendorea.PartnerConnect.Infrastructure.CrossCutting;
 using Vendorea.PartnerConnect.Infrastructure.Edi;
 using Vendorea.PartnerConnect.Infrastructure.Services;
@@ -19,6 +20,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITradingPartnerService, TradingPartnerService>();
         services.AddScoped<IPriceFeedService, PriceFeedService>();
         services.AddScoped<IDuplicateDetectionService, DuplicateDetectionService>();
+
+        // Resolved per cycle by the price, inventory and content sync workers, and by FeedsController.
+        // Its absence here made every one of them throw on each pass. It needs the document
+        // validators, whose own registration extension was never called by either host.
+        services.AddValidation();
+        services.AddScoped<IFeedProcessingService, FeedProcessingService>();
         services.AddScoped<IDocumentStateService, DocumentStateService>();
         services.AddScoped<IQuarantineService, QuarantineService>();
         services.AddScoped<IOutboxService, OutboxService>();

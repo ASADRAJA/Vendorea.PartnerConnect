@@ -7,7 +7,7 @@ namespace Vendorea.PartnerConnect.Contracts.DTOs.IntegrationManagement;
 /// </summary>
 public record PriceFeedBatchDto(
     int Id,
-    int PartnerDocumentId,
+    int? PartnerDocumentId,
     int DealerId,
     int TradingPartnerId,
     string? TradingPartnerCode,
@@ -28,7 +28,7 @@ public record PriceFeedBatchDto(
 /// </summary>
 public record InventoryFeedBatchDto(
     int Id,
-    int PartnerDocumentId,
+    int? PartnerDocumentId,
     int DealerId,
     int TradingPartnerId,
     string? TradingPartnerCode,

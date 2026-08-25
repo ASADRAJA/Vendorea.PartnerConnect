@@ -6,7 +6,11 @@ namespace Vendorea.PartnerConnect.Domain.Entities;
 public class PriceFeedBatch
 {
     public int Id { get; set; }
-    public int PartnerDocumentId { get; set; }
+    /// <summary>
+    /// The document this batch came from. Null when the run produced none — a fetch that failed,
+    /// or a feed that was empty — both of which are still worth recording as a batch.
+    /// </summary>
+    public int? PartnerDocumentId { get; set; }
     public int DealerId { get; set; }
     public int TradingPartnerId { get; set; }
     public FeedBatchStatus Status { get; set; }
