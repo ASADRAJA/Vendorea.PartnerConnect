@@ -287,10 +287,15 @@ public class SprInteractiveServicesClientTests
         result.Rates[1].Rate.Should().Be(34.83m);
 
         // Find Freight uses the <input> (rpc/encoded struct) style with typed Warehouse/State/ZipCode/Weight fields.
-        handler.CapturedUrl.Should().Be("http://test.sprws/sprws/FindFreightRate.php");
+        // Plural: the endpoint is FindFreightRates.php, per the service's own WSDL. Only the types
+        // it exchanges (FindFreightRateInputs, FindFreightRateRow) are singular.
+        handler.CapturedUrl.Should().Be("http://test.sprws/sprws/FindFreightRates.php");
         handler.CapturedBody.Should().Contain("<input xsi:type=\"svc:FindFreightRateInputs\">");
-        handler.CapturedBody.Should().Contain("<Warehouse xsi:type=\"xsd:string\">008</Warehouse>");
-        handler.CapturedBody.Should().Contain("<ZipCode xsi:type=\"xsd:string\">30341</ZipCode>");
+        // Field names come from the WSDL, not the written documentation, which names these two
+        // differently. The service binds by position, so a wrong name here goes unnoticed until the
+        // rate comes back wrong.
+        handler.CapturedBody.Should().Contain("<ShipFromDc xsi:type=\"xsd:string\">008</ShipFromDc>");
+        handler.CapturedBody.Should().Contain("<PostalCode xsi:type=\"xsd:string\">30341</PostalCode>");
     }
 
     [Fact]
