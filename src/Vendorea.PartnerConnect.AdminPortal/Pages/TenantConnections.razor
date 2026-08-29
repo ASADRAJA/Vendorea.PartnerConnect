@@ -58,6 +58,7 @@
                             <thead>
                                 <tr>
                                     <th>Organization</th>
+                                    <th>Dealer</th>
                                     <th>Partner</th>
                                     <th>Tenant (org id)</th>
                                     <th>Contact</th>
@@ -72,8 +73,22 @@
                                 {
                                     <tr>
                                         <td>@(c.OrganizationName ?? $"Org #{c.OrganizationId}")</td>
+                                        @* The dealer's own name, out of the tenant-id cell and into a column of its
+                                           own. It was previously appended after the external id, which put a code and
+                                           a company name in one cell and made the name the thing you read last. It is
+                                           what an operator actually recognises a connection by. *@
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(c.TenantName))
+                                            {
+                                                @c.TenantName
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted fst-italic">Not linked</span>
+                                            }
+                                        </td>
                                         <td>@(c.PartnerName ?? $"Partner #{c.TradingPartnerId}")</td>
-                                        <td><code>@c.ExternalTenantId</code>@if (c.TenantName != null) { <text> — @c.TenantName</text> }</td>
+                                        <td><code>@c.ExternalTenantId</code></td>
                                         <td>@($"{c.ContactFirstName} {c.ContactLastName}".Trim())</td>
                                         <td>@c.AccountNumber</td>
                                         <td><span class="badge @StatusBadge(c.ApprovalStatus)">@c.ApprovalStatus</span></td>
