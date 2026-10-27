@@ -142,6 +142,23 @@ public class SprContentUpload
     public int M360PushTotalBatches { get; set; }
 
     /// <summary>
+    /// Records Merchant360 reported as newly created, accumulated across the push's batches.
+    /// </summary>
+    /// <remarks>
+    /// These three are what the push-complete summary reports. The push always computed them from
+    /// each batch response, but had nowhere to put them: the progress endpoint reads only these
+    /// columns, so the summary rendered 0/0/0 on every completed push while the real counts went
+    /// to the log and were discarded when the worker method returned.
+    /// </remarks>
+    public int M360PushRecordsCreated { get; set; }
+
+    /// <summary>Records Merchant360 reported as updated. See <see cref="M360PushRecordsCreated"/>.</summary>
+    public int M360PushRecordsUpdated { get; set; }
+
+    /// <summary>Records Merchant360 reported as skipped. See <see cref="M360PushRecordsCreated"/>.</summary>
+    public int M360PushRecordsSkipped { get; set; }
+
+    /// <summary>
     /// Error detail when the push fails (or when a stale push is reclaimed).
     /// </summary>
     public string? M360PushError { get; set; }

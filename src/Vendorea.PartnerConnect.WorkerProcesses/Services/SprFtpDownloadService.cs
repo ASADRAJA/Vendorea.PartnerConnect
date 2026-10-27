@@ -126,6 +126,14 @@ public class SprFtpDownloadService : ISprFtpDownloadService
             }
 
             downloadResult.Success = downloadResult.FilesFailed == 0;
+
+            // Lift each failed file's reason onto the result. Without this the only writer of
+            // Errors was the catch below, so a run that failed because individual files failed —
+            // the common case — reported Failed with no reason at all, and the per-file message
+            // died with the result object.
+            downloadResult.Errors.AddRange(downloadResult.Files
+                .Where(f => !f.Success)
+                .Select(f => $"{f.Mapping.LocalZipName}: {f.ErrorMessage ?? "download failed"}"));
         }
         catch (Exception ex)
         {
