@@ -132,4 +132,21 @@
         /* Never collapse the sidebar for wide screens */
         display: block;
     }
+
+    /* The link list scrolls inside the sidebar instead of overflowing it.
+       .sidebar is a fixed 100vh (MainLayout.razor.css) and paints the gradient, so without a
+       bounded, scrollable list the links simply ran past the bottom of that box and rendered on
+       the white page behind it — and the ones below the fold couldn't be reached at all, since a
+       sticky sidebar doesn't scroll with the main column. 3.5rem is the brand row above, so this
+       claims exactly the rest of the sidebar.
+
+       Scoped to the wide layout on purpose: below this breakpoint the sidebar has no fixed height
+       and grows with its content, where an inner scroll would be wrong. */
+    .nav-scrollable {
+        height: calc(100vh - 3.5rem);
+        overflow-y: auto;
+        /* A default scrollbar renders as a bright track over the gradient; this keeps it subdued. */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+    }
 }
