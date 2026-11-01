@@ -3969,6 +3969,21 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0);
 
+                    b.Property<int>("M360PushRecordsCreated")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("M360PushRecordsSkipped")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("M360PushRecordsUpdated")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("M360PushStatus")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

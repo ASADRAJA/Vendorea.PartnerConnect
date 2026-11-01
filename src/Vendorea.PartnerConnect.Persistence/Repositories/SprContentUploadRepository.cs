@@ -304,6 +304,9 @@ public class SprContentUploadRepository : ISprContentUploadRepository
                     .SetProperty(u => u.M360PushProductsPushed, 0)
                     .SetProperty(u => u.M360PushCurrentBatch, 0)
                     .SetProperty(u => u.M360PushTotalBatches, 0)
+                    .SetProperty(u => u.M360PushRecordsCreated, 0)
+                    .SetProperty(u => u.M360PushRecordsUpdated, 0)
+                    .SetProperty(u => u.M360PushRecordsSkipped, 0)
                     .SetProperty(u => u.M360PushError, (string?)null),
                 cancellationToken);
 
@@ -316,9 +319,14 @@ public class SprContentUploadRepository : ISprContentUploadRepository
         int currentBatch,
         int totalBatches,
         int totalProducts,
+        int recordsCreated,
+        int recordsUpdated,
+        int recordsSkipped,
         CancellationToken cancellationToken = default)
     {
         // Lightweight per-page update of just the counter columns — no entity tracking churn.
+        // The record counts are running totals, so the last page written is also the final answer
+        // the push-complete summary reports.
         await _context.SprContentUploads
             .Where(u => u.Id == uploadId)
             .ExecuteUpdateAsync(
@@ -326,7 +334,10 @@ public class SprContentUploadRepository : ISprContentUploadRepository
                     .SetProperty(u => u.M360PushProductsPushed, productsPushed)
                     .SetProperty(u => u.M360PushCurrentBatch, currentBatch)
                     .SetProperty(u => u.M360PushTotalBatches, totalBatches)
-                    .SetProperty(u => u.M360PushTotalProducts, totalProducts),
+                    .SetProperty(u => u.M360PushTotalProducts, totalProducts)
+                    .SetProperty(u => u.M360PushRecordsCreated, recordsCreated)
+                    .SetProperty(u => u.M360PushRecordsUpdated, recordsUpdated)
+                    .SetProperty(u => u.M360PushRecordsSkipped, recordsSkipped),
                 cancellationToken);
     }
 

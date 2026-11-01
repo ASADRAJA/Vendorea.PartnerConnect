@@ -1181,6 +1181,9 @@ public class SprContentImportService : ISprContentImportService
             ProductsPushed = upload.M360PushProductsPushed,
             CurrentBatch = upload.M360PushCurrentBatch,
             TotalBatches = upload.M360PushTotalBatches,
+            RecordsCreated = upload.M360PushRecordsCreated,
+            RecordsUpdated = upload.M360PushRecordsUpdated,
+            RecordsSkipped = upload.M360PushRecordsSkipped,
             ErrorMessage = upload.M360PushError,
             StartedAt = upload.M360PushClaimedAt ?? upload.UploadedAt
         };
@@ -1298,6 +1301,9 @@ public class SprContentImportService : ISprContentImportService
                     o.CurrentBatch,
                     o.BatchCount,
                     o.TotalProducts,
+                    o.RecordsCreated,
+                    o.RecordsUpdated,
+                    o.RecordsSkipped,
                     cancellationToken),
                 cancellationToken);
 

@@ -146,6 +146,13 @@ public class SprCsvBulkImportService : ISprCsvBulkImportService
             }
 
             result.Success = result.TablesFailed == 0;
+
+            // Lift each failed table's reason onto the result — see the matching comment in
+            // SprFtpDownloadService. TablesFailed > 0 set Success = false while leaving Errors
+            // empty, so the ingestion run surfaced a failure with nothing to explain it.
+            result.Errors.AddRange(result.TableResults
+                .Where(t => !t.Success)
+                .Select(t => $"{t.TableName} ({t.SourceFile}): {t.ErrorMessage ?? "import failed"}"));
         }
         catch (Exception ex)
         {

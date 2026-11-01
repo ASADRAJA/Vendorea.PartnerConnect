@@ -67,6 +67,9 @@ public class SprContentUploadConfiguration : IEntityTypeConfiguration<SprContent
         builder.Property(e => e.M360PushProductsPushed).HasDefaultValue(0);
         builder.Property(e => e.M360PushCurrentBatch).HasDefaultValue(0);
         builder.Property(e => e.M360PushTotalBatches).HasDefaultValue(0);
+        builder.Property(e => e.M360PushRecordsCreated).HasDefaultValue(0);
+        builder.Property(e => e.M360PushRecordsUpdated).HasDefaultValue(0);
+        builder.Property(e => e.M360PushRecordsSkipped).HasDefaultValue(0);
 
         // Relationship to TradingPartner
         builder.HasOne(e => e.TradingPartner)

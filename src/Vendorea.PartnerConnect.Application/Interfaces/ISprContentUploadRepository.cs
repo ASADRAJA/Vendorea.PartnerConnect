@@ -152,6 +152,7 @@ public interface ISprContentUploadRepository
 
     /// <summary>
     /// Lightweight per-page progress update of just the push counter columns (no entity tracking).
+    /// The record counts are the push's running totals as reported by Merchant360.
     /// </summary>
     Task UpdateM360PushProgressAsync(
         int uploadId,
@@ -159,6 +160,9 @@ public interface ISprContentUploadRepository
         int currentBatch,
         int totalBatches,
         int totalProducts,
+        int recordsCreated,
+        int recordsUpdated,
+        int recordsSkipped,
         CancellationToken cancellationToken = default);
 
     /// <summary>
