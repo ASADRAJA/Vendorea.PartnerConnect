@@ -622,3 +622,15 @@ public class DenyDialogModel
     public string DisplayName { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// What the price-history dialog needs to fetch its own rows: the SKU, and the tenant + partner it
+/// belongs to. The dialog loads from these rather than being handed a result, so it can open
+/// immediately and show its own progress ring instead of the grid stalling before anything appears.
+/// </summary>
+public class PriceHistoryDialogModel
+{
+    public int TenantId { get; set; }
+    public string Sku { get; set; } = string.Empty;
+    public string? PartnerCode { get; set; }
+}
