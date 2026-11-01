@@ -1,0 +1,45 @@
+@implements IDialogContentComponent<PriceHistoryDialogModel>
+@inject ApiClient Api
+
+@* Read-only price history for one SKU. Loads its own rows from Content so the dialog opens straight
+   away and shows progress here, rather than the Prices grid sitting unresponsive while the call runs.
+   There is nothing to save, so the caller supplies a single Close action and ignores the result. *@
+
+@if (_loading)
+{
+    <FluentProgressRing />
+}
+else if (_history is null || _history.Points.Count == 0)
+{
+    <div class="tile-sub muted">
+        No price history is tracked for this SKU (only the current price is available).
+    </div>
+}
+else
+{
+    <FluentDataGrid Items="@_history.Points.AsQueryable()" TGridItem="PriceHistoryPointDto"
+                    GridTemplateColumns="1.4fr 1fr 1fr 0.7fr 1.2fr 1.2fr" Style="width: 100%;">
+        <TemplateColumn Title="Updated">@Fmt(context.UpdatedAt)</TemplateColumn>
+        <TemplateColumn Title="Cost" Align="Align.End">@Money(context.Cost)</TemplateColumn>
+        <TemplateColumn Title="List" Align="Align.End">@Money(context.ListPrice)</TemplateColumn>
+        <PropertyColumn Title="UOM" Property="@(p => p.Uom)" />
+        <TemplateColumn Title="Effective">@Fmt(context.EffectiveDate)</TemplateColumn>
+        <TemplateColumn Title="Ends">@Fmt(context.EndDate)</TemplateColumn>
+    </FluentDataGrid>
+}
+
+@code {
+    [Parameter] public PriceHistoryDialogModel Content { get; set; } = default!;
+
+    private bool _loading = true;
+    private PriceHistoryDto? _history;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _history = await Api.GetPriceHistoryAsync(Content.TenantId, Content.Sku, Content.PartnerCode);
+        _loading = false;
+    }
+
+    private static string Money(decimal value) => value.ToString("C2");
+    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+}

@@ -3,6 +3,7 @@
 @implements IDisposable
 @inject ApiClient Api
 @inject PortalState State
+@inject IDialogService DialogService
 
 <PageTitle>Prices — PartnerConnect</PageTitle>
 
@@ -76,36 +77,6 @@ else
 
         <FluentPaginator State="_pagination" />
     </div>
-
-    @if (_historySku is not null)
-    {
-        <FluentCard Class="history-panel">
-            <div class="page-header">
-                <h2 class="page-title">Price history — @_historySku</h2>
-                <FluentButton Appearance="Appearance.Stealth" OnClick="@(() => _historySku = null)">Close</FluentButton>
-            </div>
-            @if (_historyLoading)
-            {
-                <FluentProgressRing />
-            }
-            else if (_history is null || _history.Points.Count == 0)
-            {
-                <div class="tile-sub muted">No price history is tracked for this SKU (only the current price is available).</div>
-            }
-            else
-            {
-                <FluentDataGrid Items="@_history.Points.AsQueryable()" TGridItem="PriceHistoryPointDto"
-                                GridTemplateColumns="1.4fr 1fr 1fr 0.7fr 1.2fr 1.2fr" Style="width: 100%;">
-                    <TemplateColumn Title="Updated">@Fmt(context.UpdatedAt)</TemplateColumn>
-                    <TemplateColumn Title="Cost" Align="Align.End">@Money(context.Cost)</TemplateColumn>
-                    <TemplateColumn Title="List" Align="Align.End">@Money(context.ListPrice)</TemplateColumn>
-                    <PropertyColumn Title="UOM" Property="@(p => p.Uom)" />
-                    <TemplateColumn Title="Effective">@Fmt(context.EffectiveDate)</TemplateColumn>
-                    <TemplateColumn Title="Ends">@Fmt(context.EndDate)</TemplateColumn>
-                </FluentDataGrid>
-            }
-        </FluentCard>
-    }
 }
 
 @code {
@@ -117,10 +88,6 @@ else
     private FluentDataGrid<PriceRowDto>? _grid;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 50 };
     private GridItemsProvider<PriceRowDto> _provider = default!;
-
-    private string? _historySku;
-    private bool _historyLoading;
-    private PriceHistoryDto? _history;
 
     private bool HasTenantAndPartner => State.SelectedTenant is not null && _selectedPartnerCode is not null;
 
@@ -144,7 +111,6 @@ else
     private async Task LoadPartnersAsync()
     {
         _partnersLoaded = false;
-        _historySku = null;
         if (State.SelectedTenant is null)
         {
             _partners = new();
@@ -166,7 +132,7 @@ else
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task OnPartnerChanged() { _historySku = null; await RefreshGridAsync(); }
+    private async Task OnPartnerChanged() => await RefreshGridAsync();
     private async Task OnSearchAsync() => await RefreshGridAsync();
     private async Task RefreshAsync() => await RefreshGridAsync();
 
@@ -176,15 +142,31 @@ else
             await _grid.RefreshDataAsync();
     }
 
+    /// <summary>
+    /// Opens the price history for a SKU as a modal, matching how every other detail view in the
+    /// portal behaves. It used to render as a card appended below the grid, which pushed the page
+    /// taller and left the history off-screen on anything but a short result set.
+    /// </summary>
     private async Task ShowHistoryAsync(string sku)
     {
         if (State.SelectedTenant is null || _selectedPartnerCode is null)
             return;
-        _historySku = sku;
-        _historyLoading = true;
-        _history = null;
-        _history = await Api.GetPriceHistoryAsync(State.SelectedTenant.Id, sku, _selectedPartnerCode);
-        _historyLoading = false;
+
+        var model = new PriceHistoryDialogModel
+        {
+            TenantId = State.SelectedTenant.Id,
+            Sku = sku,
+            PartnerCode = _selectedPartnerCode
+        };
+
+        // Read-only, so there is nothing to return: a single Close action and no result handling.
+        await DialogService.ShowDialogAsync<PriceHistoryDialog>(model, new DialogParameters
+        {
+            Title = $"Price history — {sku}",
+            PrimaryAction = "Close",
+            SecondaryAction = null,
+            Width = "720px"
+        });
     }
 
     private static string Money(decimal value) => value.ToString("C2");

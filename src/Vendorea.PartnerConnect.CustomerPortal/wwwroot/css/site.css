@@ -716,12 +716,6 @@ a.list-row:hover {
     margin-top: 8px;
 }
 
-/* Price history panel */
-.history-panel {
-    padding: 18px;
-    margin-top: 18px;
-}
-
 /* Row of badges (e.g. per-DC stock, capabilities) */
 .badge-row {
     display: flex;
