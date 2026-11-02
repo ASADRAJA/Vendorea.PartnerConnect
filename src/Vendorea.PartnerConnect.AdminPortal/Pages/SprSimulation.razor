@@ -3,6 +3,7 @@
 @using System.Security
 @using Vendorea.PartnerConnect.AdminPortal.Models
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>SPR Simulation - PartnerConnect Admin</PageTitle>
 
@@ -70,7 +71,7 @@
                             @foreach (var h in order.StatusHistory.OrderByDescending(h => h.ChangedAt))
                             {
                                 <tr>
-                                    <td class="small text-nowrap">@h.ChangedAt.ToLocalTime().ToString("MM/dd HH:mm:ss")</td>
+                                    <td class="small text-nowrap">@Tz.Format(h.ChangedAt, "MM/dd HH:mm:ss")</td>
                                     <td class="small">@h.FromStatus → <strong>@h.ToStatus</strong><br /><span class="text-muted">@h.Reason</span></td>
                                 </tr>
                             }
@@ -149,7 +150,7 @@
                                 <div class="small">
                                     <strong>@cb.MessageType</strong>
                                     <span class="badge bg-secondary ms-1">@cb.Status</span>
-                                    <span class="text-muted ms-1">@cb.CreatedAt.ToLocalTime().ToString("MM/dd HH:mm:ss")</span>
+                                    <span class="text-muted ms-1">@Tz.Format(cb.CreatedAt, "MM/dd HH:mm:ss")</span>
                                     @if (!string.IsNullOrEmpty(cb.LastError)) { <span class="text-danger ms-1">@cb.LastError</span> }
                                 </div>
                                 <pre class="mb-0 mt-1 small bg-light p-2" style="white-space: pre-wrap; max-height: 160px; overflow:auto;">@FormatJson(cb.Payload)</pre>

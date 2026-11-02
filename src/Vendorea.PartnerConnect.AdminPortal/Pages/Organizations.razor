@@ -1,5 +1,6 @@
 @page "/organizations"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Organizations - PartnerConnect Admin</PageTitle>
 
@@ -102,7 +103,7 @@
                                         </td>
                                         <td>@(org.IsMultiTenant ? "Multi-Tenant" : "Single")</td>
                                         <td>@org.TradingPartnerIds.Count</td>
-                                        <td>@org.CreatedAt.ToLocalTime().ToString("d")</td>
+                                        <td>@Tz.Format(org.CreatedAt, "d")</td>
                                         <td>
                                             <AuthorizeView Policy="RequireOperator" Context="auth">
                                                 @if (org.Status == "Pending")

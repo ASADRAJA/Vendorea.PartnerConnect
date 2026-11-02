@@ -1,5 +1,6 @@
 @implements IDialogContentComponent<PriceHistoryDialogModel>
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 @* Read-only price history for one SKU. Loads its own rows from Content so the dialog opens straight
    away and shows progress here, rather than the Prices grid sitting unresponsive while the call runs.
@@ -41,5 +42,5 @@ else
     }
 
     private static string Money(decimal value) => value.ToString("C2");
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
 }

@@ -1,4 +1,6 @@
 @inherits LayoutComponentBase
+@inject BrowserTimeZone Tz
+@inject IJSRuntime Js
 
 <div class="page">
     <div class="sidebar">
@@ -25,6 +27,21 @@
 </div>
 
 @code {
+    /// <summary>
+    /// Resolves the operator's time zone once the circuit is live, then re-renders so the pages
+    /// below pick it up. This portal is ServerPrerendered, so there is no JS during the prerender
+    /// pass — OnAfterRenderAsync(firstRender) is the first point interop is available. Timestamps
+    /// are therefore painted once in UTC and corrected on this re-render.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || Tz.Resolved)
+            return;
+
+        await Tz.InitializeAsync(Js);
+        StateHasChanged();
+    }
+
     private static string GetDisplayName(AuthenticationState context)
     {
         var display = context.User.FindFirst("displayName")?.Value;

@@ -1,6 +1,7 @@
 @page "/registration-requests"
 @attribute [Authorize(Roles = "Admin,Support")]
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Registration Requests - PartnerConnect Admin</PageTitle>
 
@@ -80,7 +81,7 @@
                                     <div>@r.AdminDisplayName</div>
                                     <div class="small text-muted">@r.AdminEmail</div>
                                 </td>
-                                <td>@r.SubmittedAt.ToLocalTime().ToString("g")</td>
+                                <td>@Tz.Format(r.SubmittedAt, "g")</td>
                                 <td>
                                     <span class="badge @StatusBadge(r.Status)">@r.Status</span>
                                     @if (!string.IsNullOrEmpty(r.DecisionReason))

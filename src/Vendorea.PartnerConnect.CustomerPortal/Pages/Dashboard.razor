@@ -4,6 +4,7 @@
 @inject ApiClient Api
 @inject PortalState State
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
 
 <PageTitle>Dashboard — PartnerConnect</PageTitle>
 
@@ -28,7 +29,7 @@
             {
                 <div>Tenant: <strong>@State.SelectedTenant.Name</strong></div>
             }
-            <div>@DateTime.Now.ToString("dddd, MMM d")</div>
+            <div>@Tz.Now.ToString("dddd, MMM d")</div>
         </div>
     </div>
 </div>
@@ -417,7 +418,7 @@
 
     // ---- helpers ----
 
-    private static string Ago(DateTime? d)
+    private string Ago(DateTime? d)
     {
         if (d is not { } value)
             return "—";
@@ -430,11 +431,11 @@
             { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes}m ago",
             { TotalHours: < 24 } => $"{(int)span.TotalHours}h ago",
             { TotalDays: < 30 } => $"{(int)span.TotalDays}d ago",
-            _ => value.ToLocalTime().ToString("d")
+            _ => Tz.Format(value, "d")
         };
     }
 
-    private static string Full(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "No activity yet";
+    private string Full(DateTime? d) => Tz.Format(d, placeholder: "No activity yet");
 
     private static string OrderBadgeClass(string status) => status switch
     {

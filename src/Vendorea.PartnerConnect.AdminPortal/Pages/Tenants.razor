@@ -1,6 +1,7 @@
 @page "/tenants"
 @inject ApiClient Api
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
 
 <PageTitle>Tenants - PartnerConnect Admin</PageTitle>
 
@@ -113,7 +114,7 @@
                                         </td>
                                         <td><small class="text-muted">@(tenant.ExternalId ?? "-")</small></td>
                                         <td>@tenant.PartnerAccountCount</td>
-                                        <td>@tenant.CreatedAt.ToLocalTime().ToString("d")</td>
+                                        <td>@Tz.Format(tenant.CreatedAt, "d")</td>
                                         <td>
                                             <button class="btn btn-sm btn-outline-info" @onclick="() => ShowAccountsModal(tenant)" title="Partner Accounts">
                                                 <span class="oi oi-key"></span>

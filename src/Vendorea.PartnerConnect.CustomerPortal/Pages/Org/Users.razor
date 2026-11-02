@@ -3,6 +3,7 @@
 @inject ApiClient Api
 @inject IDialogService DialogService
 @inject PortalState State
+@inject BrowserTimeZone Tz
 
 <PageTitle>Users — PartnerConnect</PageTitle>
 
@@ -70,7 +71,7 @@ else
                         </TemplateColumn>
                         <TemplateColumn Title="Last login">
                             @(context.LastLoginAt is null ? (MarkupString)"<span class=\"muted\">Never</span>"
-                                : (MarkupString)System.Net.WebUtility.HtmlEncode(context.LastLoginAt.Value.ToLocalTime().ToString("g")))
+                                : (MarkupString)System.Net.WebUtility.HtmlEncode(Tz.Format(context.LastLoginAt)))
                         </TemplateColumn>
                         <TemplateColumn Title="Actions" Align="Align.End">
                             <FluentButton Appearance="Appearance.Lightweight" OnClick="@(() => OpenEditAsync(context))">Edit</FluentButton>
@@ -121,7 +122,7 @@ else
                                 : (MarkupString)System.Net.WebUtility.HtmlEncode(context.Message))
                         </TemplateColumn>
                         <TemplateColumn Title="Requested">
-                            @context.CreatedAt.ToLocalTime().ToString("g")
+                            @Tz.Format(context.CreatedAt)
                         </TemplateColumn>
                         <TemplateColumn Title="Actions" Align="Align.End">
                             <FluentButton Appearance="Appearance.Accent" OnClick="@(() => ApproveAsync(context))">Approve</FluentButton>

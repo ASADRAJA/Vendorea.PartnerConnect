@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject ApiClient Api
 @inject IJSRuntime JS
+@inject BrowserTimeZone Tz
 
 <PageTitle>Price Feeds - PartnerConnect Admin</PageTitle>
 
@@ -187,11 +188,11 @@
                                                 <span class="text-muted">0</span>
                                             }
                                         </td>
-                                        <td>@upload.UploadedAt.ToLocalTime().ToString("g")</td>
+                                        <td>@Tz.Format(upload.UploadedAt, "g")</td>
                                         <td>
                                             @if (upload.PushedToMerchant360At.HasValue)
                                             {
-                                                <span class="text-success" title="@upload.PushedToMerchant360At.Value.ToLocalTime().ToString("g")">
+                                                <span class="text-success" title="@Tz.Format(upload.PushedToMerchant360At, "g")">
                                                     <span class="oi oi-check"></span>
                                                 </span>
                                             }
@@ -307,9 +308,9 @@
                                 <dt>Records</dt>
                                 <dd>@selectedUploadDetail.RecordCount.ToString("N0")</dd>
                                 <dt>Uploaded At</dt>
-                                <dd>@selectedUploadDetail.UploadedAt.ToLocalTime().ToString("F")</dd>
+                                <dd>@Tz.Format(selectedUploadDetail.UploadedAt, "F")</dd>
                                 <dt>Pushed to Merchant360</dt>
-                                <dd>@(selectedUploadDetail.PushedToMerchant360At?.ToLocalTime().ToString("F") ?? "Not yet pushed")</dd>
+                                <dd>@(Tz.Format(selectedUploadDetail.PushedToMerchant360At, "F", "Not yet pushed"))</dd>
                             </dl>
                         </div>
                     </div>

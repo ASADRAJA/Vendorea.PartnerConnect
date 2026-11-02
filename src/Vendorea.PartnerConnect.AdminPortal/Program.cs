@@ -31,6 +31,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+
+// Per-circuit: the operator's own time zone, asked of the browser by the shell. Timestamps are
+// stored and returned as UTC, and ToLocalTime() would convert to the SERVER's zone.
+builder.Services.AddScoped<Vendorea.PartnerConnect.AdminPortal.Services.BrowserTimeZone>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCascadingAuthenticationState();
 

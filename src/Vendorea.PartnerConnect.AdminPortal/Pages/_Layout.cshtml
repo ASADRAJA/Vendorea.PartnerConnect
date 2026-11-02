@@ -13,6 +13,14 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/open-iconic@1.1.1/font/css/open-iconic-bootstrap.min.css" />
     <link href="css/site.css" rel="stylesheet" />
     <link href="Vendorea.PartnerConnect.AdminPortal.styles.css" rel="stylesheet" />
+    @* The operator's IANA time zone, read once per circuit by BrowserTimeZone. JS interop invokes a
+       named function, so the expression needs a home rather than being passed as a string. *@
+    <script type="text/javascript">
+        window.partnerConnectTimeZone = function () {
+            try { return Intl.DateTimeFormat().resolvedOptions().timeZone; }
+            catch (e) { return null; }
+        };
+    </script>
     <component type="typeof(HeadOutlet)" render-mode="ServerPrerendered" />
 </head>
 <body>

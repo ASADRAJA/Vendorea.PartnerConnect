@@ -3,6 +3,7 @@
 @implements IDisposable
 @inject ApiClient Api
 @inject PortalState State
+@inject BrowserTimeZone Tz
 
 <PageTitle>Content — PartnerConnect</PageTitle>
 
@@ -199,7 +200,7 @@ else
             await _grid.RefreshDataAsync();
     }
 
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
 
     void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
 }

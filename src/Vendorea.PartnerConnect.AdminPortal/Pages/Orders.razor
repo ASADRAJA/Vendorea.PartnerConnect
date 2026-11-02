@@ -1,5 +1,6 @@
 @page "/orders"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Orders - PartnerConnect Admin</PageTitle>
 
@@ -122,7 +123,7 @@
                                         </td>
                                         <td>@order.LineCount</td>
                                         <td>@order.TotalAmount.ToString("C")</td>
-                                        <td>@order.OrderDate.ToLocalTime().ToString("g")</td>
+                                        <td>@Tz.Format(order.OrderDate, "g")</td>
                                         <td>
                                             <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ShowDetailsModal(order)" title="View Details">
                                                 <span class="oi oi-eye"></span>
@@ -208,16 +209,16 @@
                                     <dt>Status</dt>
                                     <dd><span class="badge @GetStatusBadgeClass(orderDetail.Status)">@orderDetail.Status</span></dd>
                                     <dt>Order Date</dt>
-                                    <dd>@orderDetail.OrderDate.ToLocalTime().ToString("F")</dd>
+                                    <dd>@Tz.Format(orderDetail.OrderDate, "F")</dd>
                                     @if (orderDetail.SubmittedAt.HasValue)
                                     {
                                         <dt>Submitted</dt>
-                                        <dd>@orderDetail.SubmittedAt.Value.ToLocalTime().ToString("F")</dd>
+                                        <dd>@Tz.Format(orderDetail.SubmittedAt, "F")</dd>
                                     }
                                     @if (orderDetail.AcknowledgedAt.HasValue)
                                     {
                                         <dt>Acknowledged</dt>
-                                        <dd>@orderDetail.AcknowledgedAt.Value.ToLocalTime().ToString("F")</dd>
+                                        <dd>@Tz.Format(orderDetail.AcknowledgedAt, "F")</dd>
                                     }
                                 </dl>
                             </div>
@@ -342,7 +343,7 @@
                                                 <br><small class="text-muted">@history.Reason</small>
                                             }
                                         </div>
-                                        <small class="text-muted">@history.ChangedAt.ToLocalTime().ToString("g")</small>
+                                        <small class="text-muted">@Tz.Format(history.ChangedAt, "g")</small>
                                     </li>
                                 }
                             </ul>

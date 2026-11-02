@@ -4,6 +4,7 @@
 @inject ApiClient Api
 @inject PortalState State
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
 
 <PageTitle>Activity — PartnerConnect</PageTitle>
 
@@ -161,7 +162,7 @@ else
 
     private static DateTime? ToEndOfDay(DateTime? d) => d?.Date.AddDays(1).AddTicks(-1);
 
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
 
     private static Appearance LevelAppearance(string level) => level switch
     {

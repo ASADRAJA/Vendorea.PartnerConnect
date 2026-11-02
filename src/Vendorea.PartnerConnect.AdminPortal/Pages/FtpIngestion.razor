@@ -4,6 +4,7 @@
 @implements IDisposable
 @inject ApiClient Api
 @inject IJSRuntime JS
+@inject BrowserTimeZone Tz
 
 <PageTitle>Content Ingestion - PartnerConnect Admin</PageTitle>
 
@@ -267,7 +268,7 @@ else if (selectedPartner == "SPR")
                                 }
                             </dd>
                             <dt>Last Run</dt>
-                            <dd>@(status.LastRunAt?.ToLocalTime().ToString("g") ?? "Never")</dd>
+                            <dd>@(Tz.Format(status.LastRunAt, "g", "Never"))</dd>
                             <dt>Last Result</dt>
                             <dd>
                                 @if (status.LastRunSuccess.HasValue)
@@ -282,7 +283,7 @@ else if (selectedPartner == "SPR")
                                 }
                             </dd>
                             <dt>Next Scheduled Run</dt>
-                            <dd>@(status.NextScheduledRun?.ToLocalTime().ToString("g") ?? "Not scheduled")</dd>
+                            <dd>@(Tz.Format(status.NextScheduledRun, "g", "Not scheduled"))</dd>
                         </dl>
                     }
                     else
@@ -340,8 +341,8 @@ else if (selectedPartner == "SPR")
                                     {
                                         <tr>
                                             <td>@run.Id</td>
-                                            <td>@run.StartedAt.ToLocalTime().ToString("g")</td>
-                                            <td>@(run.CompletedAt?.ToLocalTime().ToString("g") ?? "-")</td>
+                                            <td>@Tz.Format(run.StartedAt, "g")</td>
+                                            <td>@(Tz.Format(run.CompletedAt, "g", "-"))</td>
                                             <td>@run.Duration</td>
                                             <td>
                                                 <span class="badge @GetStatusBadgeClass(run.Status)">

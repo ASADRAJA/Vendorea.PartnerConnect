@@ -1,5 +1,6 @@
 @page "/audit"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Audit Logs - PartnerConnect Admin</PageTitle>
 
@@ -101,7 +102,7 @@ else
                 @foreach (var log in logs.Results)
                 {
                     <tr class="@(log.IsSuccess ? "" : "table-danger")">
-                        <td><small>@log.Timestamp.ToLocalTime().ToString("g")</small></td>
+                        <td><small>@Tz.Format(log.Timestamp, "g")</small></td>
                         <td><span class="badge @GetActionBadgeClass(log.Action)">@log.Action</span></td>
                         <td><small>@log.EntityType/@log.EntityId</small></td>
                         <td><small>@(log.UserName ?? log.UserId ?? "-")</small></td>

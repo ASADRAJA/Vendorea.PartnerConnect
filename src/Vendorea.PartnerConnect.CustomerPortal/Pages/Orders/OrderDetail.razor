@@ -4,6 +4,7 @@
 @inject ApiClient Api
 @inject PortalState State
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
 
 <PageTitle>Order — PartnerConnect</PageTitle>
 
@@ -147,7 +148,7 @@ else
     // tenant switch no longer affects this page.
     private void OnStateChanged() { }
 
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
     private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
     private static string Qty(decimal q) => q.ToString("0.##");
     private static string QtyOrDash(decimal? q) => q is { } v ? v.ToString("0.##") : "—";
