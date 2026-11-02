@@ -981,6 +981,14 @@ fluent-card {
     border-radius: var(--radius) !important;
     box-shadow: var(--shadow) !important;
     border: 1px solid var(--border) !important;
+
+    /* The component's own host style is height: var(--card-height, 100%). Inside .content —
+       flex: 1 1 auto within a min-height: 100vh column, so its height is definite — that 100%
+       made the FIRST card on a page fill the whole viewport and push everything after it below
+       the fold. On the order page that hid the document chain, line items and documents
+       entirely, which read as "there is no detail here". Setting the component's own variable
+       sizes it to its content, rather than fighting the shadow DOM with another !important. */
+    --card-height: auto;
 }
 
 /* DataGrids: comfortable, on a white surface (usually wrapped in .grid-card) */
