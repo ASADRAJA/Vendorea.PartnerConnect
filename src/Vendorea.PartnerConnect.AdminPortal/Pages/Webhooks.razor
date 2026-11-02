@@ -1,5 +1,6 @@
 @page "/webhooks"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Webhooks - PartnerConnect Admin</PageTitle>
 
@@ -62,7 +63,7 @@ else
                             <span class="text-success">@webhook.SuccessfulDeliveries</span> /
                             <span class="text-danger">@webhook.FailedDeliveries</span>
                         </td>
-                        <td>@(webhook.LastDeliveryAt?.ToLocalTime().ToString("g") ?? "Never")</td>
+                        <td>@(Tz.Format(webhook.LastDeliveryAt, "g", "Never"))</td>
                     </tr>
                 }
             </tbody>

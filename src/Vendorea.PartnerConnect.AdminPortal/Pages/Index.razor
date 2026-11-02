@@ -1,5 +1,6 @@
 @page "/"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Dashboard - PartnerConnect Admin</PageTitle>
 
@@ -23,7 +24,7 @@
                 {
                     <div class="d-flex align-items-center mb-2">
                         <span class="badge @GetStatusBadgeClass(health.Status) me-2">@health.Status</span>
-                        <small class="text-muted">Last checked: @health.Timestamp.ToLocalTime().ToString("g")</small>
+                        <small class="text-muted">Last checked: @Tz.Format(health.Timestamp, "g")</small>
                     </div>
 
                     @if (health.Components != null)

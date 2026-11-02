@@ -1,5 +1,6 @@
 @page "/documents"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Documents - PartnerConnect Admin</PageTitle>
 
@@ -108,7 +109,7 @@ else
                         </td>
                         <td>@(doc.FileName ?? "-")</td>
                         <td>@FormatFileSize(doc.FileSizeBytes)</td>
-                        <td>@doc.ReceivedAt.ToLocalTime().ToString("g")</td>
+                        <td>@Tz.Format(doc.ReceivedAt, "g")</td>
                         <td>
                             <button class="btn btn-sm btn-outline-info" @onclick="() => ViewDocument(doc)">
                                 View
@@ -179,7 +180,7 @@ else
                         <dt class="col-sm-4">Storage Path</dt>
                         <dd class="col-sm-8"><small>@(selectedDocument.StoragePath ?? "N/A")</small></dd>
                         <dt class="col-sm-4">Received At</dt>
-                        <dd class="col-sm-8">@selectedDocument.ReceivedAt.ToLocalTime().ToString("F")</dd>
+                        <dd class="col-sm-8">@Tz.Format(selectedDocument.ReceivedAt, "F")</dd>
                     </dl>
                 </div>
                 <div class="modal-footer">

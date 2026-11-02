@@ -1,5 +1,6 @@
 @page "/tenant-connections"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Partner Connections - PartnerConnect Admin</PageTitle>
 
@@ -92,7 +93,7 @@
                                         <td>@($"{c.ContactFirstName} {c.ContactLastName}".Trim())</td>
                                         <td>@c.AccountNumber</td>
                                         <td><span class="badge @StatusBadge(c.ApprovalStatus)">@c.ApprovalStatus</span></td>
-                                        <td>@c.CreatedAt.ToLocalTime().ToString("d")</td>
+                                        <td>@Tz.Format(c.CreatedAt, "d")</td>
                                         <td>
                                             @if (c.ApprovalStatus == "Pending")
                                             {

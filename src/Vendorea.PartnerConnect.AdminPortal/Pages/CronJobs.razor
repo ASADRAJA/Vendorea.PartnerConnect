@@ -1,5 +1,6 @@
 @page "/cron-jobs"
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Cron Jobs - PartnerConnect Admin</PageTitle>
 
@@ -68,7 +69,7 @@ else
                             else
                             {
                                 <span class="badge @LastRunBadge(job.LastRunStatus)">@job.LastRunStatus</span>
-                                <div class="text-muted small">@job.LastRunAt?.ToLocalTime().ToString("g")</div>
+                                <div class="text-muted small">@Tz.Format(job.LastRunAt, "g", "")</div>
                             }
                         </td>
                         <td>
@@ -202,7 +203,7 @@ else
                                 @foreach (var r in runs)
                                 {
                                     <tr>
-                                        <td class="small">@r.StartedAt.ToLocalTime().ToString("g")</td>
+                                        <td class="small">@Tz.Format(r.StartedAt, "g")</td>
                                         <td><span class="badge @LastRunBadge(r.Status)">@r.Status</span></td>
                                         <td class="small">@r.TriggeredBy</td>
                                         <td class="small">@(r.ErrorMessage ?? r.Detail ?? "")</td>

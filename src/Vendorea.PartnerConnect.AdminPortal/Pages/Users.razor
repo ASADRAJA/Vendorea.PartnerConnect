@@ -1,6 +1,7 @@
 @page "/users"
 @attribute [Authorize(Policy = "RequireAdmin")]
 @inject ApiClient Api
+@inject BrowserTimeZone Tz
 
 <PageTitle>Users</PageTitle>
 
@@ -59,7 +60,7 @@ else
                             <span class="badge bg-secondary">Inactive</span>
                         }
                     </td>
-                    <td><small class="text-muted">@(u.LastLoginAt?.ToLocalTime().ToString("g") ?? "—")</small></td>
+                    <td><small class="text-muted">@(Tz.Format(u.LastLoginAt, "g", "—"))</small></td>
                     <td class="text-end text-nowrap">
                         <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(u)" title="Edit">
                             <span class="oi oi-pencil"></span>
