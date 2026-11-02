@@ -45,13 +45,59 @@ else
 
     <FluentCard Class="order-summary-card">
         <div class="order-summary-grid">
+            <div><div class="tile-label">Tenant</div><div>@Dash(_order.TenantName)</div></div>
             <div><div class="tile-label">Partner</div><div>@_order.PartnerName</div></div>
+            <div><div class="tile-label">Account #</div><div>@Dash(_order.AccountNumber)</div></div>
             <div><div class="tile-label">Status</div><div><FluentBadge Appearance="@StatusAppearance(_order.Status)">@_order.Status</FluentBadge></div></div>
-            <div><div class="tile-label">Ordered</div><div>@Fmt(_order.OrderedAt)</div></div>
             <div><div class="tile-label">Partner order #</div><div>@Dash(_order.PartnerOrderNumber)</div></div>
-            <div><div class="tile-label">Total</div><div>@Money(_order.Total, _order.Currency)</div></div>
         </div>
     </FluentCard>
+
+    @* The lifecycle as timestamps. The chain stepper below shows the same progression as
+       documents; this says exactly when each step happened. *@
+    <h2 class="section-title">Timeline</h2>
+    <FluentCard Class="order-summary-card">
+        <div class="order-summary-grid">
+            <div><div class="tile-label">Ordered</div><div>@Fmt(_order.OrderedAt)</div></div>
+            <div><div class="tile-label">Submitted to PartnerConnect</div><div>@Fmt(_order.SubmittedAt)</div></div>
+            <div><div class="tile-label">Acknowledged</div><div>@Fmt(_order.AcknowledgedAt)</div></div>
+            <div><div class="tile-label">Shipped</div><div>@Fmt(_order.ShippedAt)</div></div>
+            <div><div class="tile-label">Completed</div><div>@Fmt(_order.CompletedAt)</div></div>
+        </div>
+    </FluentCard>
+
+    <h2 class="section-title">Totals</h2>
+    <FluentCard Class="order-summary-card">
+        <div class="order-summary-grid">
+            <div><div class="tile-label">Subtotal</div><div>@Money(_order.SubTotal, _order.Currency)</div></div>
+            <div><div class="tile-label">Tax</div><div>@Money(_order.TaxAmount, _order.Currency)</div></div>
+            <div><div class="tile-label">Shipping</div><div>@Money(_order.ShippingAmount, _order.Currency)</div></div>
+            <div><div class="tile-label">Total</div><div><strong>@Money(_order.Total, _order.Currency)</strong></div></div>
+        </div>
+    </FluentCard>
+
+    @if (HasAddress(_order.ShipTo) || HasAddress(_order.BillTo))
+    {
+        <h2 class="section-title">Addresses</h2>
+        <FluentCard Class="order-summary-card">
+            <div class="order-summary-grid">
+                @if (HasAddress(_order.ShipTo))
+                {
+                    <div>
+                        <div class="tile-label">Ship to</div>
+                        @AddressBlock(_order.ShipTo!)
+                    </div>
+                }
+                @if (HasAddress(_order.BillTo))
+                {
+                    <div>
+                        <div class="tile-label">Bill to</div>
+                        @AddressBlock(_order.BillTo!)
+                    </div>
+                }
+            </div>
+        </FluentCard>
+    }
 
     <h2 class="section-title">Document chain</h2>
     <div class="order-chain">
@@ -75,15 +121,24 @@ else
     {
         <div class="grid-card">
             <FluentDataGrid Items="@_order.Lines.AsQueryable()" TGridItem="OrderLineDto"
-                            GridTemplateColumns="0.5fr 1.2fr 2.4fr 0.7fr 0.6fr 0.9fr 0.9fr 1fr" Style="width: 100%;">
+                            GridTemplateColumns="0.5fr 1.3fr 2.2fr 0.7fr 0.6fr 0.9fr 0.9fr 1fr 0.9fr" Style="width: 100%;">
                 <PropertyColumn Title="#" Property="@(l => l.LineNumber)" />
-                <PropertyColumn Title="SKU" Property="@(l => l.Sku)" />
+                <TemplateColumn Title="SKU">
+                    <div>@context.Sku</div>
+                    @if (!string.IsNullOrWhiteSpace(context.VendorSku) && context.VendorSku != context.Sku)
+                    {
+                        <div class="tile-sub muted">Vendor: @context.VendorSku</div>
+                    }
+                </TemplateColumn>
                 <PropertyColumn Title="Description" Property="@(l => l.Description)" />
                 <TemplateColumn Title="Qty" Align="Align.End">@Qty(context.Quantity) @context.UnitOfMeasure</TemplateColumn>
                 <TemplateColumn Title="Ack" Align="Align.End">@QtyOrDash(context.AcknowledgedQuantity)</TemplateColumn>
                 <TemplateColumn Title="Shipped" Align="Align.End">@QtyOrDash(context.ShippedQuantity)</TemplateColumn>
                 <TemplateColumn Title="Unit" Align="Align.End">@Money(context.UnitPrice, _order.Currency)</TemplateColumn>
                 <TemplateColumn Title="Line total" Align="Align.End">@Money(context.LineTotal, _order.Currency)</TemplateColumn>
+                <TemplateColumn Title="Status">
+                    <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
+                </TemplateColumn>
             </FluentDataGrid>
         </div>
     }
@@ -113,6 +168,45 @@ else
                 </TemplateColumn>
             </FluentDataGrid>
         </div>
+    }
+
+    <h2 class="section-title">Status history</h2>
+    @if (_order.StatusHistory.Count == 0)
+    {
+        <div class="tile-sub muted">No status changes have been recorded for this order yet.</div>
+    }
+    else
+    {
+        <FluentCard Class="order-summary-card">
+            <div class="status-history">
+                @foreach (var h in _order.StatusHistory)
+                {
+                    <div class="status-history-row">
+                        <div class="status-history-change">
+                            @if (!string.IsNullOrWhiteSpace(h.FromStatus))
+                            {
+                                <FluentBadge Appearance="Appearance.Lightweight">@h.FromStatus</FluentBadge>
+                                <span class="status-history-arrow">&rarr;</span>
+                            }
+                            <FluentBadge Appearance="@StatusAppearance(h.ToStatus)">@h.ToStatus</FluentBadge>
+                            @if (!string.IsNullOrWhiteSpace(h.Reason))
+                            {
+                                <div class="tile-sub muted">@h.Reason</div>
+                            }
+                        </div>
+                        <div class="tile-sub muted">@Fmt(h.ChangedAt)</div>
+                    </div>
+                }
+            </div>
+        </FluentCard>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_order.Notes))
+    {
+        <h2 class="section-title">Notes</h2>
+        <FluentCard Class="order-summary-card">
+            <div>@_order.Notes</div>
+        </FluentCard>
     }
 }
 
@@ -150,6 +244,33 @@ else
 
     private string Fmt(DateTime? d) => Tz.Format(d);
     private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+
+    private static bool HasAddress(OrderAddressDto? a) => a is not null && !a.IsEmpty;
+
+    /// <summary>Renders an address, skipping the parts the order didn't carry.</summary>
+    private static RenderFragment AddressBlock(OrderAddressDto a) =>
+        @<div class="order-address">
+            @if (!string.IsNullOrWhiteSpace(a.Name))
+            {
+                <div><strong>@a.Name</strong></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(a.Line1))
+            {
+                <div>@a.Line1</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(a.Line2))
+            {
+                <div>@a.Line2</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(a.CityLine))
+            {
+                <div>@a.CityLine</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(a.Country))
+            {
+                <div>@a.Country</div>
+            }
+        </div>;
     private static string Qty(decimal q) => q.ToString("0.##");
     private static string QtyOrDash(decimal? q) => q is { } v ? v.ToString("0.##") : "—";
 

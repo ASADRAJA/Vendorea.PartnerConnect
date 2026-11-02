@@ -923,6 +923,9 @@ public class OrgController : ControllerBase
             PoNumber = order.PoNumber,
             PartnerCode = order.TradingPartner?.Code ?? string.Empty,
             PartnerName = order.TradingPartner?.Name ?? $"Partner {order.TradingPartnerId}",
+            TenantId = order.TenantId,
+            TenantName = order.Tenant?.Name ?? $"Tenant {order.TenantId}",
+            AccountNumber = order.TenantPartnerAccount?.AccountNumber,
             OrderedAt = order.OrderDate,
             Status = order.Status.ToString(),
             Chain = documents.Select(d => d.Type).ToList(),
@@ -955,6 +958,18 @@ public class OrgController : ControllerBase
                     BackorderedQuantity = l.BackorderedQuantity
                 })
                 .ToList(),
+            StatusHistory = (order.StatusHistory ?? new List<OrderStatusHistory>())
+                .OrderByDescending(h => h.ChangedAt)
+                .Select(h => new OrderStatusEventDto
+                {
+                    FromStatus = h.FromStatus?.ToString(),
+                    ToStatus = h.ToStatus.ToString(),
+                    Reason = h.Reason,
+                    ChangedAt = h.ChangedAt
+                })
+                .ToList(),
+            ShipTo = MapOrderAddress(order.ShipToJson),
+            BillTo = MapOrderAddress(order.BillToJson),
             Documents = documents,
             Exceptions = exceptions
         };
@@ -1342,6 +1357,39 @@ public class OrgController : ControllerBase
         DocumentType.Invoice => "Invoice",
         _ => null
     };
+
+    /// <summary>
+    /// Flattens a stored canonical address (Address1/Address2) into the portal's shape
+    /// (Line1/Line2). Returns null for absent or unparseable JSON — an order with no address on
+    /// file simply has no address panel, which is not an error worth surfacing to a customer.
+    /// </summary>
+    private static OrderAddressDto? MapOrderAddress(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            var address = JsonSerializer.Deserialize<CanonicalAddressInfo>(json);
+            if (address is null)
+                return null;
+
+            return new OrderAddressDto
+            {
+                Name = address.Name ?? address.Company,
+                Line1 = address.Address1,
+                Line2 = address.Address2,
+                City = address.City,
+                State = address.State,
+                PostalCode = address.PostalCode,
+                Country = address.Country
+            };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>Clamps paging to the documented bounds: skip ≥ 0, take in [1, 200] (default 50).</summary>
     private static (int Skip, int Take) NormalizePaging(int skip, int take)
@@ -2039,11 +2087,45 @@ public class OrderDetailDto : OrderSummaryDto
     public DateTime? ShippedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>The tenant's account number with the partner, as the partner knows this dealer.</summary>
+    public string? AccountNumber { get; set; }
+
+    /// <summary>Ship-to address as submitted, or null when the order carried none.</summary>
+    public OrderAddressDto? ShipTo { get; set; }
+
+    /// <summary>Bill-to address as submitted, or null when the order carried none.</summary>
+    public OrderAddressDto? BillTo { get; set; }
+
+    /// <summary>Status transitions, newest first — the order's own audit trail.</summary>
+    public List<OrderStatusEventDto> StatusHistory { get; set; } = new();
+
     public List<OrderLineDto> Lines { get; set; } = new();
     public List<OrderDocumentDto> Documents { get; set; } = new();
 
     /// <summary>Plain-language exceptions from failed order/document processing (empty when healthy).</summary>
     public List<string> Exceptions { get; set; } = new();
+}
+
+/// <summary>A postal address on an order, flattened from the stored canonical shape.</summary>
+public class OrderAddressDto
+{
+    public string? Name { get; set; }
+    public string? Line1 { get; set; }
+    public string? Line2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Country { get; set; }
+}
+
+/// <summary>One status transition on an order.</summary>
+public class OrderStatusEventDto
+{
+    public string? FromStatus { get; set; }
+    public string ToStatus { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public DateTime ChangedAt { get; set; }
 }
 
 public class OrderLineDto

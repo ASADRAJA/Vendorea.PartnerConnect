@@ -769,6 +769,36 @@ a.list-row:hover {
     color: var(--muted);
 }
 
+/* Order addresses + status history (order detail) */
+.order-address {
+    line-height: 1.45;
+}
+
+.status-history {
+    display: flex;
+    flex-direction: column;
+}
+.status-history-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+}
+.status-history-row:last-child {
+    border-bottom: none;
+}
+.status-history-change {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.status-history-arrow {
+    color: var(--muted);
+}
+
 /* Activity feed row emphasis */
 .activity-error {
     background: rgba(220, 38, 38, .07);
