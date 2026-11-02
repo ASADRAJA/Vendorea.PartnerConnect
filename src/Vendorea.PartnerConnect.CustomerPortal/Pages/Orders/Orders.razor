@@ -49,11 +49,14 @@
 
 <div class="grid-card">
     <FluentDataGrid @ref="_grid" TGridItem="OrderSummaryDto" ItemsProvider="_provider" Pagination="_pagination"
-                    GridTemplateColumns="1.1fr 1.3fr 1.2fr 1.1fr 1fr 1.5fr 1fr 0.7fr" Style="width: 100%;">
+                    GridTemplateColumns="1.1fr 1.3fr 1.2fr 1.1fr 1.1fr 1fr 1.5fr 1fr 0.7fr" Style="width: 100%;">
         <PropertyColumn Title="PO #" Property="@(o => o.PoNumber)" />
         <PropertyColumn Title="Tenant" Property="@(o => o.TenantName)" />
         <PropertyColumn Title="Partner" Property="@(o => o.PartnerName)" />
         <TemplateColumn Title="Ordered">@Fmt(context.OrderedAt)</TemplateColumn>
+        @* When PartnerConnect accepted it, which is not the same as the date the submitting
+           system put on the order. Blank for an order that never reached us. *@
+        <TemplateColumn Title="Submitted">@Fmt(context.SubmittedAt)</TemplateColumn>
         <TemplateColumn Title="Status">
             <FluentBadge Appearance="@StatusAppearance(context.Status)">@context.Status</FluentBadge>
         </TemplateColumn>

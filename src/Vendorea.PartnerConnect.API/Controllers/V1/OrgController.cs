@@ -794,6 +794,7 @@ public class OrgController : ControllerBase
             PartnerCode = o.TradingPartner?.Code ?? string.Empty,
             PartnerName = o.TradingPartner?.Name ?? $"Partner {o.TradingPartnerId}",
             OrderedAt = o.OrderDate,
+            SubmittedAt = o.SubmittedAt,
             Status = o.Status.ToString(),
             Chain = DeriveChain(o),
             Total = o.TotalAmount,
@@ -881,6 +882,7 @@ public class OrgController : ControllerBase
             PartnerCode = o.TradingPartner?.Code ?? string.Empty,
             PartnerName = o.TradingPartner?.Name ?? $"Partner {o.TradingPartnerId}",
             OrderedAt = o.OrderDate,
+            SubmittedAt = o.SubmittedAt,
             Status = o.Status.ToString(),
             Chain = DeriveChain(o),
             Total = o.TotalAmount,
@@ -1161,6 +1163,7 @@ public class OrgController : ControllerBase
             PartnerCode = o.TradingPartner?.Code ?? string.Empty,
             PartnerName = o.TradingPartner?.Name ?? $"Partner {o.TradingPartnerId}",
             OrderedAt = o.OrderDate,
+            SubmittedAt = o.SubmittedAt,
             Status = o.Status.ToString(),
             Chain = DeriveChain(o),
             Total = o.TotalAmount,
@@ -2009,6 +2012,12 @@ public class OrderSummaryDto
     public string PartnerName { get; set; } = string.Empty;
     public DateTime OrderedAt { get; set; }
 
+    /// <summary>
+    /// When PartnerConnect accepted the order, as distinct from <see cref="OrderedAt"/>, which is
+    /// the date the submitting system says it was placed. Null for an order that never reached us.
+    /// </summary>
+    public DateTime? SubmittedAt { get; set; }
+
     /// <summary>Order status (Draft | Submitted | Acknowledged | … | Cancelled | Failed).</summary>
     public string Status { get; set; } = string.Empty;
 
@@ -2026,7 +2035,6 @@ public class OrderDetailDto : OrderSummaryDto
     public decimal TaxAmount { get; set; }
     public decimal ShippingAmount { get; set; }
     public string? PartnerOrderNumber { get; set; }
-    public DateTime? SubmittedAt { get; set; }
     public DateTime? AcknowledgedAt { get; set; }
     public DateTime? ShippedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
