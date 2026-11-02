@@ -374,6 +374,13 @@ public class OrderSummaryDto
     public string PartnerCode { get; set; } = string.Empty;
     public string PartnerName { get; set; } = string.Empty;
     public DateTime OrderedAt { get; set; }
+
+    /// <summary>
+    /// When PartnerConnect accepted the order. Distinct from <see cref="OrderedAt"/>, which is the
+    /// date the submitting system says it was placed.
+    /// </summary>
+    public DateTime? SubmittedAt { get; set; }
+
     public string Status { get; set; } = string.Empty;
 
     /// <summary>Document-chain stages present, ordered PO → ACK → ASN → Invoice.</summary>
@@ -390,7 +397,6 @@ public class OrderDetailDto : OrderSummaryDto
     public decimal TaxAmount { get; set; }
     public decimal ShippingAmount { get; set; }
     public string? PartnerOrderNumber { get; set; }
-    public DateTime? SubmittedAt { get; set; }
     public DateTime? AcknowledgedAt { get; set; }
     public DateTime? ShippedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
