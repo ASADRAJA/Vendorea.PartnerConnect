@@ -769,6 +769,36 @@ a.list-row:hover {
     color: var(--muted);
 }
 
+/* Order addresses + status history (order detail) */
+.order-address {
+    line-height: 1.45;
+}
+
+.status-history {
+    display: flex;
+    flex-direction: column;
+}
+.status-history-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+}
+.status-history-row:last-child {
+    border-bottom: none;
+}
+.status-history-change {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.status-history-arrow {
+    color: var(--muted);
+}
+
 /* Activity feed row emphasis */
 .activity-error {
     background: rgba(220, 38, 38, .07);
@@ -951,6 +981,14 @@ fluent-card {
     border-radius: var(--radius) !important;
     box-shadow: var(--shadow) !important;
     border: 1px solid var(--border) !important;
+
+    /* The component's own host style is height: var(--card-height, 100%). Inside .content —
+       flex: 1 1 auto within a min-height: 100vh column, so its height is definite — that 100%
+       made the FIRST card on a page fill the whole viewport and push everything after it below
+       the fold. On the order page that hid the document chain, line items and documents
+       entirely, which read as "there is no detail here". Setting the component's own variable
+       sizes it to its content, rather than fighting the shadow DOM with another !important. */
+    --card-height: auto;
 }
 
 /* DataGrids: comfortable, on a white surface (usually wrapped in .grid-card) */

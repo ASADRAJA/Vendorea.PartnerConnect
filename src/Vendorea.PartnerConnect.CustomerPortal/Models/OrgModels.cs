@@ -390,6 +390,44 @@ public class OrderSummaryDto
     public string Currency { get; set; } = "USD";
 }
 
+/// <summary>A postal address on an order.</summary>
+public class OrderAddressDto
+{
+    public string? Name { get; set; }
+    public string? Line1 { get; set; }
+    public string? Line2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Country { get; set; }
+
+    /// <summary>True when there is nothing worth rendering (the panel is hidden entirely).</summary>
+    public bool IsEmpty =>
+        string.IsNullOrWhiteSpace(Name) && string.IsNullOrWhiteSpace(Line1) &&
+        string.IsNullOrWhiteSpace(City) && string.IsNullOrWhiteSpace(PostalCode);
+
+    /// <summary>City, State PostalCode — collapsed so missing parts don't leave stray punctuation.</summary>
+    public string CityLine
+    {
+        get
+        {
+            var cityState = string.Join(", ",
+                new[] { City, State }.Where(p => !string.IsNullOrWhiteSpace(p)));
+            return string.Join(" ",
+                new[] { cityState, PostalCode }.Where(p => !string.IsNullOrWhiteSpace(p)));
+        }
+    }
+}
+
+/// <summary>One status transition on an order.</summary>
+public class OrderStatusEventDto
+{
+    public string? FromStatus { get; set; }
+    public string ToStatus { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public DateTime ChangedAt { get; set; }
+}
+
 /// <summary>Full order detail (<c>GET /org/tenants/{id}/orders/{id}</c>).</summary>
 public class OrderDetailDto : OrderSummaryDto
 {
@@ -401,6 +439,16 @@ public class OrderDetailDto : OrderSummaryDto
     public DateTime? ShippedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>The tenant's account number with the partner.</summary>
+    public string? AccountNumber { get; set; }
+
+    public OrderAddressDto? ShipTo { get; set; }
+    public OrderAddressDto? BillTo { get; set; }
+
+    /// <summary>Status transitions, newest first.</summary>
+    public List<OrderStatusEventDto> StatusHistory { get; set; } = new();
+
     public List<OrderLineDto> Lines { get; set; } = new();
     public List<OrderDocumentDto> Documents { get; set; } = new();
     public List<string> Exceptions { get; set; } = new();
