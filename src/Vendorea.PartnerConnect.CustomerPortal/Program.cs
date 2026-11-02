@@ -41,6 +41,10 @@ builder.Services.AddFluentUIComponents();
 // Per-circuit portal state (org context + selected tenant).
 builder.Services.AddScoped<PortalState>();
 
+// Per-circuit: the viewer's own time zone, asked of the browser by the shell. Timestamps are
+// stored and returned as UTC, and ToLocalTime() would convert to the SERVER's zone.
+builder.Services.AddScoped<BrowserTimeZone>();
+
 // Cookie authentication. The org portal API key is exchanged for a cookie via the
 // /Account/Login Razor Page; /account/logout clears it.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

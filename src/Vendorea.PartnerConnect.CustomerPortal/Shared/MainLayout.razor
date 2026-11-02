@@ -3,6 +3,8 @@
 @inject ApiClient Api
 @inject PortalState State
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
+@inject IJSRuntime Js
 
 <div class="app-shell">
     <aside class="app-sidebar">
@@ -141,6 +143,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Resolve the viewer's time zone before @Body renders. The layout initializes ahead of the
+        // page it hosts, and this render mode is not prerendered, so every timestamp is already in
+        // the right zone on first paint rather than appearing in UTC and then correcting itself.
+        await Tz.InitializeAsync(Js);
+
         if (!State.Loaded)
         {
             var context = await Api.GetOrgContextAsync();

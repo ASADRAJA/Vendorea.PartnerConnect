@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject ApiClient Api
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
 
 <PageTitle>Connections — PartnerConnect</PageTitle>
 
@@ -37,7 +38,7 @@ else
                 <FluentBadge Appearance="@BadgeAppearance(context.DisplayStatus)">@context.DisplayStatus</FluentBadge>
             </TemplateColumn>
             <TemplateColumn Title="Last activity">
-                @(context.LastActivity is { } d ? d.ToLocalTime().ToString("g") : "—")
+                @Tz.Format(context.LastActivity)
             </TemplateColumn>
             <TemplateColumn Title="Actions" Align="Align.End">
                 <FluentButton Appearance="Appearance.Outline" OnClick="@(() => View(context.Code))">View</FluentButton>

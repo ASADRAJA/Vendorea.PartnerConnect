@@ -3,6 +3,7 @@
 @implements IDisposable
 @inject ApiClient Api
 @inject PortalState State
+@inject BrowserTimeZone Tz
 
 <PageTitle>Inventory — PartnerConnect</PageTitle>
 
@@ -249,7 +250,7 @@ else
     }
 
     private static string Money(decimal? value) => value is { } v ? v.ToString("C2") : "—";
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
     private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s!;
 
     void IDisposable.Dispose() => State.OnChange -= OnStateChanged;

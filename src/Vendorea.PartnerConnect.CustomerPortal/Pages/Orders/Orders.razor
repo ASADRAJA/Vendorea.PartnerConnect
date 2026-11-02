@@ -4,6 +4,7 @@
 @inject ApiClient Api
 @inject PortalState State
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
 
 <PageTitle>Orders — PartnerConnect</PageTitle>
 
@@ -172,7 +173,7 @@
     private static string Money(decimal value, string currency)
         => value.ToString("C2") + (string.Equals(currency, "USD", StringComparison.OrdinalIgnoreCase) ? "" : $" {currency}");
 
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
 
     private static Appearance StatusAppearance(string status) => status switch
     {

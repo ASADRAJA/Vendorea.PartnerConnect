@@ -4,6 +4,7 @@
 @inject PortalState State
 @inject IDialogService DialogService
 @inject NavigationManager Navigation
+@inject BrowserTimeZone Tz
 
 <PageTitle>@(_connection?.PartnerName ?? "Connection") — PartnerConnect</PageTitle>
 
@@ -82,7 +83,7 @@ else
                 <FluentCard>
                     <div class="tile">
                         <div class="tile-label">Health</div>
-                        <div class="tile-sub">Last sync: @(_connection.Health.LastSyncAt is { } s ? s.ToLocalTime().ToString("g") : "Never")</div>
+                        <div class="tile-sub">Last sync: @Tz.Format(_connection.Health.LastSyncAt, placeholder: "Never")</div>
                         <div class="tile-sub">
                             Last error:
                             @if (string.IsNullOrWhiteSpace(_connection.Health.LastError))
@@ -465,7 +466,7 @@ else
         _messageIntent = intent;
     }
 
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
     private static string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s!;
 
     private static Appearance BadgeAppearance(string status) => status.ToLowerInvariant() switch

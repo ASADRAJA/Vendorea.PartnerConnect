@@ -4,6 +4,7 @@
 @inject ApiClient Api
 @inject PortalState State
 @inject IDialogService DialogService
+@inject BrowserTimeZone Tz
 
 <PageTitle>Prices — PartnerConnect</PageTitle>
 
@@ -170,7 +171,7 @@ else
     }
 
     private static string Money(decimal value) => value.ToString("C2");
-    private static string Fmt(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("g") : "—";
+    private string Fmt(DateTime? d) => Tz.Format(d);
 
     void IDisposable.Dispose() => State.OnChange -= OnStateChanged;
 }
