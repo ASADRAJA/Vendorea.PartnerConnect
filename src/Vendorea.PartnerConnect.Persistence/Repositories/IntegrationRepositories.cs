@@ -61,6 +61,23 @@ public class IntegrationConnectionRepository : IIntegrationConnectionRepository
         return connection;
     }
 
+    public async Task<int?> FindOwningTenantAsync(
+        int providerId, string externalAccountId, CancellationToken cancellationToken = default)
+    {
+        // Projects the tenant id alone. Returning the connection would put another tenant's row
+        // — and its navigation properties — in the hands of a caller that has no business with it.
+        var owner = await _context.IntegrationConnections
+            .AsNoTracking()
+            .Where(c => c.IntegrationProviderId == providerId
+                        && c.ExternalAccountId == externalAccountId
+                        && c.AccountOwnership == IntegrationAccountOwnership.Primary
+                        && c.Status != IntegrationConnectionStatus.Revoked)
+            .Select(c => (int?)c.TenantId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return owner;
+    }
+
     public async Task UpdateAsync(IntegrationConnection connection, CancellationToken cancellationToken = default)
     {
         connection.UpdatedAt = DateTime.UtcNow;
@@ -256,4 +273,43 @@ public class IntegrationSyncStateRepository : IIntegrationSyncStateRepository
 
         await _context.SaveChangesAsync(cancellationToken);
     }
+}
+
+public class IntegrationAccountDelegationRepository : IIntegrationAccountDelegationRepository
+{
+    private readonly PartnerConnectDbContext _context;
+
+    public IntegrationAccountDelegationRepository(PartnerConnectDbContext context) => _context = context;
+
+    public Task<IntegrationAccountDelegation?> FindActiveAsync(
+        int providerId, string externalAccountId, int delegateTenantId,
+        CancellationToken cancellationToken = default)
+        => _context.IntegrationAccountDelegations
+            .FirstOrDefaultAsync(
+                d => d.IntegrationProviderId == providerId
+                     && d.ExternalAccountId == externalAccountId
+                     && d.DelegateTenantId == delegateTenantId
+                     && d.RevokedAt == null,
+                cancellationToken);
+
+    public async Task<IReadOnlyList<IntegrationAccountDelegation>> GetForAccountAsync(
+        int providerId, string externalAccountId, CancellationToken cancellationToken = default)
+        => await _context.IntegrationAccountDelegations
+            .AsNoTracking()
+            .Where(d => d.IntegrationProviderId == providerId && d.ExternalAccountId == externalAccountId)
+            .OrderByDescending(d => d.GrantedAt)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddAsync(
+        IntegrationAccountDelegation delegation, CancellationToken cancellationToken = default)
+    {
+        _context.IntegrationAccountDelegations.Add(delegation);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public Task<IntegrationAccountDelegation?> GetAsync(Guid id, CancellationToken cancellationToken = default)
+        => _context.IntegrationAccountDelegations.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+
+    public Task SaveAsync(CancellationToken cancellationToken = default)
+        => _context.SaveChangesAsync(cancellationToken);
 }

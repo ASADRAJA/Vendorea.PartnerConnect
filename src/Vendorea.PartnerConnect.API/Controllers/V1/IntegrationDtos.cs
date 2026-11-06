@@ -88,3 +88,35 @@ public class IntegrationAuthorizationStartDto
     public string ConsentUrl { get; set; } = string.Empty;
     public DateTime StateExpiresAt { get; set; }
 }
+
+/// <summary>Body of the delegated-access grant.</summary>
+public class GrantIntegrationDelegationRequest
+{
+    public string ProviderCode { get; set; } = string.Empty;
+
+    /// <summary>The seller account being shared.</summary>
+    public string ExternalAccountId { get; set; } = string.Empty;
+
+    /// <summary>The tenant being granted access. The owner is resolved, never supplied.</summary>
+    public int DelegateTenantId { get; set; }
+
+    /// <summary>The person authorising this. Required — a grant must be attributable.</summary>
+    public string GrantedBy { get; set; } = string.Empty;
+
+    public string? Reason { get; set; }
+}
+
+/// <summary>One delegated-access grant.</summary>
+public class IntegrationDelegationDto
+{
+    public Guid Id { get; set; }
+    public string ExternalAccountId { get; set; } = string.Empty;
+    public int OwnerTenantId { get; set; }
+    public int DelegateTenantId { get; set; }
+    public string GrantedBy { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public DateTime GrantedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public string? RevokedBy { get; set; }
+    public bool IsActive { get; set; }
+}

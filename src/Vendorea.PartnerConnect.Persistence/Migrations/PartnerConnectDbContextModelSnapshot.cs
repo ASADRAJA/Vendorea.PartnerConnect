@@ -1482,11 +1482,69 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("FtpIngestionRuns", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DelegateTenantId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ExternalAccountId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("GrantedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GrantedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("IntegrationProviderId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("OwnerTenantId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DelegateTenantId");
+
+                    b.HasIndex("IntegrationProviderId", "ExternalAccountId", "DelegateTenantId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IntegrationAccountDelegations_ActiveGrant")
+                        .HasFilter("\"RevokedAt\" IS NULL");
+
+                    b.ToTable("IntegrationAccountDelegations", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AccountOwnership")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Primary");
 
                     b.Property<string>("ConfigJson")
                         .HasColumnType("text");
@@ -1540,9 +1598,12 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IntegrationProviderId");
-
                     b.HasIndex("OrganizationId");
+
+                    b.HasIndex("IntegrationProviderId", "ExternalAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IntegrationConnections_PrimaryAccountOwner")
+                        .HasFilter("\"ExternalAccountId\" IS NOT NULL AND \"AccountOwnership\" = 'Primary' AND \"Status\" <> 'Revoked'");
 
                     b.HasIndex("Status", "IntegrationProviderId");
 
@@ -8905,6 +8966,17 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Navigation("PartnerDocument");
 
                     b.Navigation("ResponseDocument");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider", "Provider")
+                        .WithMany()
+                        .HasForeignKey("IntegrationProviderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Provider");
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", b =>

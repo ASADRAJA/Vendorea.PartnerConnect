@@ -120,6 +120,12 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket> ProviderRateLimitBuckets
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket>();
 
+    // Explicit delegated access to a seller account another tenant owns. Deliberately a separate
+    // table: an exception to the one-account-one-tenant rule must be a row somebody created, not
+    // a flag the authorization flow could set.
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation> IntegrationAccountDelegations
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation>();
+
     // --- Marketplace sales orders (Phase 3). Separate from the supplier Order aggregate: the
     // same word, the opposite direction, a different lifecycle. ---
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder> SalesOrders

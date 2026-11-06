@@ -37,6 +37,21 @@ public interface IIntegrationConnectionRepository
     Task<IntegrationConnection?> FindByExternalAccountAsync(
         int tenantId, int providerId, string externalAccountId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the tenant that owns an external account, or null when nobody does.
+    /// </summary>
+    /// <remarks>
+    /// The one cross-tenant lookup in this interface, and it returns a tenant id and nothing
+    /// else — not the connection, not its credentials, not its orders. Only the existence of a
+    /// claim crosses the boundary, which is what lets the authorization flow refuse a second
+    /// tenant without ever reading the first tenant's data.
+    ///
+    /// Revoked connections are ignored: a tenant that disconnected has released the account, and
+    /// a later claim by someone else is a transfer rather than concurrent sharing.
+    /// </remarks>
+    Task<int?> FindOwningTenantAsync(
+        int providerId, string externalAccountId, CancellationToken cancellationToken = default);
+
     Task<IntegrationConnection> AddAsync(
         IntegrationConnection connection, CancellationToken cancellationToken = default);
 
@@ -104,4 +119,25 @@ public interface IIntegrationSyncStateRepository
     Task RecordAttemptAsync(
         Guid connectionId, IntegrationCapabilities capability, string? marketplaceId,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Explicit grants letting a second tenant connect an account another tenant owns.
+/// </summary>
+public interface IIntegrationAccountDelegationRepository
+{
+    /// <summary>The active grant for this delegate on this account, if there is one.</summary>
+    Task<IntegrationAccountDelegation?> FindActiveAsync(
+        int providerId, string externalAccountId, int delegateTenantId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Every grant for an account, revoked ones included, for audit.</summary>
+    Task<IReadOnlyList<IntegrationAccountDelegation>> GetForAccountAsync(
+        int providerId, string externalAccountId, CancellationToken cancellationToken = default);
+
+    Task AddAsync(IntegrationAccountDelegation delegation, CancellationToken cancellationToken = default);
+
+    Task<IntegrationAccountDelegation?> GetAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task SaveAsync(CancellationToken cancellationToken = default);
 }

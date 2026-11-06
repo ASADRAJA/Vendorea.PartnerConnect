@@ -133,6 +133,26 @@ claim is made at the network level, because none can be honoured.
 - OpenAPI and JSON Schema validation belong in CI, with consumer-driven contract tests
   on both repositories.
 
+## 4b. Vendorea's role and account ownership
+
+Vendorea is a software and integration provider. Each dealer transacts through its **own**
+authorized Amazon account; Vendorea is never the merchant of record, the purchasing entity, or an
+intermediary receiving a dealer's proceeds.
+
+A seller account maps to **one** Merchant360 tenant, enforced by a filtered unique index rather
+than by service-layer checks. A tenant may hold several Amazon accounts. One account reachable by
+more than one tenant requires an explicit, administrator-created, attributable delegation that no
+OAuth callback or organization API key can produce.
+
+Rate-limit buckets are keyed per selling partner because Amazon meters that way. They carry no
+tenant id, credential, order or customer data, and a test pins their column list so that cannot
+change silently.
+
+The same applies to Amazon Business purchasing: the dealer's buying account, purchasing group and
+payment arrangements, never Vendorea's.
+
+Full statement and the tests holding it: `VENDOREA_ROLE_AND_ACCOUNT_OWNERSHIP.md`.
+
 ## 5. PII and retention
 
 | Data | Rule |

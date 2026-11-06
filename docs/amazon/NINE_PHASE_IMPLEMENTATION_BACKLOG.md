@@ -149,6 +149,12 @@ a duplicate. First phase that writes to a seller's live account — allowlisted 
 
 ## Phase 7 — Amazon Business purchasing
 
+**Binding constraints before any design work** (see `VENDOREA_ROLE_AND_ACCOUNT_OWNERSHIP.md`):
+orders use the **dealer's own** authorized buying account, its configured purchasing group and
+its own payment arrangements. Vendorea is never the purchasing entity of record and stores no
+payment instrument. A shared buying account, a pooled payment method or a consolidated
+Amazon-to-Vendorea invoice is out of scope by definition, not by prioritisation.
+
 | # | Task | Owner | Cx | Depends |
 |---|---|---|---|---|
 | 7.1 | `AMAZON_BUSINESS` provider + buyer-context connection | PC | M | 1, 0.2 |

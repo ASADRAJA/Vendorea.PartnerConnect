@@ -103,6 +103,23 @@ public class IntegrationConnectionConfiguration : IEntityTypeConfiguration<Integ
             .IsUnique()
             .HasFilter("\"ExternalAccountId\" IS NOT NULL");
 
+        builder.Property(c => c.AccountOwnership)
+            .HasConversion<string>().HasMaxLength(20).IsRequired()
+            .HasDefaultValue(IntegrationAccountOwnership.Primary);
+
+        // One tenant per seller account, as a schema invariant rather than a service-layer habit.
+        // Vendorea is a software provider: a dealer's Amazon account, its orders, its customers
+        // and its proceeds belong to that dealer's tenant and to no other. Delegated rows are
+        // excluded because a delegation is a deliberate, separately recorded exception; Revoked
+        // rows are excluded because a tenant that disconnected has released the account.
+        builder.HasIndex(c => new { c.IntegrationProviderId, c.ExternalAccountId })
+            .IsUnique()
+            .HasDatabaseName("UX_IntegrationConnections_PrimaryAccountOwner")
+            .HasFilter(
+                "\"ExternalAccountId\" IS NOT NULL " +
+                "AND \"AccountOwnership\" = 'Primary' " +
+                "AND \"Status\" <> 'Revoked'");
+
         // Drives the poller: find connections due for work.
         builder.HasIndex(c => new { c.Status, c.IntegrationProviderId });
 
@@ -195,5 +212,36 @@ public class IntegrationOAuthStateConfiguration : IEntityTypeConfiguration<Integ
             .WithMany()
             .HasForeignKey(s => s.IntegrationConnectionId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class IntegrationAccountDelegationConfiguration : IEntityTypeConfiguration<IntegrationAccountDelegation>
+{
+    public void Configure(EntityTypeBuilder<IntegrationAccountDelegation> builder)
+    {
+        builder.ToTable("IntegrationAccountDelegations");
+        builder.HasKey(d => d.Id);
+
+        builder.Property(d => d.ExternalAccountId).IsRequired().HasMaxLength(100);
+
+        // Required, not nullable: a delegated-access decision that cannot be attributed to a
+        // person is not an authorization, it is an unexplained exception sitting in a table.
+        builder.Property(d => d.GrantedBy).IsRequired().HasMaxLength(200);
+        builder.Property(d => d.RevokedBy).HasMaxLength(200);
+        builder.Property(d => d.Reason).HasMaxLength(1000);
+
+        // One active grant per delegate per account. Revoked rows stay for audit, which is why
+        // the index is filtered rather than covering every row.
+        builder.HasIndex(d => new { d.IntegrationProviderId, d.ExternalAccountId, d.DelegateTenantId })
+            .IsUnique()
+            .HasDatabaseName("UX_IntegrationAccountDelegations_ActiveGrant")
+            .HasFilter("\"RevokedAt\" IS NULL");
+
+        builder.HasIndex(d => d.DelegateTenantId);
+
+        builder.HasOne(d => d.Provider)
+            .WithMany()
+            .HasForeignKey(d => d.IntegrationProviderId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

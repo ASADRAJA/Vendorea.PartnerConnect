@@ -107,9 +107,14 @@ public class IntegrationSubstrateTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Same_account_on_a_different_tenant_is_allowed()
+    public async Task Same_account_on_a_different_tenant_is_refused()
     {
-        // Legitimate: two dealers under one org may each authorise the same Amazon account.
+        // This test asserted the opposite when the substrate was first built, on the assumption
+        // that two dealers under one org might each authorise the same Amazon account. They may
+        // not, and not by accident: Vendorea is a software provider, never a merchant of record,
+        // so a seller account maps to one Merchant360 tenant whose orders, customers and proceeds
+        // are its own. Sharing one requires an explicit delegation — see
+        // SellerAccountOwnershipTests.
         await using var db = _pg.CreateContext();
         db.IntegrationConnections.Add(NewConnection(_tenantId, "A3SHARED"));
         await db.SaveChangesAsync();
@@ -118,7 +123,7 @@ public class IntegrationSubstrateTests : IAsyncLifetime
 
         var act = async () => await db.SaveChangesAsync();
 
-        await act.Should().NotThrowAsync();
+        await act.Should().ThrowAsync<DbUpdateException>();
     }
 
     // ---- Matrix 1.2 ----

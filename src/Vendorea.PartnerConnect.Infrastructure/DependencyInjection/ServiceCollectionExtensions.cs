@@ -67,6 +67,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIntegrationContextFactory, IntegrationContextFactory>();
         services.AddScoped<IIntegrationConnectionService, IntegrationConnectionService>();
 
+        // Delegated access to a seller account another tenant owns. An administrator's decision,
+        // never the authorization flow's.
+        services.AddScoped<IIntegrationAccountDelegationService, IntegrationAccountDelegationService>();
+
         // Seller authorization (Phase 2). The state store is what binds a public redirect to the
         // tenant that started it; the access-token cache is a singleton because it holds process
         // memory only and must be shared, keyed by connection id.
