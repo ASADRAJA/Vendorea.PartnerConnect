@@ -158,6 +158,11 @@ public static class ApiScopes
     // Partner discovery (read-only listing of connectable partners)
     public const string PartnersRead = "partners:read";
 
+    // Integration connections (Amazon and any future provider). Separate from connections:*,
+    // which governs the SPR-style tenant-partner approval workflow and means something else.
+    public const string IntegrationsRead = "integrations:read";
+    public const string IntegrationsWrite = "integrations:write";
+
     // Organization-admin operations (org settings/profile write, tenant admin reads, and — later —
     // user management). Granted only to an org's OrgAdmin portal users and to the org API key
     // (integration = full access). TenantManager/Viewer never receive it.
@@ -179,6 +184,7 @@ public static class ApiScopes
         StockRead, FreightRead,
         ContentRead, FeedsRead,
         PartnersRead,
+        IntegrationsRead, IntegrationsWrite,
         OrgAdmin,
         Admin, All
     };
@@ -198,6 +204,9 @@ public static class ApiScopes
         WebhooksRead, WebhooksWrite,
         UsageRead,
         PartnersRead,
+        // Viewer loses IntegrationsWrite automatically: ScopesForRole drops anything ending
+        // ":write", so no role logic changes to accommodate these.
+        IntegrationsRead, IntegrationsWrite,
         // The org API key is a machine/integration principal with full org access, so it carries the
         // org-admin scope too. Per-user portal roles derive from this set (see OrgUserTokenService):
         // OrgAdmin keeps org:admin, TenantManager drops it, Viewer drops all writes + org:admin.

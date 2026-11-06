@@ -121,6 +121,12 @@ public static class DependencyInjection
         // Document Correlation
         services.AddScoped<IDocumentCorrelationRepository, DocumentCorrelationRepository>();
 
+        // Integration substrate (Phase 1)
+        services.AddScoped<IIntegrationProviderRepository, IntegrationProviderRepository>();
+        services.AddScoped<IIntegrationConnectionRepository, IntegrationConnectionRepository>();
+        services.AddScoped<IIntegrationCredentialRepository, IntegrationCredentialRepository>();
+        services.AddScoped<IIntegrationSyncStateRepository, IntegrationSyncStateRepository>();
+
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
     }

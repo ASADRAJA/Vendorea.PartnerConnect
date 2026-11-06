@@ -47,6 +47,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISupplierOrderIntakeService, SupplierOrderIntakeService>();
         services.AddScoped<IPartnerOrderResolutionService, PartnerOrderResolutionService>();
 
+        // Integration substrate (Phase 1). Credentials are resolved per call; nothing caches a
+        // provider client, because one cached across tenants leaks credentials between them.
+        services.AddScoped<IIntegrationCredentialStore, IntegrationCredentialStore>();
+        services.AddScoped<IIntegrationContextFactory, IntegrationContextFactory>();
+        services.AddScoped<IIntegrationConnectionService, IntegrationConnectionService>();
+
         // Tenant-partner connection workflow + org-facing API auth
         services.AddScoped<ITenantConnectionService, TenantConnectionService>();
         services.AddScoped<IOrgApiKeyAuthenticator, OrgApiKeyAuthenticator>();
