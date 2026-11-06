@@ -82,6 +82,13 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
         });
 
+        // Orders client (Phase 3). Typed so HttpClientFactory owns the handler lifetime; the
+        // access token is resolved per call and never attached to the client itself.
+        services.AddHttpClient<IMarketplaceOrdersClient, AmazonOrdersClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+
         // Expired-state hygiene.
         services.AddScoped<IScheduledJobHandler, IntegrationOAuthStatePurgeJobHandler>();
 
@@ -159,6 +166,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(AmazonLwaOptions.SectionName));
         services.Configure<IntegrationAuthorizationOptions>(
             configuration.GetSection(IntegrationAuthorizationOptions.SectionName));
+        services.Configure<AmazonSpApiOptions>(
+            configuration.GetSection(AmazonSpApiOptions.SectionName));
 
         return services;
     }
