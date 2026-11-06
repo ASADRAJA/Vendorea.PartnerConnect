@@ -48,7 +48,7 @@ Log.Logger = loggerConfiguration.CreateLogger();
 builder.Services.AddSerilog();
 
 // PartnerConnect services
-builder.Services.AddPartnerConnectServices();
+builder.Services.AddPartnerConnectServices(builder.Configuration);
 builder.Services.AddPartnerConnectInfrastructure();
 
 // Shared services (e.g. AuditService) depend on IHttpContextAccessor. There is no HTTP context in

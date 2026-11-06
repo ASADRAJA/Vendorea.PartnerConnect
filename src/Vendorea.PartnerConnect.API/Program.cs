@@ -86,7 +86,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // PartnerConnect services
-builder.Services.AddPartnerConnectServices();
+builder.Services.AddPartnerConnectServices(builder.Configuration);
 builder.Services.AddPartnerConnectInfrastructure();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -140,13 +140,10 @@ builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Authentication.IOrgUserTo
 builder.Services.AddScoped<Vendorea.PartnerConnect.Api.Services.IOrganizationOnboardingService,
     Vendorea.PartnerConnect.Api.Services.OrganizationOnboardingService>();
 
-// Transactional email (activation links etc). SMTP-backed, bound from the "Email" config section;
-// degrades gracefully (logs, never throws) and — in Development — logs the message + link so the
+// Transactional email (activation links etc) is registered and bound by
+// AddPartnerConnectServices above, from this host's own configuration. SMTP-backed, degrades
+// gracefully (logs, never throws) and — in Development — logs the message + link so the
 // activation flow is testable with no SMTP sink running.
-// IEmailSender is registered in AddPartnerConnectServices (shared with the workers host). Bind
-// EmailOptions from THIS host's config so the API's Email settings apply (workers use defaults).
-builder.Services.Configure<Vendorea.PartnerConnect.Infrastructure.Services.EmailOptions>(
-    builder.Configuration.GetSection(Vendorea.PartnerConnect.Infrastructure.Services.EmailOptions.SectionName));
 
 var jwtSettings = builder.Configuration
     .GetSection(Vendorea.PartnerConnect.Api.Authentication.JwtSettings.SectionName)

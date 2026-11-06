@@ -15,8 +15,21 @@ namespace Vendorea.PartnerConnect.Infrastructure.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddPartnerConnectServices(this IServiceCollection services, IConfiguration? configuration = null)
+    /// <summary>
+    /// Registers the shared application services and binds every options class they depend on.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="configuration"/> is required. It used to be optional with a null fallback
+    /// that registered empty options, and both hosts quietly took that path — so every option
+    /// bound here was silently empty in production, and the only symptom was a feature behaving
+    /// as though it had never been configured. An optional parameter cannot catch that; a
+    /// required one cannot miss it.
+    /// </remarks>
+    public static IServiceCollection AddPartnerConnectServices(
+        this IServiceCollection services, IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(configuration);
+
         // Application Services
         services.AddScoped<ITradingPartnerService, TradingPartnerService>();
         services.AddScoped<IPriceFeedService, PriceFeedService>();
@@ -86,8 +99,7 @@ public static class ServiceCollectionExtensions
         // Email sender for invitation/activation/reset mails. Registered here (not in a single
         // host's Program.cs) so EVERY consumer of the invitation service — API and workers — can
         // resolve IEmailSender. EmailOptions binds from config when available; defaults otherwise.
-        if (configuration is not null)
-            services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
+        services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
         services.AddScoped<IEmailSender, SmtpEmailSender>();
 
         // Scheduled jobs (cron framework) + job handlers.
@@ -137,25 +149,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISprRelationshipParser, SprRelationshipParser>();
         services.AddScoped<ISprCategoryParser, SprCategoryParser>();
 
-        // Configure options
-        if (configuration != null)
-        {
-            services.Configure<DuplicateDetectionOptions>(
-                configuration.GetSection(DuplicateDetectionOptions.SectionName));
-            services.Configure<XsdSchemaProviderOptions>(
-                configuration.GetSection(XsdSchemaProviderOptions.SectionName));
-            services.Configure<AmazonLwaOptions>(
-                configuration.GetSection(AmazonLwaOptions.SectionName));
-            services.Configure<IntegrationAuthorizationOptions>(
-                configuration.GetSection(IntegrationAuthorizationOptions.SectionName));
-        }
-        else
-        {
-            services.Configure<DuplicateDetectionOptions>(_ => { });
-            services.Configure<XsdSchemaProviderOptions>(_ => { });
-            services.Configure<AmazonLwaOptions>(_ => { });
-            services.Configure<IntegrationAuthorizationOptions>(_ => { });
-        }
+        // Configure options. Every section below binds from the calling host's configuration;
+        // a section a host does not define simply leaves the defaults in place.
+        services.Configure<DuplicateDetectionOptions>(
+            configuration.GetSection(DuplicateDetectionOptions.SectionName));
+        services.Configure<XsdSchemaProviderOptions>(
+            configuration.GetSection(XsdSchemaProviderOptions.SectionName));
+        services.Configure<AmazonLwaOptions>(
+            configuration.GetSection(AmazonLwaOptions.SectionName));
+        services.Configure<IntegrationAuthorizationOptions>(
+            configuration.GetSection(IntegrationAuthorizationOptions.SectionName));
 
         return services;
     }
