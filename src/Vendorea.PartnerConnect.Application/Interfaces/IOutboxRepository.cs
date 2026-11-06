@@ -13,6 +13,19 @@ public interface IOutboxRepository
     Task AddAsync(OutboxMessage message, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Stages a message in the current change tracker WITHOUT saving, so the caller's
+    /// transaction decides whether it is committed.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AddAsync"/> saves immediately, which is correct for every existing caller and
+    /// is left unchanged. It cannot, however, give the guarantee the marketplace contract needs:
+    /// an order snapshot and its outbox event must commit together or not at all. Today they
+    /// happen to, because both repositories share one DbContext — incidental, and silently
+    /// breakable. This makes the guarantee explicit.
+    /// </remarks>
+    void Stage(OutboxMessage message);
+
+    /// <summary>
     /// Adds multiple messages to the outbox.
     /// </summary>
     Task AddRangeAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default);

@@ -1,0 +1,685 @@
+openapi: 3.1.0
+info:
+  title: PartnerConnect Amazon Integration API
+  version: "1.1.0-draft"
+  description: >
+    Tenant-scoped APIs for Amazon marketplace selling. Every /org/tenants/{tenantId}
+    route resolves through the existing org + tenant scope check and returns 404
+    (never 403) for a tenant outside the caller's scope, so tenant existence is not
+    disclosed. Supplier purchase-order APIs under /api/integrations/orders are
+    unchanged and are not described here.
+servers:
+  - url: https://pctest.vendorea.com
+    description: Test (droplet)
+
+security:
+  - bearerAuth: []
+  - orgApiKey: []
+
+tags:
+  - name: Integrations
+  - name: Sales orders
+  - name: Fulfillment
+  - name: Reconciliation
+
+paths:
+
+  /api/v1/org/integration-providers:
+    get:
+      tags: [Integrations]
+      summary: List available providers and their capabilities
+      security: [{ bearerAuth: [] }, { orgApiKey: [] }]
+      responses:
+        "200":
+          description: Providers this organization may connect
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IntegrationProvider" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/org/tenants/{tenantId}/integrations:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      tags: [Integrations]
+      summary: List the tenant's integration connections
+      responses:
+        "200":
+          description: Connections
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IntegrationConnection" }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/integrations/{providerCode}/authorize:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: providerCode
+        in: path
+        required: true
+        schema: { type: string, examples: ["AMAZON_SP"] }
+    post:
+      tags: [Integrations]
+      summary: Begin provider authorization
+      description: >
+        Creates a Pending connection and a single-use, short-lived state token bound to
+        organization, tenant and connection. Returns the consent URL. The state token is
+        never returned to any other caller and cannot be replayed.
+
+        v1.1 (C3): identity is resolved AFTER Amazon returns the selling partner id. If
+        that account already has a connection for this tenant - in any state, including
+        Revoked - the pending row is discarded and the EXISTING connection is reauthorised,
+        keeping its id, its watermarks and its sales-order history. Without this, every
+        reconnect would mint a new connection, lose the watermark, re-import every order
+        and defeat the (connectionId, externalOrderId) uniqueness that prevents duplicate
+        M360 sales orders.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string, maxLength: 120 }
+                returnUrl:
+                  type: string
+                  format: uri
+                  description: Must match an allow-listed origin; validated server-side.
+      responses:
+        "201":
+          description: Authorization started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [integrationConnectionId, consentUrl, stateExpiresAt]
+                properties:
+                  integrationConnectionId: { type: string, format: uuid }
+                  consentUrl: { type: string, format: uri }
+                  stateExpiresAt: { type: string, format: date-time }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/v1/integrations/callback/{providerCode}:
+    parameters:
+      - name: providerCode
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Integrations]
+      summary: OAuth callback (anonymous, state-validated, rate-limited)
+      security: []
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: spapi_oauth_code, in: query, required: false, schema: { type: string } }
+        - { name: selling_partner_id, in: query, required: false, schema: { type: string } }
+      responses:
+        "302":
+          description: >
+            Redirect to the bound returnUrl. On any state failure — expired, replayed,
+            tampered, or bound to a different tenant — redirects with a generic error and
+            records an audit entry. The failure reason is never disclosed to the browser.
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/org/tenants/{tenantId}/integrations/{connectionId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ConnectionId"
+    get:
+      tags: [Integrations]
+      summary: Connection detail, health and effective capabilities
+      responses:
+        "200":
+          description: Connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IntegrationConnectionDetail" }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+    delete:
+      tags: [Integrations]
+      summary: Disconnect and revoke
+      description: Marks the connection Revoked and destroys stored credentials. The row is retained for audit.
+      responses:
+        "204": { description: Disconnected }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/sales-orders:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      tags: [Sales orders]
+      summary: List synchronized marketplace sales orders
+      parameters:
+        - { name: connectionId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/SalesOrderStatus" } }
+        - { name: mappingStatus, in: query, schema: { $ref: "#/components/schemas/MappingStatus" } }
+        - { name: updatedSince, in: query, schema: { type: string, format: date-time } }
+        - { name: skip, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: take, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Paged sales orders
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, skip, take]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SalesOrder" }
+                  total: { type: integer }
+                  skip: { type: integer }
+                  take: { type: integer }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/sales-orders/{pcSalesOrderId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/PcSalesOrderId"
+    get:
+      tags: [Sales orders]
+      summary: Sales order detail with lines and sync metadata
+      responses:
+        "200":
+          description: Sales order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/sales-orders/{pcSalesOrderId}/events:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/PcSalesOrderId"
+    get:
+      tags: [Reconciliation]
+      summary: Event and delivery history for one order
+      description: >
+        The five observable states per event — fetched, stored, outbox created,
+        delivery acknowledged, business processing result — so M360 can determine
+        where a handoff stopped without asking Amazon.
+      responses:
+        "200":
+          description: History, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EventHistoryEntry" }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/sales-orders/{pcSalesOrderId}/redeliver:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/PcSalesOrderId"
+    post:
+      tags: [Reconciliation]
+      summary: Re-publish the current snapshot as a new event
+      description: >
+        Issues a NEW eventId carrying the CURRENT snapshot. It must update the same
+        M360 order, never create a second one — order identity is the canonical key,
+        not the event id.
+      responses:
+        "202":
+          description: Re-delivery queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eventId: { type: string, format: uuid }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/sales-orders/{pcSalesOrderId}/processing-result:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/PcSalesOrderId"
+    post:
+      tags: [Reconciliation]
+      summary: M360 reports the business-processing outcome (primary feedback path)
+      description: >
+        Called by M360 after its inbox handler completes. This is how PC learns whether an
+        accepted event actually became a sales order. Idempotent on sourceEventId.
+
+        v1.1 (C4): authenticated as a SERVICE (model 2), never by webhook signature. PC
+        validates, in order: credential; caller org owns tenantId (404); pcSalesOrderId
+        belongs to that tenant (404); sourceEventId was actually published for that order
+        (409); duplicate result returns 200 with the original retained; a conflicting
+        result for the same event returns 409 and first-result-wins.
+      security:
+        - serviceToService: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProcessingResult" }
+      responses:
+        "204": { description: Recorded }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+        "409":
+          description: Unknown sourceEventId for this order, or a conflicting result already recorded
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/v1/org/tenants/{tenantId}/sales-orders/{pcSalesOrderId}/fulfillment:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/PcSalesOrderId"
+    post:
+      tags: [Fulfillment]
+      summary: Submit a merchant-fulfilled shipment to Amazon
+      description: >
+        Accepted only for fulfillmentChannel = MerchantFulfilled. An FBA order returns
+        422: Amazon has already shipped it and a local shipment would be fiction.
+        The command is persisted BEFORE any provider call, so a timeout is recoverable.
+
+        v1.1 (C5): shipment confirmation calls Amazon confirmShipment, which is Orders API
+        **v0** - it is not published under v2026-01-01. Reads and writes therefore sit on
+        different API versions. Phase 0 re-confirms this and Phase 5 pins the version.
+        Multiple packages, partial shipments and shipment corrections are supported by the
+        command model below; the exact provider field requirements are NOT assumed here and
+        must be read from the v0 reference before Phase 5.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
+          description: Caller-supplied, unique per logical shipment. Replay returns the original submission.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FulfillmentRequest" }
+      responses:
+        "202":
+          description: Command accepted and queued. Poll the submission for the outcome.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FulfillmentSubmission" }
+        "409":
+          description: A submission with this Idempotency-Key exists with different content
+        "422":
+          description: Not merchant-fulfilled, order cancelled, or quantities exceed ordered
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/fulfillment-submissions/{submissionId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: submissionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Fulfillment]
+      summary: Fulfillment submission state
+      responses:
+        "200":
+          description: Submission
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FulfillmentSubmission" }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/integrations/{connectionId}/sync-health:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ConnectionId"
+    get:
+      tags: [Reconciliation]
+      summary: Per-capability watermarks, last success and failed jobs
+      responses:
+        "200":
+          description: Sync health
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncHealth" }
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+  /api/v1/org/tenants/{tenantId}/integrations/{connectionId}/reconcile:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ConnectionId"
+    post:
+      tags: [Reconciliation]
+      summary: Request a bounded re-sync window
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { type: string, format: date-time }
+                to: { type: string, format: date-time }
+                capability: { $ref: "#/components/schemas/Capability" }
+      responses:
+        "202": { description: Reconciliation scheduled }
+        "422":
+          description: Window too large or inverted. Bounded to protect rate limits.
+        "404": { $ref: "#/components/responses/NotFoundOrOutOfScope" }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Org portal user token. Scopes derive from the user's role.
+    orgApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Organization integration key.
+    serviceToService:
+      type: http
+      scheme: bearer
+      description: >
+        Model 2. A named service (Merchant360) acting for one organization. Distinct from
+        the webhook signing secret, which authorises nothing inbound to PartnerConnect.
+
+  parameters:
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema: { type: integer, format: int32 }
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PcSalesOrderId:
+      name: pcSalesOrderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+    NotFoundOrOutOfScope:
+      description: >
+        Not found, or outside the caller's tenant scope. Deliberately indistinguishable
+        so tenant existence cannot be probed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: Validation failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After:
+          schema: { type: integer }
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, examples: ["VALIDATION_FAILED"] }
+        message: { type: string }
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+    Capability:
+      type: string
+      enum: [SalesOrderIngest, FulfillmentPush, ListingSync, FinanceIngest,
+             PurchaseOrderPush, PurchaseOrderStatusIngest, CatalogSearch]
+
+    IntegrationProvider:
+      type: object
+      required: [code, name, kind, authKind, capabilities]
+      properties:
+        code: { type: string, examples: ["AMAZON_SP", "AMAZON_BUSINESS"] }
+        name: { type: string }
+        kind: { type: string, enum: [Marketplace, Supplier, Procurement] }
+        authKind: { type: string, enum: [OAuth2, ApiKey, Sftp] }
+        capabilities:
+          type: array
+          items: { $ref: "#/components/schemas/Capability" }
+
+    ConnectionStatus:
+      type: string
+      enum: [Pending, Connected, Expired, Revoked, Suspended, Error]
+
+    IntegrationConnection:
+      type: object
+      required: [id, providerCode, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string }
+        displayName: { type: string }
+        externalAccountId:
+          type: ["string", "null"]
+          description: Null while Pending; set once authorization completes.
+        region: { type: ["string", "null"] }
+        marketplaceIds:
+          type: array
+          items: { type: string }
+          description: A connection is one authorized ACCOUNT and may cover several marketplaces.
+        status: { $ref: "#/components/schemas/ConnectionStatus" }
+        createdAt: { type: string, format: date-time }
+
+    IntegrationConnectionDetail:
+      allOf:
+        - $ref: "#/components/schemas/IntegrationConnection"
+        - type: object
+          properties:
+            grantedCapabilities:
+              type: array
+              items: { $ref: "#/components/schemas/Capability" }
+              description: Effective, not declared. Reflects the roles Amazon actually granted.
+            deniedCapabilities:
+              type: array
+              items:
+                type: object
+                properties:
+                  capability: { $ref: "#/components/schemas/Capability" }
+                  reason: { type: string }
+            lastErrorAt: { type: ["string", "null"], format: date-time }
+            lastError: { type: ["string", "null"] }
+
+    SalesOrderStatus:
+      type: string
+      description: PC-normalized, provider-neutral. Unknown provider values map to Unknown and raise an operator signal.
+      enum: [Pending, ReadyToFulfill, PartiallyFulfilled, Fulfilled, Cancelled, OnHold, Unknown]
+
+    MappingStatus:
+      type: string
+      enum: [Mapped, UnmappedProduct, Conflict]
+
+    FulfillmentChannel:
+      type: string
+      enum: [MerchantFulfilled, AmazonFulfilled]
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: string
+          description: Decimal as a string to avoid float rounding. Scale per currency.
+          examples: ["24.99"]
+        currency: { type: string, examples: ["USD"] }
+
+    SalesOrder:
+      type: object
+      required: [pcSalesOrderId, integrationConnectionId, externalOrderId, status, fulfillmentChannel, mappingStatus, purchaseDate, sourceLastUpdatedAt]
+      properties:
+        pcSalesOrderId: { type: string, format: uuid }
+        integrationConnectionId: { type: string, format: uuid }
+        provider: { type: string, examples: ["AMAZON_SP"] }
+        externalOrderId:
+          type: string
+          description: Provider order id. Unique with integrationConnectionId.
+        marketplaceId: { type: string }
+        status: { $ref: "#/components/schemas/SalesOrderStatus" }
+        externalStatusRaw:
+          type: string
+          description: Provider value verbatim, never interpreted.
+          examples: ["UNSHIPPED"]
+        externalFulfillmentStatusRaw: { type: ["string", "null"] }
+        fulfillmentChannel: { $ref: "#/components/schemas/FulfillmentChannel" }
+        mappingStatus: { $ref: "#/components/schemas/MappingStatus" }
+        programsRaw:
+          type: array
+          items: { type: string }
+          description: >
+            Provider programs[] verbatim. Prime/business/replacement indicators are
+            DERIVED from this, never stored as source booleans.
+        purchaseDate: { type: string, format: date-time }
+        sourceLastUpdatedAt:
+          type: string
+          format: date-time
+          description: Provider timestamp. Updates apply monotonically on this.
+        sourceVersion: { type: ["string", "null"] }
+        orderTotal: { $ref: "#/components/schemas/Money" }
+        buyerDataAvailable:
+          type: boolean
+          description: >
+            False for PENDING orders where the provider legitimately withholds buyer
+            and address data. This is a normal state, not an integration failure.
+
+    SalesOrderLine:
+      type: object
+      required: [externalLineId, quantityOrdered, mappingStatus]
+      properties:
+        externalLineId: { type: string, description: Provider line id, unique within the order. }
+        sellerSku: { type: ["string", "null"] }
+        asin: { type: ["string", "null"] }
+        title: { type: ["string", "null"] }
+        quantityOrdered: { type: integer, minimum: 0 }
+        quantityShipped: { type: integer, minimum: 0 }
+        mappingStatus: { $ref: "#/components/schemas/MappingStatus" }
+        m360CatalogItemId:
+          type: ["string", "null"]
+          description: Null when unmapped. PC never invents one.
+        itemPrice: { $ref: "#/components/schemas/Money" }
+        itemTax: { $ref: "#/components/schemas/Money" }
+        shippingPrice: { $ref: "#/components/schemas/Money" }
+        promotionDiscount: { $ref: "#/components/schemas/Money" }
+        proceedsRaw:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: >
+            Provider financial breakdown, preserved as returned. Line totals must NOT be
+            assumed to sum to proceeds; fees, refunds and settlements break that identity.
+
+    SalesOrderDetail:
+      allOf:
+        - $ref: "#/components/schemas/SalesOrder"
+        - type: object
+          properties:
+            lines:
+              type: array
+              items: { $ref: "#/components/schemas/SalesOrderLine" }
+            syncMetadata:
+              type: object
+              properties:
+                firstSeenAt: { type: string, format: date-time }
+                lastSyncedAt: { type: string, format: date-time }
+                lastEventId: { type: ["string", "null"], format: uuid }
+                lastProcessingResult:
+                  type: ["string", "null"]
+                  enum: [Processed, FailedRetryable, FailedPermanent, null]
+
+    EventHistoryEntry:
+      type: object
+      required: [eventId, eventType, state, at]
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType: { type: string }
+        state:
+          type: string
+          enum: [AmazonFetched, PcStored, OutboxCreated, DeliveryAcknowledged, ProcessingComplete, ProcessingFailed]
+        at: { type: string, format: date-time }
+        detail: { type: ["string", "null"] }
+
+    ProcessingResult:
+      type: object
+      required: [sourceEventId, outcome]
+      properties:
+        sourceEventId: { type: string, format: uuid }
+        outcome: { type: string, enum: [Processed, FailedRetryable, FailedPermanent] }
+        m360SalesOrderId: { type: ["string", "null"] }
+        error: { type: ["string", "null"] }
+        attemptedAt: { type: string, format: date-time }
+
+    FulfillmentRequest:
+      type: object
+      required: [lines]
+      properties:
+        carrierCode: { type: string }
+        trackingNumber: { type: string }
+        shipDate: { type: string, format: date-time }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [externalLineId, quantity]
+            properties:
+              externalLineId: { type: string }
+              quantity: { type: integer, minimum: 1 }
+
+    FulfillmentState:
+      type: string
+      description: >
+        OutcomeUnknown is the important one: the provider call timed out and we cannot
+        tell whether it was accepted. No further write occurs until external state is
+        verified by reconciliation.
+      enum: [Requested, Queued, Submitted, Confirmed, OutcomeUnknown, RetryableFailure, PermanentFailure]
+
+    FulfillmentSubmission:
+      type: object
+      required: [submissionId, pcSalesOrderId, state, idempotencyKey, createdAt]
+      properties:
+        submissionId: { type: string, format: uuid }
+        pcSalesOrderId: { type: string, format: uuid }
+        idempotencyKey: { type: string }
+        state: { $ref: "#/components/schemas/FulfillmentState" }
+        attempts: { type: integer }
+        externalConfirmationId: { type: ["string", "null"] }
+        lastError: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: ["string", "null"], format: date-time }
+
+    SyncHealth:
+      type: object
+      properties:
+        connectionId: { type: string, format: uuid }
+        watermarks:
+          type: array
+          description: Per capability and per marketplace. A single connection-level watermark is insufficient.
+          items:
+            type: object
+            properties:
+              capability: { $ref: "#/components/schemas/Capability" }
+              marketplaceId: { type: ["string", "null"] }
+              watermark: { type: ["string", "null"], format: date-time }
+              lastSuccessAt: { type: ["string", "null"], format: date-time }
+        failedJobs:
+          type: array
+          items:
+            type: object
+            properties:
+              jobKey: { type: string }
+              failedAt: { type: string, format: date-time }
+              error: { type: string }

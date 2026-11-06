@@ -21,6 +21,17 @@ public interface IOutboxService
     /// <summary>
     /// Enqueues a webhook delivery to the outbox.
     /// </summary>
+    /// <summary>
+    /// Stages a message inside the caller's open transaction. Returns the id it will carry.
+    /// Nothing is written until the caller commits; a rollback leaves no event behind.
+    /// </summary>
+    Guid EnqueueInCurrentTransaction<T>(
+        string messageType,
+        T payload,
+        string? destination = null,
+        string? correlationId = null,
+        int priority = 0) where T : class;
+
     Task<Guid> EnqueueWebhookAsync(
         string webhookUrl,
         object payload,

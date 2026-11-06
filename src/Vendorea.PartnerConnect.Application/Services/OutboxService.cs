@@ -59,6 +59,32 @@ public class OutboxService : IOutboxService
     }
 
     /// <inheritdoc />
+    public Guid EnqueueInCurrentTransaction<T>(
+        string messageType,
+        T payload,
+        string? destination = null,
+        string? correlationId = null,
+        int priority = 0) where T : class
+    {
+        var message = new OutboxMessage
+        {
+            MessageType = messageType,
+            Payload = JsonSerializer.Serialize(payload, _jsonOptions),
+            Destination = destination,
+            CorrelationId = correlationId,
+            Priority = priority
+        };
+
+        _repository.Stage(message);
+
+        _logger.LogDebug(
+            "Staged outbox message {MessageId} of type {MessageType} in the caller's transaction",
+            message.Id, messageType);
+
+        return message.Id;
+    }
+
+    /// <inheritdoc />
     public async Task<Guid> EnqueueWebhookAsync(
         string webhookUrl,
         object payload,
