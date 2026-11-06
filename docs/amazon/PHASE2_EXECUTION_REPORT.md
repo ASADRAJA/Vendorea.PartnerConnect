@@ -165,16 +165,25 @@ fallback key. **Phase 2 development is unaffected** — no real token has been w
 but no production refresh token may be stored until that key is installed, which remains gated on
 verified encrypted backups per the approved sequencing.
 
-### One wiring gap found, deliberately not changed
+### A configuration gap found after this report was first written — now fixed
 
-`BackgroundWorkers/Program.cs` calls `AddPartnerConnectServices()` **without** passing
-configuration, so every options class bound in that extension — `AmazonLwaOptions` included —
-binds empty in the worker host. Phase 2 does not need it (nothing in the workers refreshes a
-token yet), but **Phase 3's order poller will**. Passing `builder.Configuration` is a one-line
-fix; it also starts binding `EmailOptions`, `DuplicateDetectionOptions` and
-`XsdSchemaProviderOptions` in that host for the first time, which could change SPR-adjacent
-behaviour. I have left it alone rather than make an SPR-affecting change inside an Amazon phase.
-**Recommend doing it as a separate, tested change at the start of Phase 3.**
+`AddPartnerConnectServices` took an optional `IConfiguration` with a null fallback that
+registered empty options, and **both** hosts called it without one. The first version of this
+report described this as a workers-only issue to defer to Phase 3. That was wrong, and the
+correction matters: the API took the same path, so `Amazon:Lwa` and
+`Integrations:Authorization` — the two sections this phase introduced — would have bound empty
+in the API as well. Phase 2's configuration was not merely incomplete in one host; it was dead
+everywhere.
+
+Fixed in `35482e6` as a separate commit on `main`. The parameter is now required, the null
+branch is gone, and `ServiceConfigurationBindingTests` asserts the options actually arrive from
+the host's configuration.
+
+Verified before making the change that no existing behaviour could shift: of the five sections
+bound there, only `Email` appears in any appsettings file (the API's, where it was already being
+bound identically on the following line), and none of the five appears as an environment
+variable in either droplet env file. G2 and G5 below are therefore now genuinely satisfiable by
+configuration alone.
 
 ---
 
