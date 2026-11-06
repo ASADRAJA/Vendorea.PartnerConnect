@@ -1,0 +1,630 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vendorea.com/schemas/partnerconnect-m360-events-v1.schema.json",
+  "title": "PartnerConnect to Merchant360 integration events, v1 (contract package v1.1)",
+  "description": "Provider-neutral events PartnerConnect publishes to Merchant360. No Amazon SDK types cross this boundary. Delivery is at-least-once; business effects are effective-once via the consumer inbox.",
+  "$defs": {
+    "Envelope": {
+      "type": "object",
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "occurredAt",
+        "publishedAt",
+        "organizationId",
+        "tenantId",
+        "integrationConnectionId",
+        "provider",
+        "deduplicationKey",
+        "correlationId",
+        "payload"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique per PUBLICATION, not per delivery attempt. An automatic transport retry (5xx/429/timeout) MUST reuse the same eventId so the consumer inbox dedupes it. A manual republication of the current snapshot mints a NEW eventId while keeping the same payload.identity. Order identity governs; eventId never does."
+        },
+        "eventType": {
+          "$ref": "#/$defs/EventType"
+        },
+        "eventVersion": {
+          "type": "string",
+          "pattern": "^v[0-9]+$",
+          "examples": [
+            "v1"
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the change happened at the provider, where known."
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "organizationId": {
+          "type": "integer"
+        },
+        "tenantId": {
+          "type": "integer"
+        },
+        "integrationConnectionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "provider": {
+          "type": "string",
+          "examples": [
+            "AMAZON_SP"
+          ]
+        },
+        "marketplaceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "correlationId": {
+          "type": "string"
+        },
+        "deduplicationKey": {
+          "type": "string",
+          "description": "Immutable per state transition. Equal across transport retries of one transition; different across genuine transitions. Not the order identity."
+        },
+        "payloadKind": {
+          "type": "string",
+          "enum": [
+            "snapshot"
+          ],
+          "default": "snapshot",
+          "description": "v1 publishes full snapshots only. A consumer that misses an event converges on the next one."
+        },
+        "payload": {
+          "type": "object"
+        },
+        "publicationReason": {
+          "type": "string",
+          "enum": [
+            "ProviderChange",
+            "ManualRedelivery",
+            "Reconciliation"
+          ],
+          "default": "ProviderChange",
+          "description": "Why this publication exists. ManualRedelivery and Reconciliation carry a new eventId but must update the same order, never create a second."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "eventType": {
+                "const": "sales_order.created.v1"
+              }
+            },
+            "required": [
+              "eventType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SalesOrderSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventType": {
+                "const": "sales_order.updated.v1"
+              }
+            },
+            "required": [
+              "eventType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SalesOrderSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventType": {
+                "const": "sales_order.fulfillment_status_changed.v1"
+              }
+            },
+            "required": [
+              "eventType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/FulfillmentStatusChanged"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventType": {
+                "const": "integration.connection_attention_required.v1"
+              }
+            },
+            "required": [
+              "eventType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/ConnectionAttentionRequired"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventType": {
+                "const": "integration.sync_failed.v1"
+              }
+            },
+            "required": [
+              "eventType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SyncFailed"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "EventType": {
+      "type": "string",
+      "enum": [
+        "sales_order.created.v1",
+        "sales_order.updated.v1",
+        "sales_order.fulfillment_status_changed.v1",
+        "integration.connection_attention_required.v1",
+        "integration.sync_failed.v1"
+      ],
+      "description": "Cancellation is carried as a status within sales_order.updated.v1, not a separate event. One consistent strategy."
+    },
+    "OrderIdentity": {
+      "type": "object",
+      "description": "The canonical key. Exactly one M360 sales order per tuple, for the life of the order.",
+      "required": [
+        "provider",
+        "integrationConnectionId",
+        "externalOrderId"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "integrationConnectionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalOrderId": {
+          "type": "string"
+        }
+      }
+    },
+    "Money": {
+      "type": "object",
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "properties": {
+        "amount": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{2,4}$",
+          "description": "Decimal as string. Never a JSON number - float rounding corrupts money."
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        }
+      }
+    },
+    "SalesOrderSnapshot": {
+      "type": "object",
+      "required": [
+        "identity",
+        "pcSalesOrderId",
+        "status",
+        "externalStatusRaw",
+        "fulfillmentChannel",
+        "mappingStatus",
+        "purchaseDate",
+        "sourceLastUpdatedAt",
+        "buyerDataAvailable",
+        "lines"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/OrderIdentity"
+        },
+        "pcSalesOrderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Pending",
+            "ReadyToFulfill",
+            "PartiallyFulfilled",
+            "Fulfilled",
+            "Cancelled",
+            "OnHold",
+            "Unknown"
+          ],
+          "description": "PC-normalized. Unknown is explicit and must surface for operator attention, never be treated as progress."
+        },
+        "externalStatusRaw": {
+          "type": "string",
+          "description": "Provider status verbatim, e.g. UNSHIPPED, CANCELLED."
+        },
+        "externalFulfillmentStatusRaw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fulfillmentChannel": {
+          "type": "string",
+          "enum": [
+            "MerchantFulfilled",
+            "AmazonFulfilled"
+          ],
+          "description": "Captured from the provider, never inferred. AmazonFulfilled must NOT enter an M360 pick/pack queue."
+        },
+        "mappingStatus": {
+          "type": "string",
+          "enum": [
+            "Mapped",
+            "UnmappedProduct",
+            "Conflict"
+          ]
+        },
+        "programsRaw": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Provider programs[] verbatim. Prime/business indicators are derived by the consumer, not sent as booleans."
+        },
+        "purchaseDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceLastUpdatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Ordering key. A snapshot older than the stored one is discarded, not applied."
+        },
+        "sourceVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Tie-breaker when two snapshots share sourceLastUpdatedAt. If both are equal the payload is treated as identical and ignored."
+        },
+        "orderTotal": {
+          "$ref": "#/$defs/Money"
+        },
+        "buyerDataAvailable": {
+          "type": "boolean",
+          "description": "False for PENDING orders. Absent buyer data is a normal provider state, not a failure."
+        },
+        "buyer": {
+          "$ref": "#/$defs/Buyer"
+        },
+        "shipTo": {
+          "$ref": "#/$defs/Address"
+        },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/SalesOrderLine"
+          }
+        }
+      }
+    },
+    "Buyer": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Least-necessary PII. Omitted entirely unless the consuming capability requires it and the role was granted.",
+      "properties": {
+        "emailRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Provider-anonymised address where supplied."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Address": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line1": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line2": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "city": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stateOrRegion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "postalCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "countryCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "SalesOrderLine": {
+      "type": "object",
+      "required": [
+        "externalLineId",
+        "quantityOrdered",
+        "mappingStatus"
+      ],
+      "properties": {
+        "externalLineId": {
+          "type": "string"
+        },
+        "sellerSku": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "asin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quantityOrdered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quantityShipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mappingStatus": {
+          "type": "string",
+          "enum": [
+            "Mapped",
+            "UnmappedProduct",
+            "Conflict"
+          ],
+          "description": "UnmappedProduct lines MUST still create a visible M360 order line for resolution. Never dropped, never auto-bound by ASIN alone."
+        },
+        "m360CatalogItemIdHint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A cross-reference PC holds, offered as a hint. M360 owns the final product decision."
+        },
+        "itemPrice": {
+          "$ref": "#/$defs/Money"
+        },
+        "itemTax": {
+          "$ref": "#/$defs/Money"
+        },
+        "shippingPrice": {
+          "$ref": "#/$defs/Money"
+        },
+        "promotionDiscount": {
+          "$ref": "#/$defs/Money"
+        },
+        "proceedsRaw": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "description": "Provider breakdown preserved as returned. Line totals are NOT asserted to equal proceeds or net settlement."
+        }
+      }
+    },
+    "FulfillmentStatusChanged": {
+      "type": "object",
+      "required": [
+        "identity",
+        "pcSalesOrderId",
+        "externalFulfillmentStatusRaw",
+        "sourceLastUpdatedAt"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/OrderIdentity"
+        },
+        "pcSalesOrderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalFulfillmentStatusRaw": {
+          "type": "string"
+        },
+        "sourceLastUpdatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "shipments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "carrierCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "trackingNumber": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "shippedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "externalLineId": {
+                      "type": "string"
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ConnectionAttentionRequired": {
+      "type": "object",
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "TokenRevoked",
+            "ReauthorizationRequired",
+            "CapabilityDenied",
+            "AccountSuspended"
+          ]
+        },
+        "deniedCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "SyncFailed": {
+      "type": "object",
+      "required": [
+        "capability",
+        "failedAt"
+      ],
+      "properties": {
+        "capability": {
+          "type": "string"
+        },
+        "marketplaceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "consecutiveFailures": {
+          "type": "integer"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "$ref": "#/$defs/Envelope"
+}

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vendorea.PartnerConnect.Application.Interfaces;
 
@@ -24,13 +25,28 @@ public class AesCredentialProtector : ICredentialProtector
 
     private readonly byte[] _key;
 
-    public AesCredentialProtector(IConfiguration configuration, ILogger<AesCredentialProtector> logger)
+    public AesCredentialProtector(
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        ILogger<AesCredentialProtector> logger)
     {
         var configured = configuration[ConfigKey];
         if (string.IsNullOrWhiteSpace(configured))
         {
+            // Fail closed outside Development. The fallback key is published in this file, so a
+            // host running on it is not protecting anything — and the warning that used to be the
+            // only signal was being missed: the deployed test environment ran on this key for
+            // months. Refusing to start makes the misconfiguration impossible to ignore.
+            if (!environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    $"{ConfigKey} is not configured. It is required outside Development because " +
+                    "the development fallback key is public. Set the same value on every service " +
+                    "that reads or writes protected credentials.");
+            }
+
             logger.LogWarning(
-                "{ConfigKey} is not set; using a development fallback key. Set it (shared across API + workers) before production.",
+                "{ConfigKey} is not set; using the development fallback key. This is permitted only in Development.",
                 ConfigKey);
             configured = DevFallbackKey;
         }
@@ -87,5 +103,24 @@ public class AesCredentialProtector : ICredentialProtector
         aes.Decrypt(nonce, cipher, tag, plain);
 
         return Encoding.UTF8.GetString(plain);
+    }
+
+    /// <inheritdoc />
+    public string? UnprotectRequired(string? ciphertext)
+    {
+        if (ciphertext is null)
+        {
+            return null;
+        }
+
+        if (!ciphertext.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            // Deliberately does not echo the value: it may be a credential.
+            throw new InvalidOperationException(
+                "Expected an encrypted value but found one that is not. A credential stored in " +
+                "plaintext means encryption did not happen; it must not be used as if it had.");
+        }
+
+        return Unprotect(ciphertext);
     }
 }

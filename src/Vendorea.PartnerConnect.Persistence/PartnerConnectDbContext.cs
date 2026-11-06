@@ -104,6 +104,17 @@ public class PartnerConnectDbContext : DbContext
     // Customer (org) Portal login users (email/password + org role + tenant scope)
     public DbSet<OrgPortalUser> OrgPortalUsers => Set<OrgPortalUser>();
     public DbSet<OrgPortalUserTenant> OrgPortalUserTenants => Set<OrgPortalUserTenant>();
+
+    // --- Integration substrate (Phase 1). Sits beside TradingPartner/TenantPartnerAccount;
+    // nothing in the SPR pipeline reads these. ---
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider> IntegrationProviders
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection> IntegrationConnections
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationCredential> IntegrationCredentials
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationCredential>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState> IntegrationSyncStates
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState>();
     public DbSet<OrgPortalUserToken> OrgPortalUserTokens => Set<OrgPortalUserToken>();
 
     // Billing

@@ -24,6 +24,13 @@ public class OutboxRepository : IOutboxRepository
     }
 
     /// <inheritdoc />
+    public void Stage(OutboxMessage message)
+    {
+        // No SaveChangesAsync: the caller's transaction owns the commit.
+        _context.OutboxMessages.Add(message);
+    }
+
+    /// <inheritdoc />
     public async Task AddRangeAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
     {
         _context.OutboxMessages.AddRange(messages);

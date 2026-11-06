@@ -1,0 +1,209 @@
+openapi: 3.1.0
+info:
+  title: Merchant360 PartnerConnect Receiver API
+  version: "1.1.0-draft"
+  description: >
+    What MERCHANT360 must implement to consume PartnerConnect integration events.
+    This file is a contract on the M360 repository, not on PartnerConnect.
+
+    Core obligation: a single event-ingest endpoint with a durable inbox. Return 202
+    only AFTER the event is durably stored. 202 means accepted for processing, never
+    processed. Business outcome is reported back to PC via its processing-result
+    endpoint (see partnerconnect-amazon-api-v1.openapi.yaml).
+servers:
+  - url: https://apitest.vendorea.com
+    description: Test (droplet)
+
+# Three distinct models. They are not interchangeable:
+#   partnerConnectSignature - PC -> M360 service notifications only
+#   merchant360UserAuth     - human users with M360 RBAC (SKU mapping, admin UI)
+# A merchant-facing endpoint never authenticates by webhook secret.
+security:
+  - merchant360UserAuth: []
+
+paths:
+
+  /api/v1/integrations/partnerconnect/events:
+    post:
+      summary: Receive a PartnerConnect integration event
+      description: >
+        One endpoint, dispatching on eventType. Steps, in order:
+          1. Verify the signature header. Mismatch -> 401, no inbox write, no retry benefit.
+          2. Authorize that organizationId/tenantId map to a merchant this caller may write.
+          3. Look up eventId in the inbox. Already present -> 202 immediately (idempotent receive).
+          4. Durably persist the raw envelope.
+          5. Return 202.
+          6. Process asynchronously, then call PC's processing-result endpoint.
+        Business validation does NOT happen before the 202. A malformed payload is
+        stored and marked FailedPermanent, not rejected at the door, so the event is
+        never lost to a parsing disagreement.
+      security:
+        - partnerConnectSignature: []
+      parameters:
+        - name: X-PC-Signature
+          in: header
+          required: true
+          schema: { type: string, pattern: "^v1=[0-9a-f]{64}$" }
+          description: >
+            v1.1: lowercase hex HMAC-SHA256 over timestamp + "." + RAW body, prefixed "v1=".
+            v1.0 signed the body alone, leaving the timestamp unauthenticated and the
+            replay window unenforceable. Verify against raw bytes, in constant time.
+        - name: X-PC-Signature-Timestamp
+          in: header
+          required: true
+          schema: { type: string, format: date-time }
+          description: Part of the signed message. Outside ±5 minutes, reject as replay.
+        - name: X-PC-Signature-KeyId
+          in: header
+          required: true
+          schema: { type: string }
+          description: Which signing secret was used. Enables rotation with an overlap window.
+        - name: X-PC-Event-Id
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+          description: >
+            Mirrors envelope eventId; lets the inbox dedupe before parsing. An automatic
+            transport retry carries the SAME value; a republication carries a new one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./partnerconnect-m360-events-v1.schema.json"
+      responses:
+        "202":
+          description: >
+            Durably stored and accepted. Returned for a first receipt AND for a duplicate.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [eventId, received]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  received: { type: string, enum: [New, Duplicate] }
+        "401":
+          description: Signature invalid or timestamp outside the replay window. PC does NOT retry.
+        "409":
+          description: >
+            Tenant mapping conflict - the envelope's tenant does not map to a known merchant.
+            PC does not retry; this needs operator resolution.
+        "422":
+          description: >
+            Envelope unreadable (not merely business-invalid). PC does not retry.
+        "429":
+          description: Backpressure. PC retries with backoff and jitter.
+          headers:
+            Retry-After: { schema: { type: integer } }
+        "500":
+          description: Transient. PC retries with backoff up to the retry budget, then dead-letters.
+
+  /api/v1/integrations/partnerconnect/events/{eventId}:
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Inbox entry state (operator and reconciliation use)
+      responses:
+        "200":
+          description: Inbox entry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InboxEntry" }
+        "404": { description: Not received }
+
+  # Model 3: ordinary M360 user authentication and RBAC. NOT webhook signing.
+  /api/v1/merchants/{merchantId}/amazon/sku-mappings:
+    parameters:
+      - name: merchantId
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      summary: List seller SKU to catalogue mappings
+      description: >
+        M360 owns this mapping. PC may hold a technical cross-reference but never
+        decides it. Explicit merchant-approved mappings take precedence over any
+        fallback; ASIN or title similarity alone never auto-binds.
+      parameters:
+        - { name: integrationConnectionId, in: query, schema: { type: string, format: uuid } }
+        - { name: marketplaceId, in: query, schema: { type: string } }
+        - { name: unresolvedOnly, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SkuMapping" }
+    put:
+      summary: Record an explicit merchant-approved mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SkuMapping" }
+      responses:
+        "200": { description: Mapping stored }
+        "409":
+          description: >
+            Conflicts with an existing mapping for this (connection, marketplace, sellerSku).
+            One-to-many requires an explicit business rule, not a silent overwrite.
+
+components:
+
+  securitySchemes:
+    partnerConnectSignature:
+      type: apiKey
+      in: header
+      name: X-PC-Signature
+      description: >
+        Model 1. HMAC-SHA256 over timestamp + "." + raw body. Service notification only -
+        carries no user identity and authorises no read.
+    merchant360UserAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Model 3. Merchant360's own user authentication and role-based access control.
+        Used for merchant-facing endpoints such as SKU mapping administration.
+
+  schemas:
+
+    InboxEntry:
+      type: object
+      required: [eventId, eventType, receivedAt, state]
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType: { type: string }
+        receivedAt: { type: string, format: date-time }
+        state:
+          type: string
+          enum: [Received, Processing, Processed, FailedRetryable, FailedPermanent]
+        m360SalesOrderId:
+          type: ["string", "null"]
+          description: Set once the event produced or updated an operational sales order.
+        attempts: { type: integer }
+        lastAttemptAt: { type: ["string", "null"], format: date-time }
+        error: { type: ["string", "null"] }
+
+    SkuMapping:
+      type: object
+      required: [integrationConnectionId, marketplaceId, sellerSku, m360CatalogItemId, source]
+      properties:
+        integrationConnectionId: { type: string, format: uuid }
+        marketplaceId: { type: string }
+        sellerSku: { type: string }
+        asin: { type: ["string", "null"] }
+        m360CatalogItemId: { type: string }
+        source:
+          type: string
+          enum: [MerchantApproved, FallbackMatch]
+          description: >
+            MerchantApproved always wins. FallbackMatch is advisory and must not
+            drive an inventory effect on its own.
+        approvedBy: { type: ["string", "null"] }
+        approvedAt: { type: ["string", "null"], format: date-time }

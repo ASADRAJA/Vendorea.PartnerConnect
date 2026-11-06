@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vendorea.PartnerConnect.Infrastructure.Security;
 using Xunit;
@@ -8,7 +9,9 @@ namespace Vendorea.PartnerConnect.UnitTests.Security;
 
 public class AesCredentialProtectorTests
 {
-    private static AesCredentialProtector Create(string? key = "unit-test-key")
+    private static AesCredentialProtector Create(
+        string? key = "unit-test-key",
+        string environment = "Development")
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -16,7 +19,18 @@ public class AesCredentialProtectorTests
                 ["CredentialEncryption:EncryptionKey"] = key
             })
             .Build();
-        return new AesCredentialProtector(config, NullLogger<AesCredentialProtector>.Instance);
+        return new AesCredentialProtector(
+            config, new StubEnvironment(environment), NullLogger<AesCredentialProtector>.Instance);
+    }
+
+    /// <summary>Minimal IHostEnvironment so the fail-closed branch can be exercised.</summary>
+    private sealed class StubEnvironment : IHostEnvironment
+    {
+        public StubEnvironment(string environmentName) => EnvironmentName = environmentName;
+        public string EnvironmentName { get; set; }
+        public string ApplicationName { get; set; } = "Tests";
+        public string ContentRootPath { get; set; } = string.Empty;
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
     }
 
     [Fact]
@@ -70,5 +84,76 @@ public class AesCredentialProtectorTests
 
         var cipher = encryptor.Protect("cross-process-secret");
         decryptor.Unprotect(cipher).Should().Be("cross-process-secret");
+    }
+
+    // ---- Stage C regression tests (R0.5-R0.8) ----
+
+    [Fact]
+    public void Missing_key_outside_development_fails_closed()
+    {
+        // The deployed test environment ran on the published fallback key for months because a
+        // warning was the only signal. Refusing to start is the fix.
+        var act = () => Create(key: null, environment: Environments.Production);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*CredentialEncryption:EncryptionKey*");
+    }
+
+    [Fact]
+    public void Missing_key_in_development_still_starts()
+    {
+        var act = () => Create(key: null, environment: Environments.Development);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Tampered_ciphertext_is_rejected_not_silently_wrong()
+    {
+        var sut = Create();
+        var cipher = sut.Protect("refresh-token-value")!;
+
+        // Flip a bit inside the authentication tag. Decoding first matters: altering a trailing
+        // base64 character can land in padding bits that are discarded on decode, so the
+        // ciphertext would be unchanged and the tag would still verify.
+        const string prefix = "enc:v1:";
+        var raw = Convert.FromBase64String(cipher[prefix.Length..]);
+        raw[12] ^= 0x01;   // first byte of the 16-byte tag, which follows the 12-byte nonce
+        var tampered = prefix + Convert.ToBase64String(raw);
+
+        var act = () => sut.Unprotect(tampered);
+
+        act.Should().Throw<System.Security.Cryptography.AuthenticationTagMismatchException>();
+    }
+
+    [Fact]
+    public void UnprotectRequired_rejects_plaintext()
+    {
+        var sut = Create();
+
+        // A credential that was never encrypted must not be handed back as if it had been.
+        var act = () => sut.UnprotectRequired("{\"SftpPassword\":\"plaintext\"}");
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void UnprotectRequired_round_trips_real_ciphertext()
+    {
+        var sut = Create();
+        var cipher = sut.Protect("amzn-refresh-token");
+
+        sut.UnprotectRequired(cipher).Should().Be("amzn-refresh-token");
+    }
+
+    [Fact]
+    public void Lenient_Unprotect_still_passes_legacy_plaintext_through()
+    {
+        // Load-bearing: SPR's TransportCredentialsJson is plaintext today and several live read
+        // paths depend on this. Tightening it would break SPR immediately.
+        var sut = Create();
+        const string legacy = "{\"SftpPassword\":\"legacy\"}";
+
+        sut.Unprotect(legacy).Should().Be(legacy);
     }
 }
