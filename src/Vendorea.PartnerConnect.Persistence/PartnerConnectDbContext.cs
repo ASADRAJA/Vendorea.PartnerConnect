@@ -117,6 +117,15 @@ public class PartnerConnectDbContext : DbContext
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState>();
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState> IntegrationOAuthStates
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState>();
+
+    // --- Marketplace sales orders (Phase 3). Separate from the supplier Order aggregate: the
+    // same word, the opposite direction, a different lifecycle. ---
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder> SalesOrders
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderLine> SalesOrderLines
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderLine>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderStatusHistory> SalesOrderStatusHistory
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderStatusHistory>();
     public DbSet<OrgPortalUserToken> OrgPortalUserTokens => Set<OrgPortalUserToken>();
 
     // Billing
