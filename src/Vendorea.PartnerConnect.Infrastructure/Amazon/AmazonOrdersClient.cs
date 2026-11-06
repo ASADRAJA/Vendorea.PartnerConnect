@@ -23,10 +23,14 @@ namespace Vendorea.PartnerConnect.Infrastructure.Amazon;
 public class AmazonOrdersClient : IMarketplaceOrdersClient
 {
     private const string OrdersPath = "/orders/2026-01-01/orders";
+    private const string SearchOrdersOperation = "searchOrders";
+    private const string GetOrderOperation = "getOrder";
+    private const string ProviderCode = "AMAZON_SP";
 
     private readonly HttpClient _http;
     private readonly IAmazonAccessTokenProvider _tokens;
     private readonly IIntegrationConnectionService _connections;
+    private readonly IProviderRateLimiter _rateLimiter;
     private readonly AmazonSpApiOptions _options;
     private readonly ILogger<AmazonOrdersClient> _logger;
 
@@ -34,12 +38,14 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
         HttpClient http,
         IAmazonAccessTokenProvider tokens,
         IIntegrationConnectionService connections,
+        IProviderRateLimiter rateLimiter,
         IOptions<AmazonSpApiOptions> options,
         ILogger<AmazonOrdersClient> logger)
     {
         _http = http;
         _tokens = tokens;
         _connections = connections;
+        _rateLimiter = rateLimiter;
         _options = options.Value;
         _logger = logger;
     }
@@ -63,10 +69,22 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
             return MarketplaceOrderPage.Failed(failure.Value.Outcome, failure.Value.Error);
         }
 
-        var url = _options.ResolveEndpoint(connection!.Region) + OrdersPath + BuildQueryString(query);
+        var bucketKey = BucketKey(connection!);
+        var lease = await _rateLimiter.TryAcquireAsync(bucketKey, SearchOrdersOperation, cancellationToken);
+        if (!lease.Acquired)
+        {
+            // Reported as rate limiting without a request being made. The caller reschedules;
+            // sending anyway would earn a 429 that costs more than the call it replaced.
+            return MarketplaceOrderPage.Failed(
+                MarketplaceCallOutcome.RateLimited,
+                "The local rate-limit budget for this seller is exhausted.",
+                lease.RetryAfter);
+        }
 
-        var (document, outcome, error, retryAfter) =
-            await SendAsync(url, token!, tenantId, connectionId, cancellationToken);
+        var url = _options.ResolveEndpoint(connection.Region) + OrdersPath + BuildQueryString(query);
+
+        var (document, outcome, error, retryAfter) = await SendAsync(
+            url, token!, tenantId, connectionId, bucketKey, SearchOrdersOperation, cancellationToken);
 
         if (document is null)
         {
@@ -122,12 +140,22 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
             return MarketplaceOrderResult.Failed(failure.Value.Outcome, failure.Value.Error);
         }
 
-        var url = _options.ResolveEndpoint(connection!.Region)
+        var bucketKey = BucketKey(connection!);
+        var lease = await _rateLimiter.TryAcquireAsync(bucketKey, GetOrderOperation, cancellationToken);
+        if (!lease.Acquired)
+        {
+            return MarketplaceOrderResult.Failed(
+                MarketplaceCallOutcome.RateLimited,
+                "The local rate-limit budget for this seller is exhausted.",
+                lease.RetryAfter);
+        }
+
+        var url = _options.ResolveEndpoint(connection.Region)
             + $"{OrdersPath}/{Uri.EscapeDataString(externalOrderId)}"
             + $"?includedData={string.Join(',', _options.IncludedData)}";
 
-        var (document, outcome, error, retryAfter) =
-            await SendAsync(url, token!, tenantId, connectionId, cancellationToken);
+        var (document, outcome, error, retryAfter) = await SendAsync(
+            url, token!, tenantId, connectionId, bucketKey, GetOrderOperation, cancellationToken);
 
         if (document is null)
         {
@@ -180,7 +208,7 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
     private async Task<(JsonDocument? Document, MarketplaceCallOutcome Outcome,
         string? Error, TimeSpan? RetryAfter)> SendAsync(
         string url, string accessToken, int tenantId, Guid connectionId,
-        CancellationToken cancellationToken)
+        string bucketKey, string operation, CancellationToken cancellationToken)
     {
         try
         {
@@ -198,7 +226,16 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
             var outcome = Classify(response.StatusCode, body);
             var error = Summarise(body, response.StatusCode);
 
-            if (outcome == MarketplaceCallOutcome.Unauthorized)
+            if (outcome == MarketplaceCallOutcome.RateLimited)
+            {
+                // Amazon is the authority on its own budget. Our arithmetic can disagree with it
+                // — clock skew, or another integration calling under the same application — and
+                // when it does, the provider wins.
+                await _rateLimiter.PenalizeAsync(
+                    bucketKey, operation,
+                    RetryAfter(response) ?? TimeSpan.FromSeconds(60), cancellationToken);
+            }
+            else if (outcome == MarketplaceCallOutcome.Unauthorized)
             {
                 // The token was accepted by LWA and rejected here, so the grant itself is gone.
                 await _connections.RecordCredentialRejectedAsync(
@@ -288,6 +325,18 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
         var date = response.Headers.RetryAfter?.Date;
         return date.HasValue ? date.Value - DateTimeOffset.UtcNow : null;
     }
+
+    /// <summary>
+    /// The selling partner, not the connection.
+    /// </summary>
+    /// <remarks>
+    /// Amazon meters per application per selling partner. Two tenants may legitimately connect
+    /// the same seller account, and keyed by connection they would each receive a full budget
+    /// and jointly overspend the single bucket Amazon actually keeps. The connection id is used
+    /// only before authorization completes, when there is no account id yet and no calls to make.
+    /// </remarks>
+    private static string BucketKey(IntegrationConnection connection) =>
+        $"{ProviderCode}:{connection.ExternalAccountId ?? connection.Id.ToString()}";
 
     private static DateTime? ReadDateTime(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value)

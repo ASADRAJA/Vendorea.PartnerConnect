@@ -82,6 +82,10 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
         });
 
+        // Provider rate limiting (Phase 3). The limiter itself is registered with the persistence
+        // layer, since the bucket lives in the database; the policy comes from configuration.
+        services.AddSingleton<IProviderRateLimitPolicyProvider, AmazonRateLimitPolicyProvider>();
+
         // Orders client (Phase 3). Typed so HttpClientFactory owns the handler lifetime; the
         // access token is resolved per call and never attached to the client itself.
         services.AddHttpClient<IMarketplaceOrdersClient, AmazonOrdersClient>(client =>

@@ -1772,6 +1772,41 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("IntegrationSyncStates", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BucketKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastRefillAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<double>("Tokens")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BucketKey", "Operation")
+                        .IsUnique();
+
+                    b.ToTable("ProviderRateLimitBuckets", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.InventoryFeedBatch", b =>
                 {
                     b.Property<int>("Id")

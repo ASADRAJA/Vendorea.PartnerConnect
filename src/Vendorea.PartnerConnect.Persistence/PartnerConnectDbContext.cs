@@ -117,6 +117,8 @@ public class PartnerConnectDbContext : DbContext
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState>();
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState> IntegrationOAuthStates
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket> ProviderRateLimitBuckets
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket>();
 
     // --- Marketplace sales orders (Phase 3). Separate from the supplier Order aggregate: the
     // same word, the opposite direction, a different lifecycle. ---

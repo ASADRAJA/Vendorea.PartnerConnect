@@ -31,7 +31,8 @@ public class AmazonOrdersClientTests
         string body = EmptyPage,
         IntegrationCapabilities capabilities = IntegrationCapabilities.SalesOrderIngest,
         string? accessToken = "Atza|ACCESS",
-        string? region = "NA")
+        string? region = "NA",
+        StubRateLimiter? rateLimiter = null)
     {
         var handler = new StubHandler(status, body);
         var connections = new StubConnections(capabilities, region);
@@ -40,6 +41,7 @@ public class AmazonOrdersClientTests
             new HttpClient(handler),
             new StubTokenProvider(accessToken),
             connections,
+            rateLimiter ?? new StubRateLimiter(),
             Options.Create(new AmazonSpApiOptions()),
             NullLogger<AmazonOrdersClient>.Instance);
 
@@ -300,6 +302,64 @@ public class AmazonOrdersClientTests
             .Order!.ExternalOrderId.Should().Be("111-0000000-0000000");
     }
 
+    // ---- rate limiting ----
+
+    [Fact]
+    public async Task An_exhausted_local_budget_stops_the_call_before_it_is_made()
+    {
+        var limiter = new StubRateLimiter { Allow = false, RetryAfter = TimeSpan.FromSeconds(179) };
+        var (client, handler, _) = Build(rateLimiter: limiter);
+
+        var page = await client.SearchOrdersAsync(TenantId, ConnectionId, Incremental);
+
+        page.Outcome.Should().Be(MarketplaceCallOutcome.RateLimited);
+        page.RetryAfter.Should().Be(TimeSpan.FromSeconds(179));
+
+        // Sending anyway would earn a 429 that costs more than the call it replaced.
+        handler.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task The_budget_is_keyed_on_the_selling_partner_not_the_connection()
+    {
+        var limiter = new StubRateLimiter();
+        var (client, _, _) = Build(rateLimiter: limiter);
+
+        await client.SearchOrdersAsync(TenantId, ConnectionId, Incremental);
+
+        // Two tenants may connect the same seller account; keyed by connection they would each
+        // get a full budget and jointly overspend the one bucket Amazon keeps.
+        limiter.LastKey.Should().Be("AMAZON_SP:A3EXAMPLE1SELLER");
+        limiter.LastOperation.Should().Be("searchOrders");
+    }
+
+    [Fact]
+    public async Task getOrder_is_metered_separately_from_searchOrders()
+    {
+        var limiter = new StubRateLimiter();
+        var (client, _, _) = Build(body: """{ "orderId": "1" }""", rateLimiter: limiter);
+
+        await client.GetOrderAsync(TenantId, ConnectionId, "1");
+
+        // getOrder is roughly ninety times cheaper. One budget for both would make the cheap
+        // call as scarce as the expensive one.
+        limiter.LastOperation.Should().Be("getOrder");
+    }
+
+    [Fact]
+    public async Task A_provider_429_empties_the_local_bucket()
+    {
+        var limiter = new StubRateLimiter();
+        var (client, _, _) = Build(HttpStatusCode.TooManyRequests, "{}", rateLimiter: limiter);
+
+        await client.SearchOrdersAsync(TenantId, ConnectionId, Incremental);
+
+        // Amazon is the authority on its own budget; when its answer and our arithmetic
+        // disagree, the provider wins.
+        limiter.Penalized.Should().BeTrue();
+        limiter.PenaltyWindow.Should().Be(TimeSpan.FromSeconds(60));
+    }
+
     // ---- stubs ----
 
     private sealed class StubHandler : HttpMessageHandler
@@ -342,6 +402,34 @@ public class AmazonOrdersClientTests
         }
     }
 
+    private sealed class StubRateLimiter : IProviderRateLimiter
+    {
+        public bool Allow { get; set; } = true;
+        public TimeSpan RetryAfter { get; set; } = TimeSpan.Zero;
+
+        public string? LastKey { get; private set; }
+        public string? LastOperation { get; private set; }
+        public bool Penalized { get; private set; }
+        public TimeSpan? PenaltyWindow { get; private set; }
+
+        public Task<RateLimitLease> TryAcquireAsync(
+            string bucketKey, string operation, CancellationToken cancellationToken = default)
+        {
+            LastKey = bucketKey;
+            LastOperation = operation;
+            return Task.FromResult(Allow ? RateLimitLease.Granted() : RateLimitLease.Denied(RetryAfter));
+        }
+
+        public Task PenalizeAsync(
+            string bucketKey, string operation, TimeSpan retryAfter,
+            CancellationToken cancellationToken = default)
+        {
+            Penalized = true;
+            PenaltyWindow = retryAfter;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class StubTokenProvider : IAmazonAccessTokenProvider
     {
         private readonly string? _token;
@@ -361,6 +449,7 @@ public class AmazonOrdersClientTests
             {
                 Id = ConnectionId,
                 TenantId = TenantId,
+                ExternalAccountId = "A3EXAMPLE1SELLER",
                 Region = region,
                 Status = IntegrationConnectionStatus.Connected,
                 GrantedCapabilities = capabilities

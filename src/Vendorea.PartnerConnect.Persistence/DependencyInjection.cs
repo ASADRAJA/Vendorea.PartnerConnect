@@ -130,6 +130,10 @@ public static class DependencyInjection
         // Seller authorization (Phase 2)
         services.AddScoped<IIntegrationOAuthStateRepository, IntegrationOAuthStateRepository>();
 
+        // Cross-process provider rate limiting (Phase 3). Here rather than in Infrastructure
+        // because the bucket is a database row — that is what makes it shared.
+        services.AddScoped<IProviderRateLimiter, ProviderRateLimiter>();
+
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
     }

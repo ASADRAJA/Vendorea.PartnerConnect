@@ -53,6 +53,25 @@ public class AmazonSpApiOptions
     /// </remarks>
     public TimeSpan WatermarkOverlap { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// Published rate limits, by operation.
+    /// </summary>
+    /// <remarks>
+    /// Verified against Amazon's rate-limit reference in November 2026 (see
+    /// SP_API_VERIFICATION_2026-11.md). <c>searchOrders</c> at 0.0056/second is one call every
+    /// ~179 seconds — not a typo, and the single number that shapes the polling design.
+    ///
+    /// Configurable because Amazon grants some applications higher limits than the published
+    /// defaults, and an application that earns one should not need a release to use it.
+    /// </remarks>
+    public Dictionary<string, RateLimitSetting> RateLimits { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["searchOrders"] = new() { RatePerSecond = 0.0056, Burst = 20 },
+            ["getOrder"] = new() { RatePerSecond = 0.5, Burst = 30 },
+            ["confirmShipment"] = new() { RatePerSecond = 2, Burst = 10 }
+        };
+
     public string ResolveEndpoint(string? region)
     {
         var key = string.IsNullOrWhiteSpace(region) ? DefaultRegion : region;
@@ -60,4 +79,11 @@ public class AmazonSpApiOptions
             ? host
             : RegionEndpoints[DefaultRegion];
     }
+}
+
+/// <summary>One operation's published rate and burst.</summary>
+public class RateLimitSetting
+{
+    public double RatePerSecond { get; set; }
+    public double Burst { get; set; }
 }
