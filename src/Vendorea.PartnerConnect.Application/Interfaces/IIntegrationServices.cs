@@ -94,6 +94,40 @@ public interface IIntegrationConnectionService
     /// <summary>Revokes a connection and destroys its credentials, retaining the row for audit.</summary>
     Task<IntegrationConnectionResult> DisconnectAsync(
         int tenantId, Guid connectionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records that the provider rejected this connection's credentials, moving it to Expired.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from a transient failure on purpose. A rejected refresh token will keep being
+    /// rejected, so the connection must stop looking healthy and start telling the merchant to
+    /// reconnect — a poller that retries it forever simply burns the rate-limit budget of the
+    /// connections that do work.
+    ///
+    /// The credential row is left in place: it is already useless, and deleting it would destroy
+    /// the version history that shows when re-consent last happened.
+    /// </remarks>
+    Task RecordCredentialRejectedAsync(
+        int tenantId, Guid connectionId, string error, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records a failure that may well succeed next time, without changing the status.
+    /// </summary>
+    Task RecordTransientErrorAsync(
+        int tenantId, Guid connectionId, string error, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears a capability the provider turned out not to have granted.
+    /// </summary>
+    /// <remarks>
+    /// SP-API reports nothing per seller at authorization time, so a missing role surfaces only
+    /// as a 403 on the first real call. Recording it here is what stops every later poll from
+    /// rediscovering the same denial, and what lets the portal say which capability is missing
+    /// instead of showing a connection that is green but does nothing.
+    /// </remarks>
+    Task RecordCapabilityDeniedAsync(
+        int tenantId, Guid connectionId, IntegrationCapabilities capability, string error,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record IntegrationConnectionResult(

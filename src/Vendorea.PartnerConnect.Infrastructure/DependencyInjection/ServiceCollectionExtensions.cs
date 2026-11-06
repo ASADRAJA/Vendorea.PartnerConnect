@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Application.Services;
 using Vendorea.PartnerConnect.Validation;
+using Vendorea.PartnerConnect.Infrastructure.Amazon;
 using Vendorea.PartnerConnect.Infrastructure.CrossCutting;
 using Vendorea.PartnerConnect.Infrastructure.Edi;
 using Vendorea.PartnerConnect.Infrastructure.Services;
@@ -52,6 +53,24 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIntegrationCredentialStore, IntegrationCredentialStore>();
         services.AddScoped<IIntegrationContextFactory, IntegrationContextFactory>();
         services.AddScoped<IIntegrationConnectionService, IntegrationConnectionService>();
+
+        // Seller authorization (Phase 2). The state store is what binds a public redirect to the
+        // tenant that started it; the access-token cache is a singleton because it holds process
+        // memory only and must be shared, keyed by connection id.
+        services.AddScoped<IIntegrationOAuthStateService, IntegrationOAuthStateService>();
+        services.AddScoped<IIntegrationAuthorizationService, IntegrationAuthorizationService>();
+        services.AddSingleton<IAmazonAccessTokenCache, AmazonAccessTokenCache>();
+        services.AddScoped<IAmazonAccessTokenProvider, AmazonAccessTokenProvider>();
+
+        // Typed client: HttpClientFactory owns the handler lifetime, so the token endpoint is not
+        // pinned to a stale DNS answer.
+        services.AddHttpClient<IAmazonLwaClient, AmazonLwaClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        // Expired-state hygiene.
+        services.AddScoped<IScheduledJobHandler, IntegrationOAuthStatePurgeJobHandler>();
 
         // Tenant-partner connection workflow + org-facing API auth
         services.AddScoped<ITenantConnectionService, TenantConnectionService>();
@@ -125,11 +144,17 @@ public static class ServiceCollectionExtensions
                 configuration.GetSection(DuplicateDetectionOptions.SectionName));
             services.Configure<XsdSchemaProviderOptions>(
                 configuration.GetSection(XsdSchemaProviderOptions.SectionName));
+            services.Configure<AmazonLwaOptions>(
+                configuration.GetSection(AmazonLwaOptions.SectionName));
+            services.Configure<IntegrationAuthorizationOptions>(
+                configuration.GetSection(IntegrationAuthorizationOptions.SectionName));
         }
         else
         {
             services.Configure<DuplicateDetectionOptions>(_ => { });
             services.Configure<XsdSchemaProviderOptions>(_ => { });
+            services.Configure<AmazonLwaOptions>(_ => { });
+            services.Configure<IntegrationAuthorizationOptions>(_ => { });
         }
 
         return services;

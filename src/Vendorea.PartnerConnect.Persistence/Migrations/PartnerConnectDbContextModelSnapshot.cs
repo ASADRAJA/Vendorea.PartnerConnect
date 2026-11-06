@@ -1593,6 +1593,51 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("IntegrationCredentials", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("IntegrationConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReturnUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("IntegrationConnectionId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("IntegrationOAuthStates", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider", b =>
                 {
                     b.Property<int>("Id")
@@ -1646,6 +1691,30 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("IntegrationProviders", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            AuthKind = "OAuth2",
+                            Capabilities = 15,
+                            Code = "AMAZON_SP",
+                            CreatedAt = new DateTime(2026, 11, 6, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsEnabled = true,
+                            Kind = "Marketplace",
+                            Name = "Amazon Selling Partner"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            AuthKind = "OAuth2",
+                            Capabilities = 112,
+                            Code = "AMAZON_BUSINESS",
+                            CreatedAt = new DateTime(2026, 11, 6, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsEnabled = false,
+                            Kind = "Procurement",
+                            Name = "Amazon Business"
+                        });
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState", b =>
@@ -8571,6 +8640,17 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                 {
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", "Connection")
                         .WithMany("Credentials")
+                        .HasForeignKey("IntegrationConnectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Connection");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", "Connection")
+                        .WithMany()
                         .HasForeignKey("IntegrationConnectionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

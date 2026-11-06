@@ -28,6 +28,49 @@ public class IntegrationProviderConfiguration : IEntityTypeConfiguration<Integra
         // lesson from the four M360Push* columns.
         builder.Property(p => p.Capabilities).HasDefaultValue(IntegrationCapabilities.None);
         builder.Property(p => p.IsEnabled).HasDefaultValue(true);
+
+        // Reference data, seeded by migration. Without these rows the feature has nothing to
+        // connect to and every authorize call fails with "provider not available" — a confusing
+        // way to discover that a lookup table was never populated.
+        //
+        // Ids are fixed because migrations reference them. The sequence behind the identity
+        // column is not advanced by seeding, so a provider added by hand later must be given an
+        // id above these rather than left to the default.
+        var seedDate = new DateTime(2026, 11, 6, 0, 0, 0, DateTimeKind.Utc);
+
+        builder.HasData(
+            new IntegrationProvider
+            {
+                Id = 1,
+                Code = "AMAZON_SP",
+                Name = "Amazon Selling Partner",
+                Kind = IntegrationProviderKind.Marketplace,
+                AuthKind = IntegrationAuthKind.OAuth2,
+                // What the programme could grant. What a given seller actually granted is
+                // recorded per connection, and may be less.
+                Capabilities = IntegrationCapabilities.SalesOrderIngest
+                    | IntegrationCapabilities.FulfillmentPush
+                    | IntegrationCapabilities.ListingSync
+                    | IntegrationCapabilities.FinanceIngest,
+                IsEnabled = true,
+                CreatedAt = seedDate
+            },
+            new IntegrationProvider
+            {
+                Id = 2,
+                Code = "AMAZON_BUSINESS",
+                Name = "Amazon Business",
+                Kind = IntegrationProviderKind.Procurement,
+                AuthKind = IntegrationAuthKind.OAuth2,
+                Capabilities = IntegrationCapabilities.PurchaseOrderPush
+                    | IntegrationCapabilities.PurchaseOrderStatusIngest
+                    | IntegrationCapabilities.CatalogSearch,
+                // Disabled until Amazon Business onboarding completes — a published 4-6 week
+                // process. Seeded now so the row exists and an operator flips one flag rather
+                // than hand-writing reference data into production.
+                IsEnabled = false,
+                CreatedAt = seedDate
+            });
     }
 }
 
@@ -124,6 +167,32 @@ public class IntegrationSyncStateConfiguration : IEntityTypeConfiguration<Integr
 
         builder.HasOne(s => s.Connection)
             .WithMany(c => c.SyncStates)
+            .HasForeignKey(s => s.IntegrationConnectionId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class IntegrationOAuthStateConfiguration : IEntityTypeConfiguration<IntegrationOAuthState>
+{
+    public void Configure(EntityTypeBuilder<IntegrationOAuthState> builder)
+    {
+        builder.ToTable("IntegrationOAuthStates");
+        builder.HasKey(s => s.Id);
+
+        builder.Property(s => s.TokenHash).IsRequired().HasMaxLength(64);
+
+        // The callback looks a state up by hash and nothing else, so this index is the whole
+        // lookup path. Unique because two states hashing alike would be a collision we want to
+        // fail loudly rather than resolve arbitrarily.
+        builder.HasIndex(s => s.TokenHash).IsUnique();
+
+        builder.Property(s => s.ReturnUrl).HasMaxLength(2000);
+
+        // Drives expiry cleanup.
+        builder.HasIndex(s => s.ExpiresAt);
+
+        builder.HasOne(s => s.Connection)
+            .WithMany()
             .HasForeignKey(s => s.IntegrationConnectionId)
             .OnDelete(DeleteBehavior.Cascade);
     }

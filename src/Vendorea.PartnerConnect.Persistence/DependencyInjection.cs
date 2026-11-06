@@ -127,6 +127,9 @@ public static class DependencyInjection
         services.AddScoped<IIntegrationCredentialRepository, IntegrationCredentialRepository>();
         services.AddScoped<IIntegrationSyncStateRepository, IntegrationSyncStateRepository>();
 
+        // Seller authorization (Phase 2)
+        services.AddScoped<IIntegrationOAuthStateRepository, IntegrationOAuthStateRepository>();
+
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
     }

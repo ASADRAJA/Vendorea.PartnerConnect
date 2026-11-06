@@ -67,3 +67,24 @@ public class IntegrationConnectionDetailDto
     public List<IntegrationCredentialSummaryDto> Credentials { get; set; } = new();
     public List<IntegrationSyncStateDto> SyncStates { get; set; } = new();
 }
+
+/// <summary>Body of the authorize call. Everything on it is optional.</summary>
+public class StartAuthorizationRequest
+{
+    /// <summary>Operator-facing name for the connection being created.</summary>
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// Where to send the browser after consent. Must match the configured allow-list, so a
+    /// caller cannot turn the public callback into an open redirect.
+    /// </summary>
+    public string? ReturnUrl { get; set; }
+}
+
+/// <summary>The connection created, where to send the user, and how long that link lasts.</summary>
+public class IntegrationAuthorizationStartDto
+{
+    public Guid IntegrationConnectionId { get; set; }
+    public string ConsentUrl { get; set; } = string.Empty;
+    public DateTime StateExpiresAt { get; set; }
+}

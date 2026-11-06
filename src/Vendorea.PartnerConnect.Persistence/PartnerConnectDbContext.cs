@@ -115,6 +115,8 @@ public class PartnerConnectDbContext : DbContext
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationCredential>();
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState> IntegrationSyncStates
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState> IntegrationOAuthStates
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState>();
     public DbSet<OrgPortalUserToken> OrgPortalUserTokens => Set<OrgPortalUserToken>();
 
     // Billing

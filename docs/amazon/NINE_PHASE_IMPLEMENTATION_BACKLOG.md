@@ -64,15 +64,18 @@ restart; SPR green. **Total ≈ XL.**
 
 ## Phase 2 — Seller authorization
 
-| # | Task | Owner | Cx | Depends |
-|---|---|---|---|---|
-| 2.1 | OAuth state store — single-use, hashed, expiring (model on `OrgPortalUserTokenService`) | PC | M | 1 |
-| 2.2 | Authorize / callback / disconnect endpoints | PC | M | 2.1 |
-| 2.3 | **Reconnect-reuse identity resolution (C3)** | PC | M | 2.2 |
-| 2.4 | LWA token exchange + refresh with in-memory access-token cache keyed by connection | PC | M | 2.2 |
-| 2.5 | Connection health, denied-capability reporting | PC | S | 2.4 |
-| 2.6 | M360 connect/disconnect UI calling PC | **M360** | M | 2.2 |
-| 2.7 | Tests — matrix 2.1–2.10 | PC | L | — |
+| # | Task | Owner | Cx | Depends | Status |
+|---|---|---|---|---|---|
+| 2.1 | OAuth state store — single-use, hashed, expiring (model on `OrgPortalUserTokenService`) | PC | M | 1 | ✅ done |
+| 2.2 | Authorize / callback / disconnect endpoints | PC | M | 2.1 | ✅ done |
+| 2.3 | **Reconnect-reuse identity resolution (C3)** | PC | M | 2.2 | ✅ done |
+| 2.4 | LWA token exchange + refresh with in-memory access-token cache keyed by connection | PC | M | 2.2 | ✅ done |
+| 2.5 | Connection health, denied-capability reporting | PC | S | 2.4 | ✅ done |
+| 2.6 | M360 connect/disconnect UI calling PC | **M360** | M | 2.2 | open |
+| 2.7 | Tests — matrix 2.1–2.10 | PC | L | — | ✅ done |
+
+See `PHASE2_EXECUTION_REPORT.md`. PC work is complete; the gate below is blocked on Amazon
+application approval (0.1) and on the application encryption key reaching the droplet.
 
 **Gate:** a real seller connects, revokes and reconnects **without creating a second
 connection**. Needs 0.1 approved for the live claim; mock gates can pass before.

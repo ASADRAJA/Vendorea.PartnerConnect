@@ -174,4 +174,96 @@ public class IntegrationConnectionService : IIntegrationConnectionService
 
         return IntegrationConnectionResult.Ok(connection);
     }
+
+    public async Task RecordCredentialRejectedAsync(
+        int tenantId, Guid connectionId, string error, CancellationToken cancellationToken = default)
+    {
+        var connection = await _connections.GetAsync(tenantId, connectionId, cancellationToken);
+        if (connection is null)
+        {
+            return;
+        }
+
+        // Revoked stays Revoked. A disconnected connection whose stale token is rejected must not
+        // be quietly promoted to Expired, which reads as "reconnect me" rather than "I am off".
+        if (connection.Status == IntegrationConnectionStatus.Revoked)
+        {
+            return;
+        }
+
+        var previousStatus = connection.Status;
+        connection.Status = IntegrationConnectionStatus.Expired;
+        connection.LastError = Truncate(error);
+        connection.LastErrorAt = DateTime.UtcNow;
+        await _connections.UpdateAsync(connection, cancellationToken);
+
+        if (previousStatus != IntegrationConnectionStatus.Expired)
+        {
+            _logger.LogWarning(
+                "Connection {ConnectionId} for tenant {TenantId} needs reauthorization: the provider rejected its credentials.",
+                connectionId, tenantId);
+
+            await _audit.LogAsync(
+                AuditAction.Update, "IntegrationConnection", connectionId.ToString(),
+                newValues: new
+                {
+                    Status = nameof(IntegrationConnectionStatus.Expired),
+                    PreviousStatus = previousStatus.ToString()
+                },
+                dealerId: tenantId,
+                notes: "Provider rejected the stored credentials.",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    public async Task RecordTransientErrorAsync(
+        int tenantId, Guid connectionId, string error, CancellationToken cancellationToken = default)
+    {
+        var connection = await _connections.GetAsync(tenantId, connectionId, cancellationToken);
+        if (connection is null)
+        {
+            return;
+        }
+
+        // Status deliberately untouched. A network blip is not a reason to tell a merchant their
+        // Amazon account is disconnected; the error text and timestamp are enough for an operator.
+        connection.LastError = Truncate(error);
+        connection.LastErrorAt = DateTime.UtcNow;
+        await _connections.UpdateAsync(connection, cancellationToken);
+    }
+
+    public async Task RecordCapabilityDeniedAsync(
+        int tenantId, Guid connectionId, IntegrationCapabilities capability, string error,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await _connections.GetAsync(tenantId, connectionId, cancellationToken);
+        if (connection is null || !connection.GrantedCapabilities.HasFlag(capability))
+        {
+            return;
+        }
+
+        connection.GrantedCapabilities &= ~capability;
+        connection.LastError = Truncate($"{capability} was denied by the provider: {error}");
+        connection.LastErrorAt = DateTime.UtcNow;
+        await _connections.UpdateAsync(connection, cancellationToken);
+
+        _logger.LogWarning(
+            "Connection {ConnectionId} lost capability {Capability}: the provider denied it.",
+            connectionId, capability);
+
+        await _audit.LogAsync(
+            AuditAction.Update, "IntegrationConnection", connectionId.ToString(),
+            newValues: new
+            {
+                DeniedCapability = capability.ToString(),
+                GrantedCapabilities = connection.GrantedCapabilities.ToString()
+            },
+            dealerId: tenantId,
+            notes: "Capability denied by the provider.",
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>LastError is bounded at 2000 characters; a provider body can be far longer.</summary>
+    private static string Truncate(string error) =>
+        error.Length <= 2000 ? error : error[..2000];
 }

@@ -25,6 +25,7 @@ namespace Vendorea.PartnerConnect.Api.Controllers.V1;
 public class IntegrationsController : ControllerBase
 {
     private readonly IIntegrationConnectionService _connections;
+    private readonly IIntegrationAuthorizationService _authorization;
     private readonly IIntegrationProviderRepository _providers;
     private readonly IIntegrationCredentialRepository _credentials;
     private readonly IIntegrationSyncStateRepository _syncStates;
@@ -35,6 +36,7 @@ public class IntegrationsController : ControllerBase
 
     public IntegrationsController(
         IIntegrationConnectionService connections,
+        IIntegrationAuthorizationService authorization,
         IIntegrationProviderRepository providers,
         IIntegrationCredentialRepository credentials,
         IIntegrationSyncStateRepository syncStates,
@@ -44,6 +46,7 @@ public class IntegrationsController : ControllerBase
         ILogger<IntegrationsController> logger)
     {
         _connections = connections;
+        _authorization = authorization;
         _providers = providers;
         _credentials = credentials;
         _syncStates = syncStates;
@@ -132,6 +135,12 @@ public class IntegrationsController : ControllerBase
     }
 
     /// <summary>Begins a connection: creates it Pending, with no account id and no credentials.</summary>
+    /// <remarks>
+    /// For OAuth providers the authorize route below is the one to call — it does this and issues
+    /// the state in a single step, which is what the published contract describes. This route
+    /// remains for providers whose credentials arrive by other means (API key, SFTP), where there
+    /// is a connection to configure but no consent to obtain.
+    /// </remarks>
     [HttpPost("tenants/{tenantId:int}/integrations")]
     [RequireScope(ApiScopes.IntegrationsWrite)]
     [ProducesResponseType(typeof(IntegrationConnectionDto), StatusCodes.Status201Created)]
@@ -164,6 +173,61 @@ public class IntegrationsController : ControllerBase
             nameof(GetConnection),
             new { tenantId, connectionId = result.Connection.Id },
             MapConnection(result.Connection));
+    }
+
+    /// <summary>
+    /// Begins provider authorization: creates a Pending connection, issues a single-use state,
+    /// and returns the consent URL.
+    /// </summary>
+    /// <remarks>
+    /// The caller sends the user's browser to <c>consentUrl</c>. It is not a redirect from here,
+    /// because the caller is a server (Merchant360) holding an org API key, not the browser.
+    ///
+    /// Which connection this ultimately becomes is not settled yet. If the seller authorises an
+    /// account this tenant already holds, the row created here is discarded and the existing one
+    /// reauthorised — see the completion path.
+    /// </remarks>
+    [HttpPost("tenants/{tenantId:int}/integrations/{providerCode}/authorize")]
+    [RequireScope(ApiScopes.IntegrationsWrite)]
+    [ProducesResponseType(typeof(IntegrationAuthorizationStartDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> StartAuthorization(
+        int tenantId, string providerCode, [FromBody] StartAuthorizationRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null) return error!;
+
+        var tenantError = await EnsureTenantInScopeAsync(org, tenantId, cancellationToken);
+        if (tenantError is not null) return tenantError;
+
+        var result = await _authorization.StartAsync(
+            org.Id, tenantId, providerCode, request?.DisplayName, request?.ReturnUrl,
+            cancellationToken);
+
+        if (!result.Success)
+        {
+            return UnprocessableEntity(new
+            {
+                code = "AUTHORIZATION_UNAVAILABLE",
+                message = result.Error
+            });
+        }
+
+        _logger.LogInformation(
+            "Started {ProviderCode} authorization for connection {ConnectionId}, tenant {TenantId}",
+            providerCode, result.ConnectionId, tenantId);
+
+        return CreatedAtAction(
+            nameof(GetConnection),
+            new { tenantId, connectionId = result.ConnectionId },
+            new IntegrationAuthorizationStartDto
+            {
+                IntegrationConnectionId = result.ConnectionId!.Value,
+                ConsentUrl = result.ConsentUrl!,
+                StateExpiresAt = result.ExpiresAt!.Value
+            });
     }
 
     /// <summary>Disconnects a connection and destroys its credentials. The row is retained.</summary>
