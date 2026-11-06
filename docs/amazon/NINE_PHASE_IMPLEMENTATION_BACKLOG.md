@@ -96,6 +96,7 @@ connection**. Needs 0.1 approved for the live claim; mock gates can pass before.
 | 3.10 | **`RawDocumentArchive` remediation (A2)** — writer, redaction, retention, purge | PC | L | — |
 | 3.11 | Sales-order read API + portal views | PC | M | 3.1 |
 | 3.12 | Tests — matrix 3.1–3.15 incl. load | PC | XL | — |
+| 3.13 | **Restricted Data Token flow** — `POST /tokens/2021-03-01/restrictedDataToken`, cached per connection by expiry, used in place of the LWA token for buyer/address reads | PC | M | 0.1 role approval |
 
 **Gate:** orders persist exactly once across poll/notification overlap; PII and status cases
 correct. **Capacity gate before activation** — the droplet shares PostgreSQL with M360 on

@@ -115,6 +115,44 @@ an order ingests with **no monetary values at all** — which is a working inges
 produce a sellable Merchant360 order. That dependency belongs on the Phase 0 approval list, not
 discovered in Phase 3 testing.
 
+## 5b. Buyer and address data needs a Restricted Data Token — **gap in what is built**
+
+Verified 2026-11-06, prompted by the Amazon permissions request being prepared.
+
+`includedData=BUYER,RECIPIENT` is **not sufficient on its own**. Buyer identity and the shipping
+address are restricted data, and reading them requires a **Restricted Data Token** obtained first:
+
+```
+POST /tokens/2021-03-01/restrictedDataToken
+{
+  "restrictedResources": [
+    { "method": "GET", "path": "<the orders path>", "dataElements": ["buyerInfo", "shippingAddress"] }
+  ]
+}
+→ { "restrictedDataToken": "...", "expiresIn": <seconds> }
+```
+
+Rate limit **1 req/s, burst 10**. `dataElements` also offers `buyerTaxInformation`. The RDT then
+goes in `x-amz-access-token` **in place of** the ordinary LWA access token for that call.
+
+**`AmazonOrdersClient` does not do this.** It sends the LWA access token, so orders will ingest
+with no buyer and no address — recorded as `buyerDataAvailable: false`, which the model already
+treats as a normal state rather than an error, so nothing breaks and nothing is silently wrong.
+What it means is:
+
+- Phase 3 ingestion is correct but PII-free until this is implemented.
+- **Phase 5 merchant-fulfilled shipping cannot work at all without it** — there is no address to
+  ship to.
+
+**One value still to confirm:** the `path` inside `restrictedResources`. Amazon's reference
+enumerates `dataElements` for `getOrder`, `getOrders` and `getOrderItems`, and the examples use
+`/orders/v0/orders`. Whether the v2026-01-01 path is accepted there is not stated in the published
+reference, and guessing it would produce a token that silently authorises nothing. It must be
+confirmed against the live API once the application is registered — which is the right moment
+anyway, since the RDT also depends on the restricted-data role being approved.
+
+Tracked as backlog item **3.13**.
+
 ## 6. `confirmShipment` stays on v0
 
 `confirmShipment` has no v2026-01-01 equivalent; it remains Orders **v0** at 2 req/s, burst 10.
