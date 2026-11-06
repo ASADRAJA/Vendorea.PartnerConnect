@@ -101,6 +101,9 @@ builder.Services.Configure<HostOptions>(o =>
 
 // Background workers
 builder.Services.AddHostedService<PriceFeedSyncWorker>();
+// Marketplace order polling (Phase 3). Disabled unless Workers:SalesOrderPolling:Enabled is set,
+// so it cannot start calling Amazon on a deployment that has not been configured and approved.
+builder.Services.AddHostedService<SalesOrderPollingWorker>();
 // Drains queued (Pending) manual price feed uploads off the API request thread.
 builder.Services.AddHostedService<PriceFeedUploadProcessingWorker>();
 // InventoryFeedSyncWorker (placeholder SFTP/CSV interval worker) retired — SPR inventory is now

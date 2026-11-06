@@ -82,6 +82,10 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
         });
 
+        // Sales-order ingestion (Phase 3)
+        services.AddScoped<ISalesOrderIngestionService, SalesOrderIngestionService>();
+        services.AddScoped<ISalesOrderPollingService, SalesOrderPollingService>();
+
         // Provider rate limiting (Phase 3). The limiter itself is registered with the persistence
         // layer, since the bucket lives in the database; the policy comes from configuration.
         services.AddSingleton<IProviderRateLimitPolicyProvider, AmazonRateLimitPolicyProvider>();
@@ -172,6 +176,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(IntegrationAuthorizationOptions.SectionName));
         services.Configure<AmazonSpApiOptions>(
             configuration.GetSection(AmazonSpApiOptions.SectionName));
+        services.Configure<SalesOrderPollingOptions>(
+            configuration.GetSection(SalesOrderPollingOptions.SectionName));
 
         return services;
     }

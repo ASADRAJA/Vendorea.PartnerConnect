@@ -9,7 +9,17 @@ namespace Vendorea.PartnerConnect.Domain.Entities.Sales;
 /// </remarks>
 public class SalesOrderLine
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>
+    /// Left unset until EF assigns it.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not initialised to <c>Guid.NewGuid()</c>. Lines are added to the navigation
+    /// collection of an order that is already tracked, and EF decides Added-versus-Modified for
+    /// such an entity by whether its key is set. A pre-populated key makes a brand-new line look
+    /// like an existing one, and EF issues an UPDATE that matches no row — the insert is lost
+    /// and the save throws a concurrency error that says nothing about the real cause.
+    /// </remarks>
+    public Guid Id { get; set; }
 
     public Guid SalesOrderId { get; set; }
 

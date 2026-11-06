@@ -209,4 +209,51 @@ public class IntegrationSyncStateRepository : IIntegrationSyncStateRepository
 
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Guid>> OrderByStalenessAsync(
+        IntegrationCapabilities capability, IReadOnlyList<Guid> candidateConnectionIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (candidateConnectionIds.Count == 0)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        var attempts = await _context.IntegrationSyncStates
+            .AsNoTracking()
+            .Where(s => s.Capability == capability && candidateConnectionIds.Contains(s.IntegrationConnectionId))
+            .GroupBy(s => s.IntegrationConnectionId)
+            .Select(g => new { ConnectionId = g.Key, LastAttemptAt = g.Max(s => s.LastAttemptAt) })
+            .ToDictionaryAsync(x => x.ConnectionId, x => x.LastAttemptAt, cancellationToken);
+
+        // A connection with no state has never been attempted, so it sorts ahead of every
+        // connection that has. A new seller must not wait behind an established one's backlog.
+        return candidateConnectionIds
+            .OrderBy(id => attempts.TryGetValue(id, out var at) ? at ?? DateTime.MinValue : DateTime.MinValue)
+            .ToList();
+    }
+
+    public async Task RecordAttemptAsync(
+        Guid connectionId, IntegrationCapabilities capability, string? marketplaceId,
+        CancellationToken cancellationToken = default)
+    {
+        var state = await GetAsync(connectionId, capability, marketplaceId, cancellationToken);
+        if (state is null)
+        {
+            state = new IntegrationSyncState
+            {
+                IntegrationConnectionId = connectionId,
+                Capability = capability,
+                MarketplaceId = marketplaceId
+            };
+            _context.IntegrationSyncStates.Add(state);
+        }
+
+        // Recorded even when the run does nothing — a rate-limited connection has still had its
+        // turn, and without this it would be picked first again on every cycle.
+        state.LastAttemptAt = DateTime.UtcNow;
+        state.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }

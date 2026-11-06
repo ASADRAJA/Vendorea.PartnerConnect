@@ -85,4 +85,23 @@ public interface IIntegrationSyncStateRepository
     Task RecordFailureAsync(
         Guid connectionId, IntegrationCapabilities capability, string? marketplaceId,
         string error, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Orders candidate connections by how long it has been since each was last attempted,
+    /// least recently first, with never-attempted ones ahead of all of them.
+    /// </summary>
+    /// <remarks>
+    /// This is the fairness mechanism. A worker that simply took the first N connections it
+    /// found would serve the same few every cycle and starve the rest — and with a provider
+    /// budget of roughly one call every three minutes, a starved connection is one whose orders
+    /// never arrive at all.
+    /// </remarks>
+    Task<IReadOnlyList<Guid>> OrderByStalenessAsync(
+        IntegrationCapabilities capability, IReadOnlyList<Guid> candidateConnectionIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Records that an attempt was made, whatever its outcome.</summary>
+    Task RecordAttemptAsync(
+        Guid connectionId, IntegrationCapabilities capability, string? marketplaceId,
+        CancellationToken cancellationToken = default);
 }

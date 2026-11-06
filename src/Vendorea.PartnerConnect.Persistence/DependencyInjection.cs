@@ -134,6 +134,9 @@ public static class DependencyInjection
         // because the bucket is a database row — that is what makes it shared.
         services.AddScoped<IProviderRateLimiter, ProviderRateLimiter>();
 
+        // Marketplace sales orders (Phase 3)
+        services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
+
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
     }
