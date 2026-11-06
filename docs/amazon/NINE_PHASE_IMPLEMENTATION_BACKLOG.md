@@ -99,8 +99,11 @@ connection**. Needs 0.1 approved for the live claim; mock gates can pass before.
 | 3.13 | **Restricted Data Token flow** — `POST /tokens/2021-03-01/restrictedDataToken`, cached per connection by expiry, used in place of the LWA token for buyer/address reads | PC | M | 0.1 role approval |
 
 **Gate:** orders persist exactly once across poll/notification overlap; PII and status cases
-correct. **Capacity gate before activation** — the droplet shares PostgreSQL with M360 on
-8 GB with swap in use.
+correct. **Capacity gate: satisfied for the test environment** (assessed 2026-11-06, see
+`CAPACITY_ASSESSMENT_TEST_ENVIRONMENT.md`) — 4.8 GB RAM available, not swapping, 207 GB disk free,
+12 of 120 database connections in use, and Amazon's own 0.0056 req/s limit caps ingestion at
+2,000 orders/hour per connection. The earlier "8 GB with swap in use" wording mistook stale swap
+for memory pressure. Production is a separate sizing exercise against real volumes.
 
 ## Phase 4 — PC → M360 exchange *(the phase that makes it real)*
 
