@@ -131,6 +131,11 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive> IntegrationPayloadArchives
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive>();
 
+    // Published integration events and how far each got. Staged in the same transaction as the
+    // order it describes — see IntegrationEvent.
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationEvent> IntegrationEvents
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationEvent>();
+
     // --- Marketplace sales orders (Phase 3). Separate from the supplier Order aggregate: the
     // same word, the opposite direction, a different lifecycle. ---
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder> SalesOrders

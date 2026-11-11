@@ -95,6 +95,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduledJobHandler, IntegrationPayloadArchivePurgeJobHandler>();
         services.AddScoped<IScheduledJobHandler, BuyerDataRetentionJobHandler>();
 
+        // PC -> M360 event publication (Phase 4). Staged transactionally with the order.
+        services.AddSingleton<IIntegrationSigningKeyProvider, IntegrationSigningKeyProvider>();
+        services.AddScoped<ISalesOrderEventPublisher, SalesOrderEventPublisher>();
+        services.AddScoped<IProcessingResultRecorder, ProcessingResultRecorder>();
+        services.AddHttpClient<IIntegrationEventDeliveryService, IntegrationEventDeliveryService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
         // Catches what the live path missed. Daily, and cheap: built on getOrder, which is
         // roughly ninety times cheaper than a re-search.
         services.AddScoped<ISalesOrderReconciliationService, SalesOrderReconciliationService>();
@@ -198,6 +207,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(BuyerDataRetentionOptions.SectionName));
         services.Configure<SalesOrderReconciliationOptions>(
             configuration.GetSection(SalesOrderReconciliationOptions.SectionName));
+        services.Configure<IntegrationDeliveryOptions>(
+            configuration.GetSection(IntegrationDeliveryOptions.SectionName));
 
         return services;
     }

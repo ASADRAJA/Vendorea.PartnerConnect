@@ -41,16 +41,17 @@ public class SalesOrderRepository : ISalesOrderRepository
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException
                                            { SqlState: PostgresErrorCodes.UniqueViolation })
         {
-            // Someone else inserted this order between the lookup and here. Detach what we tried
-            // to add so the context stays usable for the update that follows.
-            _context.Entry(order).State = EntityState.Detached;
-            foreach (var line in order.Lines)
+            // Someone else inserted this order between the lookup and here. Everything staged for
+            // this order is discarded — the order, its lines, its opening history entry, and the
+            // integration event and outbox message staged alongside them. Detaching every Added
+            // entry is safe because the only thing Added in this scope is the order currently
+            // being ingested: anything from a previous order in the same scope was committed by
+            // its own SaveChanges and is no longer Added.
+            foreach (var entry in _context.ChangeTracker.Entries()
+                         .Where(e => e.State == EntityState.Added)
+                         .ToList())
             {
-                _context.Entry(line).State = EntityState.Detached;
-            }
-            foreach (var history in order.StatusHistory)
-            {
-                _context.Entry(history).State = EntityState.Detached;
+                entry.State = EntityState.Detached;
             }
 
             return false;

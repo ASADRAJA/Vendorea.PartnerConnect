@@ -10,14 +10,21 @@ namespace Vendorea.PartnerConnect.Application.Services;
 public class SalesOrderIngestionService : ISalesOrderIngestionService
 {
     private readonly ISalesOrderRepository _orders;
+    private readonly ISalesOrderEventPublisher? _publisher;
     private readonly ILogger<SalesOrderIngestionService> _logger;
 
     public SalesOrderIngestionService(
         ISalesOrderRepository orders,
-        ILogger<SalesOrderIngestionService> logger)
+        ILogger<SalesOrderIngestionService> logger,
+        ISalesOrderEventPublisher? publisher = null)
     {
         _orders = orders;
         _logger = logger;
+
+        // Optional so ingestion can be exercised on its own. In every host it is registered, and
+        // when it is absent that is logged on each publication rather than passing silently —
+        // ingesting orders nobody is told about is the failure this phase exists to prevent.
+        _publisher = publisher;
     }
 
     public async Task<SalesOrderIngestResult> IngestAsync(
@@ -37,7 +44,7 @@ public class SalesOrderIngestionService : ISalesOrderIngestionService
             return await CreateAsync(connection, snapshot, source, cancellationToken);
         }
 
-        return await UpdateAsync(existing, snapshot, source, cancellationToken);
+        return await UpdateAsync(existing, connection, snapshot, source, cancellationToken);
     }
 
     private async Task<SalesOrderIngestResult> CreateAsync(
@@ -73,6 +80,11 @@ public class SalesOrderIngestionService : ISalesOrderIngestionService
             order.Lines.Add(NewLine(line));
         }
 
+        StageEvent(order, connection, IntegrationEventType.SalesOrderCreated);
+
+        // One SaveChanges commits the order, its lines, its opening history entry, the
+        // integration event and the outbox message. An order that committed without its event
+        // would never reach Merchant360, and nothing would record that it had not.
         if (await _orders.TryAddAsync(order, cancellationToken))
         {
             _logger.LogInformation(
@@ -95,12 +107,12 @@ public class SalesOrderIngestionService : ISalesOrderIngestionService
         _logger.LogDebug(
             "Concurrent ingest of {ExternalOrderId}; continuing as an update.", snapshot.ExternalOrderId);
 
-        return await UpdateAsync(winner, snapshot, source, cancellationToken);
+        return await UpdateAsync(winner, connection, snapshot, source, cancellationToken);
     }
 
     private async Task<SalesOrderIngestResult> UpdateAsync(
-        SalesOrder order, MarketplaceOrderSnapshot snapshot, string source,
-        CancellationToken cancellationToken)
+        SalesOrder order, IntegrationConnection connection, MarketplaceOrderSnapshot snapshot,
+        string source, CancellationToken cancellationToken)
     {
         // Monotonic on the provider's own timestamp. A slow poll response must not overwrite a
         // newer notification simply because it finished later.
@@ -128,8 +140,42 @@ public class SalesOrderIngestionService : ISalesOrderIngestionService
             });
         }
 
+        StageEvent(
+            order, connection,
+            previousStatus != snapshot.Status
+                ? IntegrationEventType.SalesOrderFulfillmentStatusChanged
+                : IntegrationEventType.SalesOrderUpdated);
+
         await _orders.SaveAsync(cancellationToken);
         return SalesOrderIngestResult.Updated(order.Id);
+    }
+
+    /// <summary>
+    /// Stages the event for a change, in the caller's transaction.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is sent here. The event row and its outbox message are staged beside the order so
+    /// one <c>SaveChanges</c> commits all three; delivery happens later from the outbox. A stale
+    /// snapshot never reaches this method, because an update that changed nothing is not a
+    /// transition and republishing it would make the consumer dedupe work it should not have had.
+    /// </remarks>
+    private void StageEvent(
+        SalesOrder order, IntegrationConnection connection, IntegrationEventType eventType)
+    {
+        if (_publisher is null)
+        {
+            _logger.LogWarning(
+                "No event publisher is registered; sales order {SalesOrderId} was ingested but "
+                + "nothing will be published to Merchant360.",
+                order.Id);
+            return;
+        }
+
+        var providerCode = connection.Provider?.Code ?? "AMAZON_SP";
+
+        _publisher.StageForOrder(
+            order, connection, providerCode, eventType,
+            EventPublicationReason.ProviderChange, correlationId: null);
     }
 
     /// <summary>Copies the snapshot onto the order. Does not touch mapping or event state.</summary>
