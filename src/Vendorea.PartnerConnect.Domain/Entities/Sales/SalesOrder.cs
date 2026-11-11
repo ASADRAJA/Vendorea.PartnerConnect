@@ -127,6 +127,16 @@ public class SalesOrder
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>
+    /// The connection this order came through.
+    /// </summary>
+    /// <remarks>
+    /// Loaded only where it is needed — the read API projects the provider code from it. The
+    /// ingestion path never includes it, so the ordinary write never drags a connection and its
+    /// collections along behind every order.
+    /// </remarks>
+    public Integration.IntegrationConnection? Connection { get; set; }
+
     public ICollection<SalesOrderLine> Lines { get; set; } = new List<SalesOrderLine>();
     public ICollection<SalesOrderStatusHistory> StatusHistory { get; set; } = new List<SalesOrderStatusHistory>();
 

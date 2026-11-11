@@ -65,7 +65,7 @@ public class SalesOrderConfiguration : IEntityTypeConfiguration<SalesOrder>
             .HasDatabaseName("IX_SalesOrders_PendingRedaction")
             .HasFilter("\"PiiRedactedAt\" IS NULL");
 
-        builder.HasOne<Domain.Entities.Integration.IntegrationConnection>()
+        builder.HasOne(o => o.Connection)
             .WithMany()
             .HasForeignKey(o => o.IntegrationConnectionId)
             .OnDelete(DeleteBehavior.Restrict);   // orders outlive a disconnect; the row is retained

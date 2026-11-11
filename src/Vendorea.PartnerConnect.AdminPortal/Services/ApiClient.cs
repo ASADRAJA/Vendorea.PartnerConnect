@@ -1517,4 +1517,147 @@ public class ApiClient
         }
         return body;
     }
+
+    // ---- Marketplace orders (Amazon and any future provider) ----
+
+    /// <summary>
+    /// The operator view of marketplace order ingestion.
+    /// </summary>
+    /// <remarks>
+    /// Reads the admin endpoint rather than the org-facing contract API: that one is tenant-scoped
+    /// by design, and an operator needs to look across tenants to answer "is ingestion working?".
+    /// </remarks>
+    public async Task<MarketplaceOrderSearchResult> GetMarketplaceOrdersAsync(
+        int? organizationId = null,
+        int? tenantId = null,
+        string? status = null,
+        string? mappingStatus = null,
+        string? search = null,
+        int skip = 0,
+        int take = 50)
+    {
+        try
+        {
+            var query = new List<string>
+            {
+                $"skip={skip}",
+                $"take={take}"
+            };
+
+            if (organizationId is > 0) query.Add($"organizationId={organizationId}");
+            if (tenantId is > 0) query.Add($"tenantId={tenantId}");
+            if (!string.IsNullOrWhiteSpace(status)) query.Add($"status={Uri.EscapeDataString(status)}");
+            if (!string.IsNullOrWhiteSpace(mappingStatus)) query.Add($"mappingStatus={Uri.EscapeDataString(mappingStatus)}");
+            if (!string.IsNullOrWhiteSpace(search)) query.Add($"search={Uri.EscapeDataString(search)}");
+
+            var result = await _httpClient.GetFromJsonAsync<MarketplaceOrderSearchResult>(
+                "/api/admin/marketplace-orders?" + string.Join('&', query));
+
+            return result ?? new MarketplaceOrderSearchResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load marketplace orders");
+            return new MarketplaceOrderSearchResult();
+        }
+    }
+
+    public async Task<MarketplaceOrderDetail?> GetMarketplaceOrderAsync(Guid id)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<MarketplaceOrderDetail>(
+                $"/api/admin/marketplace-orders/{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load marketplace order {Id}", id);
+            return null;
+        }
+    }
+}
+
+/// <summary>A page of marketplace orders with the counts the tabs need.</summary>
+public class MarketplaceOrderSearchResult
+{
+    public List<MarketplaceOrderRow> Items { get; set; } = new();
+    public int Total { get; set; }
+    public int Skip { get; set; }
+    public int Take { get; set; }
+    public int UnmappedCount { get; set; }
+
+    /// <summary>Keyed by status name, so the portal does not depend on enum ordinals.</summary>
+    public Dictionary<string, int> CountsByStatus { get; set; } = new();
+
+    public int CountFor(string status) => CountsByStatus.TryGetValue(status, out var n) ? n : 0;
+}
+
+/// <summary>
+/// One order as the operator view shows it.
+/// </summary>
+/// <remarks>
+/// Carries whether buyer data and an address are present, and the coarse geography — enough to
+/// diagnose an order that will not ship. It never carries the recipient's name, street or email:
+/// "is there an address?" and "what is the address?" are different questions.
+/// </remarks>
+public class MarketplaceOrderRow
+{
+    public Guid Id { get; set; }
+    public int TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public string? Provider { get; set; }
+    public string? SellerAccountId { get; set; }
+    public string ExternalOrderId { get; set; } = string.Empty;
+    public string? MarketplaceId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? ExternalStatusRaw { get; set; }
+    public string FulfillmentChannel { get; set; } = string.Empty;
+    public string MappingStatus { get; set; } = string.Empty;
+    public DateTime PurchaseDate { get; set; }
+    public DateTime SourceLastUpdatedAt { get; set; }
+    public DateTime FirstSeenAt { get; set; }
+    public DateTime LastSyncedAt { get; set; }
+    public decimal? OrderTotalAmount { get; set; }
+    public string? CurrencyCode { get; set; }
+    public int LineCount { get; set; }
+    public bool BuyerDataAvailable { get; set; }
+    public bool HasShippingAddress { get; set; }
+    public string? ShipToCity { get; set; }
+    public string? ShipToStateOrRegion { get; set; }
+    public string? ShipToCountryCode { get; set; }
+    public DateTime? PiiRedactedAt { get; set; }
+}
+
+public class MarketplaceOrderDetail
+{
+    public MarketplaceOrderRow Row { get; set; } = new();
+    public List<MarketplaceOrderLine> Lines { get; set; } = new();
+    public List<MarketplaceOrderHistoryEntry> History { get; set; } = new();
+}
+
+public class MarketplaceOrderLine
+{
+    public string ExternalLineId { get; set; } = string.Empty;
+    public string? SellerSku { get; set; }
+    public string? Asin { get; set; }
+    public string? Title { get; set; }
+    public int QuantityOrdered { get; set; }
+    public int QuantityShipped { get; set; }
+    public string MappingStatus { get; set; } = string.Empty;
+    public string? M360CatalogItemId { get; set; }
+    public decimal? ItemPrice { get; set; }
+    public decimal? ItemTax { get; set; }
+    public decimal? ShippingPrice { get; set; }
+    public decimal? PromotionDiscount { get; set; }
+    public string? CurrencyCode { get; set; }
+}
+
+public class MarketplaceOrderHistoryEntry
+{
+    public string FromStatus { get; set; } = string.Empty;
+    public string ToStatus { get; set; } = string.Empty;
+    public string? ExternalStatusRaw { get; set; }
+    public DateTime SourceLastUpdatedAt { get; set; }
+    public DateTime RecordedAt { get; set; }
+    public string? Source { get; set; }
 }

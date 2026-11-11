@@ -1,0 +1,419 @@
+@page "/marketplace-orders"
+@inject ApiClient Api
+@inject BrowserTimeZone Tz
+
+<PageTitle>Marketplace Orders - PartnerConnect Admin</PageTitle>
+
+<h1>Marketplace Orders</h1>
+<p class="text-muted">
+    Orders ingested from marketplace seller accounts. Each order belongs to one tenant's own
+    authorized account — PartnerConnect reads them; Merchant360 decides what happens next.
+</p>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs">
+            @foreach (var tab in StatusTabs)
+            {
+                <li class="nav-item">
+                    <button class="nav-link @(statusFilter == tab.Value ? "active" : "")"
+                            @onclick="() => SetStatus(tab.Value)">
+                        <span class="oi @tab.Icon me-1"></span> @tab.Label
+                        @if (CountFor(tab.Value) > 0)
+                        {
+                            <span class="badge @tab.Badge ms-1">@CountFor(tab.Value)</span>
+                        }
+                    </button>
+                </li>
+            }
+            <li class="nav-item">
+                <button class="nav-link @(unmappedOnly ? "active" : "")" @onclick="ToggleUnmapped">
+                    <span class="oi oi-warning me-1"></span> Unmapped
+                    @if (result.UnmappedCount > 0)
+                    {
+                        <span class="badge bg-warning text-dark ms-1">@result.UnmappedCount</span>
+                    }
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-3">
+            <div class="col-md-5">
+                <label class="form-label">Search</label>
+                <div class="input-group input-group-sm">
+                    <input class="form-control" placeholder="Amazon order id or seller SKU"
+                           @bind="search" @bind:event="oninput" @onkeyup="OnSearchKey" />
+                    <button class="btn btn-outline-secondary" @onclick="Reload">
+                        <span class="oi oi-magnifying-glass"></span>
+                    </button>
+                </div>
+                <div class="form-text">Either one — you should not have to know which field it is.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Tenant id</label>
+                <input type="number" class="form-control form-control-sm"
+                       @bind="tenantFilter" @bind:after="Reload" />
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">
+                    Clear filters
+                </button>
+            </div>
+        </div>
+
+        @if (loading)
+        {
+            <p class="text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</p>
+        }
+        else if (result.Items.Count == 0)
+        {
+            <div class="alert alert-light border mb-0">
+                <strong>No marketplace orders match.</strong>
+                <div class="small text-muted mt-1">
+                    If no orders have ever arrived, check that a seller account is connected and
+                    that order polling is enabled — it is off by default.
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width:2rem"></th>
+                            <th>Order</th>
+                            <th>Tenant</th>
+                            <th>Seller account</th>
+                            <th>Status</th>
+                            <th>Channel</th>
+                            <th>Mapping</th>
+                            <th class="text-end">Total</th>
+                            <th>Purchased</th>
+                            <th>Last synced</th>
+                            <th>Ship to</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var order in result.Items)
+                        {
+                            <tr class="@(expandedId == order.Id ? "table-active" : "")">
+                                <td>
+                                    <button class="btn btn-sm btn-link p-0" @onclick="() => Toggle(order.Id)"
+                                            title="Lines and status history">
+                                        <span class="oi @(expandedId == order.Id ? "oi-chevron-bottom" : "oi-chevron-right")"></span>
+                                    </button>
+                                </td>
+                                <td>
+                                    <code>@order.ExternalOrderId</code>
+                                    <div class="small text-muted">@order.LineCount line(s)</div>
+                                </td>
+                                <td>@order.TenantId</td>
+                                <td>
+                                    <div class="small">@order.SellerAccountId</div>
+                                    <div class="small text-muted">@order.Provider</div>
+                                </td>
+                                <td>
+                                    <span class="badge @StatusBadge(order.Status)">@order.Status</span>
+                                    @if (order.Status == "Unknown" && !string.IsNullOrEmpty(order.ExternalStatusRaw))
+                                    {
+                                        @* The provider sent something we do not map. Showing the raw
+                                           value is the whole point of keeping it. *@
+                                        <div class="small text-danger mt-1">
+                                            Amazon said <code>@order.ExternalStatusRaw</code>
+                                        </div>
+                                    }
+                                </td>
+                                <td><span class="small">@FulfillmentLabel(order.FulfillmentChannel)</span></td>
+                                <td>
+                                    <span class="badge @(order.MappingStatus == "Mapped" ? "bg-success" : "bg-warning text-dark")">
+                                        @order.MappingStatus
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    @if (order.OrderTotalAmount.HasValue)
+                                    {
+                                        @($"{order.OrderTotalAmount:0.00} {order.CurrencyCode}")
+                                    }
+                                    else
+                                    {
+                                        @* No money at all usually means the PROCEEDS role was not
+                                           granted, not that the order is free. *@
+                                        <span class="text-warning" title="No monetary values were returned. Check the Finance and Accounting role.">
+                                            none
+                                        </span>
+                                    }
+                                </td>
+                                <td class="small">@Tz.Format(order.PurchaseDate)</td>
+                                <td class="small">@Tz.Format(order.LastSyncedAt)</td>
+                                <td class="small">
+                                    @if (order.PiiRedactedAt.HasValue)
+                                    {
+                                        <span class="text-muted" title="Redacted under the retention policy">
+                                            redacted
+                                        </span>
+                                    }
+                                    else if (order.HasShippingAddress)
+                                    {
+                                        @($"{order.ShipToCity} {order.ShipToStateOrRegion} {order.ShipToCountryCode}")
+                                    }
+                                    else if (order.Status == "Pending")
+                                    {
+                                        <span class="text-muted" title="Amazon withholds buyer data on pending orders. This is normal.">
+                                            withheld (pending)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-warning" title="No address. A merchant-fulfilled order cannot ship without one — check the Direct-to-Consumer Shipping role and the restricted data token.">
+                                            missing
+                                        </span>
+                                    }
+                                </td>
+                            </tr>
+
+                            @if (expandedId == order.Id)
+                            {
+                                <tr>
+                                    <td colspan="11" class="bg-light">
+                                        @if (detail is null)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2"></span>
+                                            <span class="text-muted">Loading detail…</span>
+                                        }
+                                        else
+                                        {
+                                            <div class="row">
+                                                <div class="col-md-7">
+                                                    <h6 class="mb-2">Lines</h6>
+                                                    <table class="table table-sm mb-3">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>SKU</th>
+                                                                <th>ASIN</th>
+                                                                <th>Title</th>
+                                                                <th class="text-end">Ordered</th>
+                                                                <th class="text-end">Shipped</th>
+                                                                <th>Mapping</th>
+                                                                <th class="text-end">Price</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var line in detail.Lines)
+                                                            {
+                                                                <tr>
+                                                                    <td><code>@line.SellerSku</code></td>
+                                                                    <td class="small">@line.Asin</td>
+                                                                    <td class="small">@line.Title</td>
+                                                                    <td class="text-end">@line.QuantityOrdered</td>
+                                                                    <td class="text-end">@line.QuantityShipped</td>
+                                                                    <td>
+                                                                        @if (line.MappingStatus == "Mapped")
+                                                                        {
+                                                                            <span class="small text-success">@line.M360CatalogItemId</span>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <span class="small text-warning">@line.MappingStatus</span>
+                                                                        }
+                                                                    </td>
+                                                                    <td class="text-end small">
+                                                                        @($"{line.ItemPrice:0.00} {line.CurrencyCode}")
+                                                                    </td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                <div class="col-md-5">
+                                                    <h6 class="mb-2">Status history</h6>
+                                                    @if (detail.History.Count == 0)
+                                                    {
+                                                        <p class="small text-muted">No transitions recorded yet.</p>
+                                                    }
+                                                    else
+                                                    {
+                                                        <ul class="list-unstyled small mb-3">
+                                                            @foreach (var entry in detail.History)
+                                                            {
+                                                                <li class="mb-1">
+                                                                    <span class="text-muted">@Tz.Format(entry.RecordedAt)</span>
+                                                                    — @entry.FromStatus → <strong>@entry.ToStatus</strong>
+                                                                    @if (!string.IsNullOrEmpty(entry.Source))
+                                                                    {
+                                                                        <span class="badge bg-secondary ms-1">@entry.Source</span>
+                                                                    }
+                                                                </li>
+                                                            }
+                                                        </ul>
+                                                    }
+
+                                                    <h6 class="mb-2">Sync</h6>
+                                                    <dl class="row small mb-0">
+                                                        <dt class="col-5">First seen</dt>
+                                                        <dd class="col-7">@Tz.Format(detail.Row.FirstSeenAt)</dd>
+                                                        <dt class="col-5">Amazon last updated</dt>
+                                                        <dd class="col-7">@Tz.Format(detail.Row.SourceLastUpdatedAt)</dd>
+                                                        <dt class="col-5">Marketplace</dt>
+                                                        <dd class="col-7"><code>@detail.Row.MarketplaceId</code></dd>
+                                                        <dt class="col-5">Connection</dt>
+                                                        <dd class="col-7"><code class="small">@detail.Row.ConnectionId</code></dd>
+                                                    </dl>
+                                                </div>
+                                            </div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="small text-muted">
+                    Showing @(result.Skip + 1)–@(result.Skip + result.Items.Count) of @result.Total
+                </span>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary" disabled="@(result.Skip == 0)" @onclick="PreviousPage">
+                        Previous
+                    </button>
+                    <button class="btn btn-outline-secondary"
+                            disabled="@(result.Skip + result.Items.Count >= result.Total)" @onclick="NextPage">
+                        Next
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private MarketplaceOrderSearchResult result = new();
+    private MarketplaceOrderDetail? detail;
+    private Guid? expandedId;
+
+    private bool loading = true;
+    private string? statusFilter;
+    private bool unmappedOnly;
+    private string search = string.Empty;
+    private int tenantFilter;
+    private int skip;
+    private const int PageSize = 50;
+
+    private sealed record StatusTab(string? Value, string Label, string Icon, string Badge);
+
+    private static readonly StatusTab[] StatusTabs =
+    {
+        new(null, "All", "oi-list", "bg-secondary"),
+        new("Pending", "Pending", "oi-clock", "bg-secondary"),
+        new("ReadyToFulfill", "Ready to fulfil", "oi-inbox", "bg-primary"),
+        new("PartiallyFulfilled", "Partial", "oi-loop-circular", "bg-info"),
+        new("Fulfilled", "Fulfilled", "oi-check", "bg-success"),
+        new("Cancelled", "Cancelled", "oi-x", "bg-dark"),
+        new("Unknown", "Unknown", "oi-question-mark", "bg-danger")
+    };
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private int CountFor(string? status)
+        => status is null ? result.Total : result.CountFor(status);
+
+    private async Task Reload()
+    {
+        loading = true;
+        detail = null;
+        expandedId = null;
+
+        result = await Api.GetMarketplaceOrdersAsync(
+            tenantId: tenantFilter > 0 ? tenantFilter : null,
+            status: statusFilter,
+            mappingStatus: unmappedOnly ? "UnmappedProduct" : null,
+            search: string.IsNullOrWhiteSpace(search) ? null : search,
+            skip: skip,
+            take: PageSize);
+
+        loading = false;
+    }
+
+    private async Task SetStatus(string? status)
+    {
+        statusFilter = status;
+        unmappedOnly = false;
+        skip = 0;
+        await Reload();
+    }
+
+    private async Task ToggleUnmapped()
+    {
+        unmappedOnly = !unmappedOnly;
+        statusFilter = null;
+        skip = 0;
+        await Reload();
+    }
+
+    private async Task ClearFilters()
+    {
+        statusFilter = null;
+        unmappedOnly = false;
+        search = string.Empty;
+        tenantFilter = 0;
+        skip = 0;
+        await Reload();
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            skip = 0;
+            await Reload();
+        }
+    }
+
+    private async Task PreviousPage()
+    {
+        skip = Math.Max(0, skip - PageSize);
+        await Reload();
+    }
+
+    private async Task NextPage()
+    {
+        skip += PageSize;
+        await Reload();
+    }
+
+    private async Task Toggle(Guid id)
+    {
+        if (expandedId == id)
+        {
+            expandedId = null;
+            detail = null;
+            return;
+        }
+
+        expandedId = id;
+        detail = null;
+        detail = await Api.GetMarketplaceOrderAsync(id);
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "Fulfilled" => "bg-success",
+        "ReadyToFulfill" => "bg-primary",
+        "PartiallyFulfilled" => "bg-info",
+        "Pending" => "bg-secondary",
+        "Cancelled" => "bg-dark",
+        "OnHold" => "bg-warning text-dark",
+        _ => "bg-danger"
+    };
+
+    /// <summary>Spelled out, because MFN and AFN mean nothing to someone who does not live in Amazon.</summary>
+    private static string FulfillmentLabel(string channel) => channel switch
+    {
+        "MerchantFulfilled" => "Merchant ships",
+        "AmazonFulfilled" => "Amazon ships",
+        _ => channel
+    };
+}

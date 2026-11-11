@@ -26,6 +26,7 @@ public class SalesOrderRepository : ISalesOrderRepository
         int tenantId, Guid salesOrderId, CancellationToken cancellationToken = default)
         => _context.SalesOrders
             .Include(o => o.Lines)
+            .Include(o => o.Connection!).ThenInclude(c => c.Provider)
             .FirstOrDefaultAsync(o => o.Id == salesOrderId && o.TenantId == tenantId, cancellationToken);
 
     public async Task<bool> TryAddAsync(SalesOrder order, CancellationToken cancellationToken = default)
@@ -58,6 +59,50 @@ public class SalesOrderRepository : ISalesOrderRepository
 
     public Task SaveAsync(CancellationToken cancellationToken = default)
         => _context.SaveChangesAsync(cancellationToken);
+
+    public async Task<SalesOrderPage> SearchAsync(
+        int tenantId, SalesOrderQuery query, CancellationToken cancellationToken = default)
+    {
+        var take = Math.Clamp(query.Take, 1, 200);
+        var skip = Math.Max(0, query.Skip);
+
+        var filtered = _context.SalesOrders
+            .AsNoTracking()
+            // Tenant first, always. Every other filter narrows within one tenant's orders.
+            .Where(o => o.TenantId == tenantId);
+
+        if (query.ConnectionId.HasValue)
+        {
+            filtered = filtered.Where(o => o.IntegrationConnectionId == query.ConnectionId.Value);
+        }
+
+        if (query.Status.HasValue)
+        {
+            filtered = filtered.Where(o => o.Status == query.Status.Value);
+        }
+
+        if (query.MappingStatus.HasValue)
+        {
+            filtered = filtered.Where(o => o.MappingStatus == query.MappingStatus.Value);
+        }
+
+        if (query.UpdatedSince.HasValue)
+        {
+            filtered = filtered.Where(o => o.SourceLastUpdatedAt >= query.UpdatedSince.Value);
+        }
+
+        var total = await filtered.CountAsync(cancellationToken);
+
+        var items = await filtered
+            .Include(o => o.Connection!).ThenInclude(c => c.Provider)
+            .OrderByDescending(o => o.PurchaseDate)
+            .ThenBy(o => o.Id)   // a stable tiebreak, so paging cannot repeat or skip a row
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return new SalesOrderPage(items, total, skip, take);
+    }
 
     public async Task<IReadOnlyList<SalesOrder>> ListAsync(
         int tenantId, int skip, int take, CancellationToken cancellationToken = default)
@@ -134,4 +179,89 @@ public class SalesOrderReconciliationRepository : ISalesOrderReconciliationRepos
             .Select(o => o.ExternalOrderId)
             .ToListAsync(cancellationToken);
     }
+}
+
+/// <inheritdoc />
+public class SalesOrderAdminRepository : ISalesOrderAdminRepository
+{
+    private readonly PartnerConnectDbContext _context;
+
+    public SalesOrderAdminRepository(PartnerConnectDbContext context) => _context = context;
+
+    public async Task<SalesOrderAdminPage> SearchAsync(
+        SalesOrderAdminQuery query, CancellationToken cancellationToken = default)
+    {
+        var take = Math.Clamp(query.Take, 1, 200);
+        var skip = Math.Max(0, query.Skip);
+
+        var filtered = _context.SalesOrders.AsNoTracking().AsQueryable();
+
+        if (query.OrganizationId.HasValue)
+        {
+            // Through the connection, which is where organization ownership lives.
+            filtered = filtered.Where(o => o.Connection!.OrganizationId == query.OrganizationId.Value);
+        }
+
+        if (query.TenantId.HasValue)
+        {
+            filtered = filtered.Where(o => o.TenantId == query.TenantId.Value);
+        }
+
+        if (query.ConnectionId.HasValue)
+        {
+            filtered = filtered.Where(o => o.IntegrationConnectionId == query.ConnectionId.Value);
+        }
+
+        if (query.MappingStatus.HasValue)
+        {
+            filtered = filtered.Where(o => o.MappingStatus == query.MappingStatus.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim();
+
+            // Provider order id or any line's SKU. An operator is given one or the other and
+            // should not have to know which field it belongs to.
+            filtered = filtered.Where(o =>
+                EF.Functions.ILike(o.ExternalOrderId, $"%{term}%")
+                || o.Lines.Any(l => l.SellerSku != null && EF.Functions.ILike(l.SellerSku, $"%{term}%")));
+        }
+
+        // The status counts are computed BEFORE the status filter is applied, so the tab badges
+        // keep showing the whole picture rather than collapsing to the tab you are already on.
+        var countsByStatus = await filtered
+            .GroupBy(o => o.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Status, x => x.Count, cancellationToken);
+
+        var unmapped = await filtered
+            .CountAsync(o => o.MappingStatus != Domain.Entities.Sales.MappingStatus.Mapped, cancellationToken);
+
+        if (query.Status.HasValue)
+        {
+            filtered = filtered.Where(o => o.Status == query.Status.Value);
+        }
+
+        var total = await filtered.CountAsync(cancellationToken);
+
+        var items = await filtered
+            .Include(o => o.Connection!).ThenInclude(c => c.Provider)
+            .Include(o => o.Lines)
+            .OrderByDescending(o => o.PurchaseDate)
+            .ThenBy(o => o.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return new SalesOrderAdminPage(items, total, skip, take, countsByStatus, unmapped);
+    }
+
+    public Task<SalesOrder?> GetAsync(Guid salesOrderId, CancellationToken cancellationToken = default)
+        => _context.SalesOrders
+            .AsNoTracking()
+            .Include(o => o.Lines)
+            .Include(o => o.Connection!).ThenInclude(c => c.Provider)
+            .Include(o => o.StatusHistory)
+            .FirstOrDefaultAsync(o => o.Id == salesOrderId, cancellationToken);
 }

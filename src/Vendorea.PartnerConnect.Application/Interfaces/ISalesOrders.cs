@@ -27,7 +27,34 @@ public interface ISalesOrderRepository
     /// <summary>A tenant's orders, newest first.</summary>
     Task<IReadOnlyList<SalesOrder>> ListAsync(
         int tenantId, int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A filtered, paged page of a tenant's orders with the total matching count.
+    /// </summary>
+    /// <remarks>
+    /// Returns the total alongside the page because a caller showing "51–100 of 1,284" otherwise
+    /// has to ask twice for one answer. The provider code is projected from the connection in the
+    /// same query rather than resolved per row.
+    /// </remarks>
+    Task<SalesOrderPage> SearchAsync(
+        int tenantId, SalesOrderQuery query, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Filters for a sales-order listing.</summary>
+public sealed record SalesOrderQuery
+{
+    public Guid? ConnectionId { get; init; }
+    public SalesOrderStatus? Status { get; init; }
+    public MappingStatus? MappingStatus { get; init; }
+
+    /// <summary>Orders whose provider timestamp is at or after this instant.</summary>
+    public DateTime? UpdatedSince { get; init; }
+
+    public int Skip { get; init; }
+    public int Take { get; init; } = 50;
+}
+
+public sealed record SalesOrderPage(IReadOnlyList<SalesOrder> Items, int Total, int Skip, int Take);
 
 /// <summary>Writes a provider snapshot into the sales-order model.</summary>
 public interface ISalesOrderIngestionService
@@ -178,3 +205,47 @@ public sealed record SalesOrderReconciliationResult(
 {
     public static SalesOrderReconciliationResult Skipped(string note) => new(0, 0, 0, 0, note);
 }
+
+/// <summary>
+/// The operator's cross-tenant view of marketplace orders.
+/// </summary>
+/// <remarks>
+/// Deliberately separate from <see cref="ISalesOrderRepository"/>, whose every read takes a tenant
+/// id. This one does not, because a PartnerConnect operator diagnosing ingestion needs to see
+/// across tenants — and separating the two means the tenant-scoped interface stays tenant-scoped
+/// rather than growing an optional parameter that makes isolation conditional.
+///
+/// Reached only through the admin API, which requires an admin key. An organization key cannot
+/// get here.
+/// </remarks>
+public interface ISalesOrderAdminRepository
+{
+    Task<SalesOrderAdminPage> SearchAsync(
+        SalesOrderAdminQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>One order with its lines, unscoped — for operator diagnosis.</summary>
+    Task<SalesOrder?> GetAsync(Guid salesOrderId, CancellationToken cancellationToken = default);
+}
+
+public sealed record SalesOrderAdminQuery
+{
+    public int? OrganizationId { get; init; }
+    public int? TenantId { get; init; }
+    public Guid? ConnectionId { get; init; }
+    public SalesOrderStatus? Status { get; init; }
+    public MappingStatus? MappingStatus { get; init; }
+
+    /// <summary>Matches a provider order id or a seller SKU on any line.</summary>
+    public string? Search { get; init; }
+
+    public int Skip { get; init; }
+    public int Take { get; init; } = 50;
+}
+
+public sealed record SalesOrderAdminPage(
+    IReadOnlyList<SalesOrder> Items,
+    int Total,
+    int Skip,
+    int Take,
+    IReadOnlyDictionary<SalesOrderStatus, int> CountsByStatus,
+    int UnmappedCount);
