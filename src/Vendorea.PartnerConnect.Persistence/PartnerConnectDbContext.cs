@@ -126,6 +126,11 @@ public class PartnerConnectDbContext : DbContext
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation> IntegrationAccountDelegations
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation>();
 
+    // Redacted, expiring copies of what providers actually sent. A diagnostic aid, never a
+    // second system of record — see IntegrationPayloadArchive.
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive> IntegrationPayloadArchives
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive>();
+
     // --- Marketplace sales orders (Phase 3). Separate from the supplier Order aggregate: the
     // same word, the opposite direction, a different lifecycle. ---
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder> SalesOrders

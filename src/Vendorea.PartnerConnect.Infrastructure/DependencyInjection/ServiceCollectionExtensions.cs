@@ -90,6 +90,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISalesOrderIngestionService, SalesOrderIngestionService>();
         services.AddScoped<ISalesOrderPollingService, SalesOrderPollingService>();
 
+        // Redacted, expiring payload archive, and the buyer-data retention sweep (A2 / 3.10).
+        services.AddScoped<IIntegrationPayloadArchiveService, IntegrationPayloadArchiveService>();
+        services.AddScoped<IScheduledJobHandler, IntegrationPayloadArchivePurgeJobHandler>();
+        services.AddScoped<IScheduledJobHandler, BuyerDataRetentionJobHandler>();
+
         // Provider rate limiting (Phase 3). The limiter itself is registered with the persistence
         // layer, since the bucket lives in the database; the policy comes from configuration.
         services.AddSingleton<IProviderRateLimitPolicyProvider, AmazonRateLimitPolicyProvider>();
@@ -182,6 +187,10 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(AmazonSpApiOptions.SectionName));
         services.Configure<SalesOrderPollingOptions>(
             configuration.GetSection(SalesOrderPollingOptions.SectionName));
+        services.Configure<PayloadArchiveOptions>(
+            configuration.GetSection(PayloadArchiveOptions.SectionName));
+        services.Configure<BuyerDataRetentionOptions>(
+            configuration.GetSection(BuyerDataRetentionOptions.SectionName));
 
         return services;
     }

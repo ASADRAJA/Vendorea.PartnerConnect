@@ -139,6 +139,8 @@ public static class DependencyInjection
 
         // Marketplace sales orders (Phase 3)
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
+        services.AddScoped<IIntegrationPayloadArchiveRepository, IntegrationPayloadArchiveRepository>();
+        services.AddScoped<ISalesOrderRetentionRepository, SalesOrderRetentionRepository>();
 
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();

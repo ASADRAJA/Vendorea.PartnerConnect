@@ -1699,6 +1699,63 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("IntegrationOAuthStates", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CapturedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("IntegrationConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PayloadKind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("RedactedPaths")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TenantId", "ExternalReference", "CapturedAt");
+
+                    b.HasIndex("IntegrationConnectionId", "PayloadKind", "ExternalReference", "CapturedAt");
+
+                    b.ToTable("IntegrationPayloadArchives", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider", b =>
                 {
                     b.Property<int>("Id")
@@ -4263,13 +4320,14 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.HasIndex("MappingStatus")
                         .HasFilter("\"MappingStatus\" <> 'Mapped'");
 
-                    b.HasIndex("PiiRedactedAt")
-                        .HasFilter("\"PiiRedactedAt\" IS NULL");
-
                     b.HasIndex("IntegrationConnectionId", "ExternalOrderId")
                         .IsUnique();
 
                     b.HasIndex("IntegrationConnectionId", "SourceLastUpdatedAt");
+
+                    b.HasIndex("PurchaseDate", "Status")
+                        .HasDatabaseName("IX_SalesOrders_PendingRedaction")
+                        .HasFilter("\"PiiRedactedAt\" IS NULL");
 
                     b.HasIndex("TenantId", "PurchaseDate");
 
@@ -9018,6 +9076,17 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("IntegrationConnectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Connection");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive", b =>
                 {
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", "Connection")
                         .WithMany()

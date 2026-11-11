@@ -69,3 +69,29 @@ public class SalesOrderRepository : ISalesOrderRepository
             .Take(take)
             .ToListAsync(cancellationToken);
 }
+
+/// <inheritdoc />
+public class SalesOrderRetentionRepository : ISalesOrderRetentionRepository
+{
+    private readonly PartnerConnectDbContext _context;
+
+    public SalesOrderRetentionRepository(PartnerConnectDbContext context) => _context = context;
+
+    public async Task<IReadOnlyList<SalesOrder>> GetDueForRedactionAsync(
+        DateTime settledBefore, DateTime hardLimitBefore,
+        IReadOnlyList<SalesOrderStatus> settledStatuses, int batchSize,
+        CancellationToken cancellationToken = default)
+        => await _context.SalesOrders
+            // Already-redacted orders are skipped by the filtered index behind this predicate,
+            // so a sweep over a long-lived table does not re-walk everything it has done before.
+            .Where(o => o.PiiRedactedAt == null)
+            .Where(o =>
+                (settledStatuses.Contains(o.Status) && o.PurchaseDate < settledBefore)
+                || o.PurchaseDate < hardLimitBefore)
+            .OrderBy(o => o.PurchaseDate)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+
+    public Task SaveAsync(CancellationToken cancellationToken = default)
+        => _context.SaveChangesAsync(cancellationToken);
+}

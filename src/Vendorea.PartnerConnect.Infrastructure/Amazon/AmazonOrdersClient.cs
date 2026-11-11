@@ -31,6 +31,7 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
     private readonly IAmazonAccessTokenProvider _tokens;
     private readonly IIntegrationConnectionService _connections;
     private readonly IProviderRateLimiter _rateLimiter;
+    private readonly IIntegrationPayloadArchiveService _archive;
     private readonly AmazonSpApiOptions _options;
     private readonly ILogger<AmazonOrdersClient> _logger;
 
@@ -39,6 +40,7 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
         IAmazonAccessTokenProvider tokens,
         IIntegrationConnectionService connections,
         IProviderRateLimiter rateLimiter,
+        IIntegrationPayloadArchiveService archive,
         IOptions<AmazonSpApiOptions> options,
         ILogger<AmazonOrdersClient> logger)
     {
@@ -46,6 +48,7 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
         _tokens = tokens;
         _connections = connections;
         _rateLimiter = rateLimiter;
+        _archive = archive;
         _options = options.Value;
         _logger = logger;
     }
@@ -84,7 +87,7 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
         var url = _options.ResolveEndpoint(connection.Region) + OrdersPath + BuildQueryString(query);
 
         var (document, outcome, error, retryAfter) = await SendAsync(
-            url, token!, tenantId, connectionId, bucketKey, SearchOrdersOperation, cancellationToken);
+            url, token!, connection, bucketKey, SearchOrdersOperation, cancellationToken);
 
         if (document is null)
         {
@@ -100,7 +103,15 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
             {
                 foreach (var order in array.EnumerateArray())
                 {
-                    orders.Add(AmazonOrderMapper.Map(order));
+                    var snapshot = AmazonOrderMapper.Map(order);
+                    orders.Add(snapshot);
+
+                    // Captured per order rather than per page, because the question is always
+                    // about one order. The archive redacts before storing and expires on its own.
+                    await _archive.CaptureAsync(
+                        connection, IntegrationPayloadKind.OrderSnapshot,
+                        snapshot.ExternalOrderId, order.GetRawText(),
+                        cancellationToken: cancellationToken);
                 }
             }
 
@@ -155,7 +166,7 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
             + $"?includedData={string.Join(',', _options.IncludedData)}";
 
         var (document, outcome, error, retryAfter) = await SendAsync(
-            url, token!, tenantId, connectionId, bucketKey, GetOrderOperation, cancellationToken);
+            url, token!, connection, bucketKey, GetOrderOperation, cancellationToken);
 
         if (document is null)
         {
@@ -168,8 +179,14 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
             // so a wrapper change does not become a silent empty ingest.
             var root = document.RootElement;
             var order = root.TryGetProperty("order", out var wrapped) ? wrapped : root;
+            var snapshot = AmazonOrderMapper.Map(order);
 
-            return MarketplaceOrderResult.Ok(AmazonOrderMapper.Map(order));
+            await _archive.CaptureAsync(
+                connection, IntegrationPayloadKind.OrderSnapshot,
+                snapshot.ExternalOrderId, order.GetRawText(),
+                cancellationToken: cancellationToken);
+
+            return MarketplaceOrderResult.Ok(snapshot);
         }
     }
 
@@ -207,7 +224,7 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
 
     private async Task<(JsonDocument? Document, MarketplaceCallOutcome Outcome,
         string? Error, TimeSpan? RetryAfter)> SendAsync(
-        string url, string accessToken, int tenantId, Guid connectionId,
+        string url, string accessToken, IntegrationConnection connection,
         string bucketKey, string operation, CancellationToken cancellationToken)
     {
         try
@@ -239,18 +256,24 @@ public class AmazonOrdersClient : IMarketplaceOrdersClient
             {
                 // The token was accepted by LWA and rejected here, so the grant itself is gone.
                 await _connections.RecordCredentialRejectedAsync(
-                    tenantId, connectionId, error, cancellationToken);
+                    connection.TenantId, connection.Id, error, cancellationToken);
             }
             else if (outcome is MarketplaceCallOutcome.Forbidden or MarketplaceCallOutcome.Permanent)
             {
                 await _connections.RecordTransientErrorAsync(
-                    tenantId, connectionId, error, cancellationToken);
+                    connection.TenantId, connection.Id, error, cancellationToken);
             }
+
+            // The error body too — a provider error is exactly the thing somebody will want to
+            // see verbatim later, and it goes through the same redaction and the same expiry.
+            await _archive.CaptureAsync(
+                connection, IntegrationPayloadKind.ProviderError,
+                externalReference: null, body, cancellationToken: cancellationToken);
 
             // The URL is not logged: it carries the query window and the pagination token.
             _logger.LogWarning(
                 "Amazon Orders call for connection {ConnectionId} returned {StatusCode} ({Outcome}): {Error}",
-                connectionId, (int)response.StatusCode, outcome, error);
+                connection.Id, (int)response.StatusCode, outcome, error);
 
             return (null, outcome, error, RetryAfter(response));
         }

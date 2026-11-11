@@ -59,8 +59,10 @@ public class SalesOrderConfiguration : IEntityTypeConfiguration<SalesOrder>
         builder.HasIndex(o => o.MappingStatus)
             .HasFilter("\"MappingStatus\" <> 'Mapped'");
 
-        // Retention sweeps scan for rows still holding buyer data past the window.
-        builder.HasIndex(o => o.PiiRedactedAt)
+        // The retention sweep's whole scan: rows still holding buyer data, oldest purchase first.
+        // Filtered so a long-lived table is not re-walked for orders already redacted.
+        builder.HasIndex(o => new { o.PurchaseDate, o.Status })
+            .HasDatabaseName("IX_SalesOrders_PendingRedaction")
             .HasFilter("\"PiiRedactedAt\" IS NULL");
 
         builder.HasOne<Domain.Entities.Integration.IntegrationConnection>()

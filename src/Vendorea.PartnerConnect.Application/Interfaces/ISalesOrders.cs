@@ -117,3 +117,24 @@ public sealed record SalesOrderPollResult(
     public static SalesOrderPollResult Skipped(string reason)
         => new(SalesOrderPollOutcome.Skipped, 0, 0, 0, null, reason);
 }
+
+/// <summary>Reads and saves the orders a retention sweep acts on.</summary>
+/// <remarks>
+/// Separate from <see cref="ISalesOrderRepository"/> because it is the one read that is
+/// deliberately not tenant-scoped: retention is a platform obligation applied across every
+/// tenant, and scoping it per tenant would mean an obligation nobody was responsible for
+/// discharging. It returns orders only to redact them and writes nothing else.
+/// </remarks>
+public interface ISalesOrderRetentionRepository
+{
+    /// <summary>
+    /// Orders due for redaction: settled ones past the ordinary window, plus any order at all
+    /// past the hard limit.
+    /// </summary>
+    Task<IReadOnlyList<SalesOrder>> GetDueForRedactionAsync(
+        DateTime settledBefore, DateTime hardLimitBefore,
+        IReadOnlyList<SalesOrderStatus> settledStatuses, int batchSize,
+        CancellationToken cancellationToken = default);
+
+    Task SaveAsync(CancellationToken cancellationToken = default);
+}

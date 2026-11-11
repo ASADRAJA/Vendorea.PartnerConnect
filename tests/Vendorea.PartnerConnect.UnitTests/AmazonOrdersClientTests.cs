@@ -32,7 +32,8 @@ public class AmazonOrdersClientTests
         IntegrationCapabilities capabilities = IntegrationCapabilities.SalesOrderIngest,
         string? accessToken = "Atza|ACCESS",
         string? region = "NA",
-        StubRateLimiter? rateLimiter = null)
+        StubRateLimiter? rateLimiter = null,
+        StubArchive? archive = null)
     {
         var handler = new StubHandler(status, body);
         var connections = new StubConnections(capabilities, region);
@@ -42,6 +43,7 @@ public class AmazonOrdersClientTests
             new StubTokenProvider(accessToken),
             connections,
             rateLimiter ?? new StubRateLimiter(),
+            archive ?? new StubArchive(),
             Options.Create(new AmazonSpApiOptions()),
             NullLogger<AmazonOrdersClient>.Instance);
 
@@ -360,6 +362,54 @@ public class AmazonOrdersClientTests
         limiter.PenaltyWindow.Should().Be(TimeSpan.FromSeconds(60));
     }
 
+    // ---- payload archiving ----
+
+    [Fact]
+    public async Task Each_order_on_a_page_is_archived_under_its_own_id()
+    {
+        var archive = new StubArchive();
+        var (client, _, _) = Build(body: """
+        { "orders": [ { "orderId": "111-0000001-0000001" }, { "orderId": "111-0000002-0000002" } ],
+          "pagination": {} }
+        """, archive: archive);
+
+        await client.SearchOrdersAsync(TenantId, ConnectionId, Incremental);
+
+        // Per order, not per page: the question is always about one order, and a page-level
+        // capture would mean grepping through a hundred of them.
+        archive.Captures.Should().HaveCount(2);
+        archive.Captures.Select(c => c.Reference)
+            .Should().BeEquivalentTo(new[] { "111-0000001-0000001", "111-0000002-0000002" });
+        archive.Captures.Should().OnlyContain(c => c.Kind == IntegrationPayloadKind.OrderSnapshot);
+    }
+
+    [Fact]
+    public async Task A_provider_error_body_is_archived()
+    {
+        var archive = new StubArchive();
+        var (client, _, _) = Build(HttpStatusCode.BadRequest,
+            """{"errors":[{"code":"InvalidInput","message":"bad"}]}""", archive: archive);
+
+        await client.SearchOrdersAsync(TenantId, ConnectionId, Incremental);
+
+        // A provider error is exactly what somebody will want to read verbatim later.
+        archive.Captures.Should().ContainSingle();
+        archive.Captures[0].Kind.Should().Be(IntegrationPayloadKind.ProviderError);
+        archive.Captures[0].Payload.Should().Contain("InvalidInput");
+    }
+
+    [Fact]
+    public async Task Nothing_is_archived_when_the_call_never_reaches_Amazon()
+    {
+        var archive = new StubArchive();
+        var (client, _, _) = Build(
+            capabilities: IntegrationCapabilities.ListingSync, archive: archive);
+
+        await client.SearchOrdersAsync(TenantId, ConnectionId, Incremental);
+
+        archive.Captures.Should().BeEmpty();
+    }
+
     // ---- stubs ----
 
     private sealed class StubHandler : HttpMessageHandler
@@ -399,6 +449,20 @@ public class AmazonOrdersClientTests
             }
 
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class StubArchive : IIntegrationPayloadArchiveService
+    {
+        public List<(IntegrationPayloadKind Kind, string? Reference, string Payload)> Captures { get; } = new();
+
+        public Task CaptureAsync(
+            IntegrationConnection connection, IntegrationPayloadKind kind,
+            string? externalReference, string rawPayload, string? correlationId = null,
+            CancellationToken cancellationToken = default)
+        {
+            Captures.Add((kind, externalReference, rawPayload));
+            return Task.CompletedTask;
         }
     }
 
