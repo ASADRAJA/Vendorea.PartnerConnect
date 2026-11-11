@@ -138,3 +138,43 @@ public interface ISalesOrderRetentionRepository
 
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>Finds orders a reconciliation sweep should look at again.</summary>
+public interface ISalesOrderReconciliationRepository
+{
+    /// <summary>
+    /// Non-terminal orders for a connection that have not been synced recently, oldest first.
+    /// </summary>
+    /// <remarks>
+    /// Terminal orders are excluded: nothing further will happen to a shipped or cancelled order,
+    /// so re-reading one spends budget to learn nothing. Oldest first because the longest-stuck
+    /// order is the one most likely to be genuinely wrong.
+    /// </remarks>
+    Task<IReadOnlyList<SalesOrder>> GetStaleAsync(
+        Guid connectionId, DateTime notSyncedSince,
+        IReadOnlyList<SalesOrderStatus> terminalStatuses, int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Which of these provider order ids this connection already holds.</summary>
+    Task<IReadOnlyList<string>> GetKnownExternalIdsAsync(
+        Guid connectionId, IReadOnlyList<string> externalOrderIds,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>Re-reads what may have been missed or gone stale.</summary>
+public interface ISalesOrderReconciliationService
+{
+    Task<SalesOrderReconciliationResult> ReconcileAsync(
+        Domain.Entities.Integration.IntegrationConnection connection,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record SalesOrderReconciliationResult(
+    int Examined,
+    int Changed,
+    int Recovered,
+    int GapPagesRead,
+    string? Note = null)
+{
+    public static SalesOrderReconciliationResult Skipped(string note) => new(0, 0, 0, 0, note);
+}

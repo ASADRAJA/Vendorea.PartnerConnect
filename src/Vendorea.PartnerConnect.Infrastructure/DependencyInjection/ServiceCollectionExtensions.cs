@@ -95,6 +95,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduledJobHandler, IntegrationPayloadArchivePurgeJobHandler>();
         services.AddScoped<IScheduledJobHandler, BuyerDataRetentionJobHandler>();
 
+        // Catches what the live path missed. Daily, and cheap: built on getOrder, which is
+        // roughly ninety times cheaper than a re-search.
+        services.AddScoped<ISalesOrderReconciliationService, SalesOrderReconciliationService>();
+        services.AddScoped<IScheduledJobHandler, SalesOrderReconciliationJobHandler>();
+
         // Provider rate limiting (Phase 3). The limiter itself is registered with the persistence
         // layer, since the bucket lives in the database; the policy comes from configuration.
         services.AddSingleton<IProviderRateLimitPolicyProvider, AmazonRateLimitPolicyProvider>();
@@ -191,6 +196,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(PayloadArchiveOptions.SectionName));
         services.Configure<BuyerDataRetentionOptions>(
             configuration.GetSection(BuyerDataRetentionOptions.SectionName));
+        services.Configure<SalesOrderReconciliationOptions>(
+            configuration.GetSection(SalesOrderReconciliationOptions.SectionName));
 
         return services;
     }

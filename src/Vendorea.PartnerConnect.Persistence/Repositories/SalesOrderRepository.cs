@@ -95,3 +95,43 @@ public class SalesOrderRetentionRepository : ISalesOrderRetentionRepository
     public Task SaveAsync(CancellationToken cancellationToken = default)
         => _context.SaveChangesAsync(cancellationToken);
 }
+
+/// <inheritdoc />
+public class SalesOrderReconciliationRepository : ISalesOrderReconciliationRepository
+{
+    private readonly PartnerConnectDbContext _context;
+
+    public SalesOrderReconciliationRepository(PartnerConnectDbContext context) => _context = context;
+
+    public async Task<IReadOnlyList<SalesOrder>> GetStaleAsync(
+        Guid connectionId, DateTime notSyncedSince,
+        IReadOnlyList<SalesOrderStatus> terminalStatuses, int limit,
+        CancellationToken cancellationToken = default)
+        => await _context.SalesOrders
+            .AsNoTracking()
+            .Where(o => o.IntegrationConnectionId == connectionId
+                        && !terminalStatuses.Contains(o.Status)
+                        && o.LastSyncedAt < notSyncedSince)
+            .OrderBy(o => o.LastSyncedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<string>> GetKnownExternalIdsAsync(
+        Guid connectionId, IReadOnlyList<string> externalOrderIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (externalOrderIds.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        // One query for the whole page rather than a lookup per order. A page is up to a hundred
+        // orders and the gap search runs per connection, so the difference is a hundredfold.
+        return await _context.SalesOrders
+            .AsNoTracking()
+            .Where(o => o.IntegrationConnectionId == connectionId
+                        && externalOrderIds.Contains(o.ExternalOrderId))
+            .Select(o => o.ExternalOrderId)
+            .ToListAsync(cancellationToken);
+    }
+}

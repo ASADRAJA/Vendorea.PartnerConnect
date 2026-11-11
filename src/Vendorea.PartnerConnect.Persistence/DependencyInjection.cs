@@ -141,6 +141,7 @@ public static class DependencyInjection
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
         services.AddScoped<IIntegrationPayloadArchiveRepository, IntegrationPayloadArchiveRepository>();
         services.AddScoped<ISalesOrderRetentionRepository, SalesOrderRetentionRepository>();
+        services.AddScoped<ISalesOrderReconciliationRepository, SalesOrderReconciliationRepository>();
 
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
