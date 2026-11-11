@@ -22,11 +22,34 @@ not carry it.
 | **Secondary custodian** | Independent access to both | Break-glass when the primary is unavailable |
 | Deploying admin | Application key only, to install it | No access to the backup private key |
 
-Both custodians are named before Stage A runs. The secondary is deliberately **not** in the
-deploying admin group: an admin who can both read a backup and decrypt it reintroduces the
-single point of compromise this design removes.
-
 Neither private key is ever placed in the repository, on the droplet, in CI, or in a ticket.
+
+### Designated custodians (2026-11-06)
+
+| Role | Person | Status |
+|---|---|---|
+| **Primary custodian** | Asad Raja (asad.raja@mvs360.com) | Designated |
+| **Secondary custodian** | The Merchant360 administrator | **Named individual still to be recorded** |
+
+The secondary must be recorded as a *person*, not a role or a shared account. A custodian is
+someone who can be asked to produce a key; "the Merchant360 admin" is a chair, and chairs change
+occupants without anybody updating a runbook.
+
+Two custodians satisfies the requirement. The separation that matters is not between people but
+between **stores**: the threat is an unauthorized party obtaining a backup archive and its
+decryption key together. Because the key lives in a password manager outside DigitalOcean and the
+droplet holds only the public half, the same authorized administrator legitimately holding both is
+not a weakness — compromising the backup storage alone yields ciphertext and nothing else.
+
+**One residual risk worth closing deliberately.** If the password manager is reached through the
+same identity as the DigitalOcean account — the same email, the same SSO, the same recovery inbox
+— then one credential compromise yields both the backups and the key, and the separation exists on
+paper only. The password-manager account should have its own second factor, and ideally its own
+identity.
+
+The secondary custodian is deliberately **not** in the deploying admin group for the *backup*
+private key. An automated or routine process that can both read a backup and decrypt it
+reintroduces the single point of compromise this design removes.
 
 ## Generation
 
@@ -86,3 +109,35 @@ has working credentials, and no amount of encryption applied afterwards changes 
 
 H3 is optional and lower value than H4 — it protects against future disclosure of sets that
 have already been taken, which is a narrower threat than the one H4 closes.
+
+## Why not DigitalOcean Secrets Manager
+
+Asked and assessed on 2026-11-06. DigitalOcean's Secrets Manager entered **public preview on
+2 November 2026** — four days before this assessment.
+
+**For the backup recovery private key: no, and not later either.** DigitalOcean holds the
+backups. Putting their decryption key into the same DigitalOcean account, governed by the same
+DigitalOcean IAM, recreates precisely the condition the separation requirement exists to prevent:
+one unauthorized party obtaining both the encrypted contents and the key. The store holding the
+key must not be the store holding the ciphertext. That is a structural objection, not a maturity
+one, so GA will not change it.
+
+**For the runtime application encryption key: possible, but it buys little here.** This
+deployment is plain droplets with systemd units reading `/etc/merchant360/env/*.env`. There is no
+native secret injection for that shape, so a service would have to call `doctl secrets get` at
+start — which means the droplet holds a DigitalOcean API token able to read the secret. The key is
+then still effectively resident on the host, and the moving parts have grown by one API, one token
+and one new dependency during start-up.
+
+Worth revisiting after GA **if** the deployment moves to App Platform or DOKS, where injection is
+native and the token problem disappears. Until then the approved decision stands: the password
+manager is the authoritative store, and the runtime value is delivered through protected
+configuration outside source control.
+
+| Store | Backup recovery private key | Application encryption key |
+|---|---|---|
+| Password manager (authoritative) | ✅ | ✅ |
+| Droplet `*.env`, root-only | ❌ never | ✅ runtime value |
+| Droplet, public half only | ✅ encrypt-only | n/a |
+| DigitalOcean Secrets Manager | ❌ same party as the backups | ⚠️ no benefit on droplets; reconsider only post-GA on App Platform/DOKS |
+| Repository, CI, tickets, chat | ❌ | ❌ |

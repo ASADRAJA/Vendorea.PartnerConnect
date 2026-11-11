@@ -11,6 +11,7 @@ public class IntegrationConnectionService : IIntegrationConnectionService
     private readonly IIntegrationConnectionRepository _connections;
     private readonly IIntegrationProviderRepository _providers;
     private readonly IIntegrationCredentialStore _credentials;
+    private readonly IIntegrationAccountDelegationRepository _delegations;
     private readonly IAuditService _audit;
     private readonly ILogger<IntegrationConnectionService> _logger;
 
@@ -18,12 +19,14 @@ public class IntegrationConnectionService : IIntegrationConnectionService
         IIntegrationConnectionRepository connections,
         IIntegrationProviderRepository providers,
         IIntegrationCredentialStore credentials,
+        IIntegrationAccountDelegationRepository delegations,
         IAuditService audit,
         ILogger<IntegrationConnectionService> logger)
     {
         _connections = connections;
         _providers = providers;
         _credentials = credentials;
+        _delegations = delegations;
         _audit = audit;
         _logger = logger;
     }
@@ -90,8 +93,36 @@ public class IntegrationConnectionService : IIntegrationConnectionService
         var existing = await _connections.FindByExternalAccountAsync(
             tenantId, pending.IntegrationProviderId, externalAccountId, cancellationToken);
 
+        // A seller account maps to one Merchant360 tenant. Vendorea is a software provider, not a
+        // merchant of record or an intermediary: a dealer's Amazon account, its orders, its
+        // customers and its proceeds belong to that dealer's tenant. If another tenant already
+        // owns this account, authorising it here is refused unless somebody has explicitly
+        // delegated it — a browser redirect must never be able to move an account between
+        // dealers, and silently allowing it would give two parties the same seller's orders.
+        var ownership = await ResolveOwnershipAsync(
+            tenantId, pending.IntegrationProviderId, externalAccountId, existing, cancellationToken);
+
+        if (ownership is null)
+        {
+            _logger.LogWarning(
+                "Tenant {TenantId} tried to authorize account {Account}, which another tenant owns and has not delegated.",
+                tenantId, externalAccountId);
+
+            await _audit.LogAsync(
+                AuditAction.Update, "IntegrationConnection", pending.Id.ToString(),
+                newValues: new { ExternalAccountId = externalAccountId, Refused = "AccountOwnedByAnotherTenant" },
+                dealerId: tenantId,
+                notes: "Authorization refused: the account belongs to another tenant and no delegation exists.",
+                cancellationToken: cancellationToken);
+
+            return IntegrationConnectionResult.Failed(
+                "This account is already connected to a different Merchant360 tenant. " +
+                "Delegated access must be granted before it can be connected here.");
+        }
+
         var reused = existing is not null && existing.Id != pending.Id;
         var target = existing ?? pending;
+        target.AccountOwnership = ownership.Value;
 
         var previousStatus = target.Status;
 
@@ -138,6 +169,7 @@ public class IntegrationConnectionService : IIntegrationConnectionService
                 PreviousStatus = previousStatus.ToString(),
                 ExternalAccountId = externalAccountId,
                 GrantedCapabilities = grantedCapabilities.ToString(),
+                AccountOwnership = ownership.Value.ToString(),
                 Reused = reused
             },
             dealerId: tenantId,
@@ -173,6 +205,50 @@ public class IntegrationConnectionService : IIntegrationConnectionService
             cancellationToken: cancellationToken);
 
         return IntegrationConnectionResult.Ok(connection);
+    }
+
+    /// <summary>
+    /// Decides whether this tenant may hold the account, and on what footing.
+    /// </summary>
+    /// <remarks>
+    /// Returns null when it may not. Three outcomes: the tenant already holds the account, so
+    /// nothing changes; nobody holds it, so this tenant becomes its owner; or another tenant
+    /// holds it, in which case only an active delegation makes this permissible.
+    ///
+    /// The cross-tenant lookup returns a tenant id and nothing else — no connection, no
+    /// credentials, no orders. Only the existence of a claim crosses the boundary.
+    /// </remarks>
+    private async Task<IntegrationAccountOwnership?> ResolveOwnershipAsync(
+        int tenantId, int providerId, string externalAccountId,
+        IntegrationConnection? existing, CancellationToken cancellationToken)
+    {
+        // Reauthorising what this tenant already holds. Keep whatever footing it was on: a
+        // delegated connection must not quietly promote itself to owner by reconnecting.
+        if (existing is not null)
+        {
+            return existing.AccountOwnership;
+        }
+
+        var owner = await _connections.FindOwningTenantAsync(providerId, externalAccountId, cancellationToken);
+
+        if (owner is null || owner == tenantId)
+        {
+            return IntegrationAccountOwnership.Primary;
+        }
+
+        var delegation = await _delegations.FindActiveAsync(
+            providerId, externalAccountId, tenantId, cancellationToken);
+
+        if (delegation is null)
+        {
+            return null;
+        }
+
+        _logger.LogInformation(
+            "Tenant {TenantId} is connecting account {Account} under delegation {DelegationId} from tenant {OwnerTenantId}.",
+            tenantId, externalAccountId, delegation.Id, owner);
+
+        return IntegrationAccountOwnership.Delegated;
     }
 
     public async Task RecordCredentialRejectedAsync(

@@ -117,6 +117,33 @@ public class PartnerConnectDbContext : DbContext
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationSyncState>();
     public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState> IntegrationOAuthStates
         => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket> ProviderRateLimitBuckets
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket>();
+
+    // Explicit delegated access to a seller account another tenant owns. Deliberately a separate
+    // table: an exception to the one-account-one-tenant rule must be a row somebody created, not
+    // a flag the authorization flow could set.
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation> IntegrationAccountDelegations
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation>();
+
+    // Redacted, expiring copies of what providers actually sent. A diagnostic aid, never a
+    // second system of record — see IntegrationPayloadArchive.
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive> IntegrationPayloadArchives
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive>();
+
+    // Published integration events and how far each got. Staged in the same transaction as the
+    // order it describes — see IntegrationEvent.
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationEvent> IntegrationEvents
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationEvent>();
+
+    // --- Marketplace sales orders (Phase 3). Separate from the supplier Order aggregate: the
+    // same word, the opposite direction, a different lifecycle. ---
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder> SalesOrders
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderLine> SalesOrderLines
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderLine>();
+    public DbSet<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderStatusHistory> SalesOrderStatusHistory
+        => Set<Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderStatusHistory>();
     public DbSet<OrgPortalUserToken> OrgPortalUserTokens => Set<OrgPortalUserToken>();
 
     // Billing

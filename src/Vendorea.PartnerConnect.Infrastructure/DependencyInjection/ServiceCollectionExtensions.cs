@@ -67,6 +67,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIntegrationContextFactory, IntegrationContextFactory>();
         services.AddScoped<IIntegrationConnectionService, IntegrationConnectionService>();
 
+        // Delegated access to a seller account another tenant owns. An administrator's decision,
+        // never the authorization flow's.
+        services.AddScoped<IIntegrationAccountDelegationService, IntegrationAccountDelegationService>();
+
         // Seller authorization (Phase 2). The state store is what binds a public redirect to the
         // tenant that started it; the access-token cache is a singleton because it holds process
         // memory only and must be shared, keyed by connection id.
@@ -80,6 +84,40 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IAmazonLwaClient, AmazonLwaClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        // Sales-order ingestion (Phase 3)
+        services.AddScoped<ISalesOrderIngestionService, SalesOrderIngestionService>();
+        services.AddScoped<ISalesOrderPollingService, SalesOrderPollingService>();
+
+        // Redacted, expiring payload archive, and the buyer-data retention sweep (A2 / 3.10).
+        services.AddScoped<IIntegrationPayloadArchiveService, IntegrationPayloadArchiveService>();
+        services.AddScoped<IScheduledJobHandler, IntegrationPayloadArchivePurgeJobHandler>();
+        services.AddScoped<IScheduledJobHandler, BuyerDataRetentionJobHandler>();
+
+        // PC -> M360 event publication (Phase 4). Staged transactionally with the order.
+        services.AddSingleton<IIntegrationSigningKeyProvider, IntegrationSigningKeyProvider>();
+        services.AddScoped<ISalesOrderEventPublisher, SalesOrderEventPublisher>();
+        services.AddScoped<IProcessingResultRecorder, ProcessingResultRecorder>();
+        services.AddHttpClient<IIntegrationEventDeliveryService, IntegrationEventDeliveryService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        // Catches what the live path missed. Daily, and cheap: built on getOrder, which is
+        // roughly ninety times cheaper than a re-search.
+        services.AddScoped<ISalesOrderReconciliationService, SalesOrderReconciliationService>();
+        services.AddScoped<IScheduledJobHandler, SalesOrderReconciliationJobHandler>();
+
+        // Provider rate limiting (Phase 3). The limiter itself is registered with the persistence
+        // layer, since the bucket lives in the database; the policy comes from configuration.
+        services.AddSingleton<IProviderRateLimitPolicyProvider, AmazonRateLimitPolicyProvider>();
+
+        // Orders client (Phase 3). Typed so HttpClientFactory owns the handler lifetime; the
+        // access token is resolved per call and never attached to the client itself.
+        services.AddHttpClient<IMarketplaceOrdersClient, AmazonOrdersClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
         });
 
         // Expired-state hygiene.
@@ -159,6 +197,18 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(AmazonLwaOptions.SectionName));
         services.Configure<IntegrationAuthorizationOptions>(
             configuration.GetSection(IntegrationAuthorizationOptions.SectionName));
+        services.Configure<AmazonSpApiOptions>(
+            configuration.GetSection(AmazonSpApiOptions.SectionName));
+        services.Configure<SalesOrderPollingOptions>(
+            configuration.GetSection(SalesOrderPollingOptions.SectionName));
+        services.Configure<PayloadArchiveOptions>(
+            configuration.GetSection(PayloadArchiveOptions.SectionName));
+        services.Configure<BuyerDataRetentionOptions>(
+            configuration.GetSection(BuyerDataRetentionOptions.SectionName));
+        services.Configure<SalesOrderReconciliationOptions>(
+            configuration.GetSection(SalesOrderReconciliationOptions.SectionName));
+        services.Configure<IntegrationDeliveryOptions>(
+            configuration.GetSection(IntegrationDeliveryOptions.SectionName));
 
         return services;
     }

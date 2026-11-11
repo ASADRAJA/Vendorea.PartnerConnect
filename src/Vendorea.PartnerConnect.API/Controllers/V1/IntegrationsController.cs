@@ -230,6 +230,69 @@ public class IntegrationsController : ControllerBase
             });
     }
 
+    /// <summary>Per-capability watermarks, last success, and recent job failures.</summary>
+    /// <remarks>
+    /// Per capability **and** per marketplace, never one figure for the connection. Order
+    /// ingestion and listing sync advance independently, and a single number would report
+    /// whichever wrote last as though it spoke for both.
+    /// </remarks>
+    [HttpGet("tenants/{tenantId:int}/integrations/{connectionId:guid}/sync-health")]
+    [RequireScope(ApiScopes.IntegrationsRead)]
+    [ProducesResponseType(typeof(SyncHealthDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetSyncHealth(
+        int tenantId, Guid connectionId, CancellationToken cancellationToken)
+    {
+        var (org, error) = await ResolveOrgAsync(cancellationToken);
+        if (org is null) return error!;
+
+        var tenantError = await EnsureTenantInScopeAsync(org, tenantId, cancellationToken);
+        if (tenantError is not null) return tenantError;
+
+        var connection = await _connections.GetAsync(tenantId, connectionId, cancellationToken);
+        if (connection is null) return NotFoundConnection();
+
+        var syncStates = await _syncStates.GetForConnectionAsync(connectionId, cancellationToken);
+
+        return Ok(new SyncHealthDto
+        {
+            ConnectionId = connectionId,
+            Watermarks = syncStates
+                .OrderBy(s => s.Capability.ToString())
+                .ThenBy(s => s.MarketplaceId)
+                .Select(s => new SyncWatermarkDto
+                {
+                    Capability = s.Capability.ToString(),
+                    MarketplaceId = s.MarketplaceId,
+                    Watermark = s.Watermark,
+                    LastSuccessAt = s.LastSuccessAt,
+                    LastAttemptAt = s.LastAttemptAt,
+                    ConsecutiveFailures = s.ConsecutiveFailures,
+
+                    // A stored cursor means a paged walk stopped part-way. Worth surfacing: an
+                    // operator seeing a watermark that has not moved needs to know whether the
+                    // connection is stuck or simply still working through a backfill.
+                    WalkInProgress = !string.IsNullOrEmpty(s.Cursor)
+                })
+                .ToList(),
+
+            // The connection's own last error, where it has one. Scheduled-job failures are not
+            // per connection, so they are not invented here — a job that failed for everyone
+            // should not look like this seller's problem.
+            FailedJobs = connection.LastError is null || connection.LastErrorAt is null
+                ? new List<SyncFailedJobDto>()
+                : new List<SyncFailedJobDto>
+                {
+                    new()
+                    {
+                        JobKey = "connection",
+                        FailedAt = connection.LastErrorAt.Value,
+                        Error = connection.LastError
+                    }
+                }
+        });
+    }
+
     /// <summary>Disconnects a connection and destroys its credentials. The row is retained.</summary>
     [HttpDelete("tenants/{tenantId:int}/integrations/{connectionId:guid}")]
     [RequireScope(ApiScopes.IntegrationsWrite)]

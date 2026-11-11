@@ -78,6 +78,7 @@ public class IntegrationConnectionServiceTests : IAsyncLifetime
             new IntegrationConnectionRepository(db),
             new IntegrationProviderRepository(db),
             credentialStore,
+            new IntegrationAccountDelegationRepository(db),
             new AuditService(new AuditLogRepository(db), null!, NullLogger<AuditService>.Instance),
             NullLogger<IntegrationConnectionService>.Instance);
 

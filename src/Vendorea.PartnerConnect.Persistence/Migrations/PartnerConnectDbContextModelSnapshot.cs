@@ -1482,11 +1482,69 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("FtpIngestionRuns", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DelegateTenantId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ExternalAccountId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("GrantedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GrantedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("IntegrationProviderId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("OwnerTenantId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DelegateTenantId");
+
+                    b.HasIndex("IntegrationProviderId", "ExternalAccountId", "DelegateTenantId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IntegrationAccountDelegations_ActiveGrant")
+                        .HasFilter("\"RevokedAt\" IS NULL");
+
+                    b.ToTable("IntegrationAccountDelegations", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AccountOwnership")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Primary");
 
                     b.Property<string>("ConfigJson")
                         .HasColumnType("text");
@@ -1540,9 +1598,12 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IntegrationProviderId");
-
                     b.HasIndex("OrganizationId");
+
+                    b.HasIndex("IntegrationProviderId", "ExternalAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IntegrationConnections_PrimaryAccountOwner")
+                        .HasFilter("\"ExternalAccountId\" IS NOT NULL AND \"AccountOwnership\" = 'Primary' AND \"Status\" <> 'Revoked'");
 
                     b.HasIndex("Status", "IntegrationProviderId");
 
@@ -1593,6 +1654,116 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.ToTable("IntegrationCredentials", (string)null);
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationEvent", b =>
+                {
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ConsumerOrderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeduplicationKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("DeliveryAcknowledgedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DeliveryAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EnvelopeJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("EventVersion")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<Guid>("IntegrationConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("LastDeliveryAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastDeliveryError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("OutboxMessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProcessingError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ProcessingResult")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("ProcessingResultAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PublicationReason")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SalesOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SigningKeyId")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("EventId");
+
+                    b.HasIndex("DeduplicationKey");
+
+                    b.HasIndex("DeliveryAcknowledgedAt")
+                        .HasDatabaseName("IX_IntegrationEvents_AwaitingProcessingResult")
+                        .HasFilter("\"DeliveryAcknowledgedAt\" IS NOT NULL AND \"ProcessingResult\" IS NULL");
+
+                    b.HasIndex("IntegrationConnectionId");
+
+                    b.HasIndex("PublishedAt")
+                        .HasDatabaseName("IX_IntegrationEvents_AwaitingAcknowledgement")
+                        .HasFilter("\"DeliveryAcknowledgedAt\" IS NULL");
+
+                    b.HasIndex("SalesOrderId", "PublishedAt");
+
+                    b.HasIndex("TenantId", "PublishedAt");
+
+                    b.ToTable("IntegrationEvents", (string)null);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1636,6 +1807,63 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("IntegrationOAuthStates", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CapturedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("IntegrationConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PayloadKind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("RedactedPaths")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TenantId", "ExternalReference", "CapturedAt");
+
+                    b.HasIndex("IntegrationConnectionId", "PayloadKind", "ExternalReference", "CapturedAt");
+
+                    b.ToTable("IntegrationPayloadArchives", (string)null);
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider", b =>
@@ -1770,6 +1998,41 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("IntegrationConnectionId", "Capability", "MarketplaceId"), false);
 
                     b.ToTable("IntegrationSyncStates", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.ProviderRateLimitBucket", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BucketKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastRefillAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<double>("Tokens")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BucketKey", "Operation")
+                        .IsUnique();
+
+                    b.ToTable("ProviderRateLimitBuckets", (string)null);
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.InventoryFeedBatch", b =>
@@ -4035,6 +4298,270 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                             AssignedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             AssignedBy = "System"
                         });
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("BuyerDataAvailable")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("BuyerEmailRef")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("BuyerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CurrencyCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("ExternalFulfillmentStatusRaw")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("ExternalOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ExternalStatusRaw")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FulfillmentChannel")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid>("IntegrationConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("LastEventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("LastProcessingResult")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("LastSyncedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MappingStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("MarketplaceId")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<decimal?>("OrderTotalAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("PiiRedactedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProgramsRawJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("PurchaseDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ShipToCity")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ShipToCountryCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<string>("ShipToLine1")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ShipToLine2")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ShipToName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ShipToPostalCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ShipToStateOrRegion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("SourceLastUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MappingStatus")
+                        .HasFilter("\"MappingStatus\" <> 'Mapped'");
+
+                    b.HasIndex("IntegrationConnectionId", "ExternalOrderId")
+                        .IsUnique();
+
+                    b.HasIndex("IntegrationConnectionId", "SourceLastUpdatedAt");
+
+                    b.HasIndex("PurchaseDate", "Status")
+                        .HasDatabaseName("IX_SalesOrders_PendingRedaction")
+                        .HasFilter("\"PiiRedactedAt\" IS NULL");
+
+                    b.HasIndex("TenantId", "PurchaseDate");
+
+                    b.HasIndex("TenantId", "Status");
+
+                    b.ToTable("SalesOrders", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Asin")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CurrencyCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("ExternalLineId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal?>("ItemPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal?>("ItemTax")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("M360CatalogItemId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("MappingStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ProceedsRawJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<decimal?>("PromotionDiscount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("QuantityOrdered")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("QuantityShipped")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SalesOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SellerSku")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal?>("ShippingPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SellerSku");
+
+                    b.HasIndex("SalesOrderId", "ExternalLineId")
+                        .IsUnique();
+
+                    b.ToTable("SalesOrderLines", (string)null);
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderStatusHistory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ExternalStatusRaw")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("FromStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SalesOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("SourceLastUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SalesOrderId", "RecordedAt");
+
+                    b.ToTable("SalesOrderStatusHistory", (string)null);
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.ScheduledJob", b =>
@@ -8609,6 +9136,17 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Navigation("ResponseDocument");
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationAccountDelegation", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider", "Provider")
+                        .WithMany()
+                        .HasForeignKey("IntegrationProviderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Provider");
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", b =>
                 {
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationProvider", "Provider")
@@ -8647,7 +9185,32 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Navigation("Connection");
                 });
 
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationEvent", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", null)
+                        .WithMany()
+                        .HasForeignKey("IntegrationConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder", null)
+                        .WithMany()
+                        .HasForeignKey("SalesOrderId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationOAuthState", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("IntegrationConnectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Connection");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationPayloadArchive", b =>
                 {
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", "Connection")
                         .WithMany()
@@ -8929,6 +9492,45 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Navigation("Permission");
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Integration.IntegrationConnection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("IntegrationConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Connection");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderLine", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder", "Order")
+                        .WithMany("Lines")
+                        .HasForeignKey("SalesOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrderStatusHistory", b =>
+                {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder", "Order")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("SalesOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.ScheduledJobRun", b =>
@@ -9514,6 +10116,13 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.Navigation("RolePermissions");
 
                     b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.Sales.SalesOrder", b =>
+                {
+                    b.Navigation("Lines");
+
+                    b.Navigation("StatusHistory");
                 });
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.ScheduledJob", b =>

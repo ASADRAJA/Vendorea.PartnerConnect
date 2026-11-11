@@ -142,3 +142,49 @@ public sealed record IntegrationConnectionResult(
     public static IntegrationConnectionResult Failed(string error)
         => new(false, null, error);
 }
+
+/// <summary>
+/// Grants and withdraws delegated access to a seller account one tenant owns.
+/// </summary>
+/// <remarks>
+/// Separate from <see cref="IIntegrationConnectionService"/> on purpose. Connecting an account is
+/// something a dealer does for themselves; delegating one is something an administrator does on
+/// two dealers' behalf, and the two must not share an entry point. Vendorea provides software: it
+/// does not become a party to a dealer's Amazon account, and a delegation records a decision
+/// somebody made rather than one the platform took.
+/// </remarks>
+public interface IIntegrationAccountDelegationService
+{
+    /// <summary>
+    /// Grants a second tenant the right to connect an account another tenant owns.
+    /// </summary>
+    /// <remarks>
+    /// Refuses when nobody owns the account yet — there is nothing to delegate, and the tenant
+    /// should simply connect it — and when the delegate is the owner.
+    /// </remarks>
+    Task<IntegrationDelegationResult> GrantAsync(
+        string providerCode, string externalAccountId, int delegateTenantId,
+        string grantedBy, string? reason, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Withdraws a grant and disconnects the delegate.
+    /// </summary>
+    /// <remarks>
+    /// Disconnecting is the point. A revocation that left the delegate's credentials working
+    /// would be a record of a decision rather than the decision taking effect.
+    /// </remarks>
+    Task<IntegrationDelegationResult> RevokeAsync(
+        Guid delegationId, string revokedBy, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<IntegrationAccountDelegation>> ListForAccountAsync(
+        string providerCode, string externalAccountId, CancellationToken cancellationToken = default);
+}
+
+public sealed record IntegrationDelegationResult(
+    bool Success, IntegrationAccountDelegation? Delegation, string? Error)
+{
+    public static IntegrationDelegationResult Ok(IntegrationAccountDelegation delegation)
+        => new(true, delegation, null);
+
+    public static IntegrationDelegationResult Failed(string error) => new(false, null, error);
+}

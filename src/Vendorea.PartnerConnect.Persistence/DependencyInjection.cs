@@ -130,6 +130,21 @@ public static class DependencyInjection
         // Seller authorization (Phase 2)
         services.AddScoped<IIntegrationOAuthStateRepository, IntegrationOAuthStateRepository>();
 
+        // Delegated access to a seller account another tenant owns (explicit, admin-created).
+        services.AddScoped<IIntegrationAccountDelegationRepository, IntegrationAccountDelegationRepository>();
+
+        // Cross-process provider rate limiting (Phase 3). Here rather than in Infrastructure
+        // because the bucket is a database row — that is what makes it shared.
+        services.AddScoped<IProviderRateLimiter, ProviderRateLimiter>();
+
+        // Marketplace sales orders (Phase 3)
+        services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
+        services.AddScoped<IIntegrationPayloadArchiveRepository, IntegrationPayloadArchiveRepository>();
+        services.AddScoped<ISalesOrderRetentionRepository, SalesOrderRetentionRepository>();
+        services.AddScoped<ISalesOrderReconciliationRepository, SalesOrderReconciliationRepository>();
+        services.AddScoped<ISalesOrderAdminRepository, SalesOrderAdminRepository>();
+        services.AddScoped<IIntegrationEventRepository, IntegrationEventRepository>();
+
         // Unit of Work
         services.AddScoped<IUnitOfWork, Vendorea.PartnerConnect.Persistence.UnitOfWork.UnitOfWork>();
     }

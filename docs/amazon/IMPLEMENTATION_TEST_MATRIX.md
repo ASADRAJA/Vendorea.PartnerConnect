@@ -64,7 +64,9 @@ has not passed.
 | 2.4 | **Cross-tenant attach** | **S** | Tenant A's state presented on tenant B's callback | Rejected, audited |
 | 2.5 | Reconnect reuses the connection (**C3**) | **D** | Disconnect then reconnect same selling partner | Same `integrationConnectionId`; watermark preserved |
 | 2.6 | Revoked reconnect reactivates | D | Revoke then reconnect | Row reactivated, not duplicated |
-| 2.7 | Same account, two tenants | D | Connect one account under two tenants | Two rows; isolation intact |
+| 2.7 | **One account, one tenant** | **D** | Connect one account under a second tenant | **Refused**; no credentials written; audited |
+| 2.7b | Delegated access permits the exception | D | Grant an explicit delegation, then connect | Allowed, recorded `Delegated`; credentials and orders separate |
+| 2.7c | Several accounts per tenant | D | Connect two accounts under one tenant | Both allowed |
 | 2.8 | Account replacement | D | Reconnect with a different selling partner id | New connection; old history retained |
 | 2.9 | Revocation stops work | I | Revoke mid-schedule | Jobs stop; status `Revoked` surfaced |
 | 2.10 | Refresh token never logged | S | Grep logs after a full flow | No token material |

@@ -370,6 +370,7 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMerchant360Client _merchant360Client;
+    private readonly IIntegrationEventDeliveryService? _integrationEvents;
     private readonly SprSimulationOptions _simulation;
     private readonly ILogger<DefaultOutboxMessageProcessor> _logger;
 
@@ -384,10 +385,12 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
         IHttpClientFactory httpClientFactory,
         IMerchant360Client merchant360Client,
         Microsoft.Extensions.Options.IOptions<SprSimulationOptions> simulationOptions,
-        ILogger<DefaultOutboxMessageProcessor> logger)
+        ILogger<DefaultOutboxMessageProcessor> logger,
+        IIntegrationEventDeliveryService? integrationEvents = null)
     {
         _httpClientFactory = httpClientFactory;
         _merchant360Client = merchant360Client;
+        _integrationEvents = integrationEvents;
         _simulation = simulationOptions.Value;
         _logger = logger;
     }
@@ -437,11 +440,51 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
                 await DeliverMerchant360InventorySnapshotAsync(message, cancellationToken);
                 break;
 
+            case SalesOrderEventPublisher.OutboxMessageType:
+                await DeliverIntegrationEventAsync(message, cancellationToken);
+                break;
+
             default:
                 _logger.LogWarning(
                     "Unknown message type {MessageType} for outbox message {MessageId}",
                     message.MessageType, message.Id);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Delivers a published integration event, signed, to Merchant360.
+    /// </summary>
+    /// <remarks>
+    /// The message carries only the event id; the envelope lives on the event row, because the
+    /// signature is computed over those exact stored bytes. Throwing on failure is deliberate —
+    /// the outbox owns retry and dead-lettering, and a delivery that reported success it did not
+    /// have would retire the message with the event undelivered.
+    /// </remarks>
+    private async Task DeliverIntegrationEventAsync(
+        OutboxMessage message, CancellationToken cancellationToken)
+    {
+        if (CaptureInsteadOfDeliver(message)) return;
+
+        if (_integrationEvents is null)
+        {
+            throw new InvalidOperationException(
+                "No integration-event delivery service is registered; the event cannot be delivered.");
+        }
+
+        var payload = JsonSerializer.Deserialize<IntegrationEventDeliveryMessage>(
+            message.Payload, _deserializeOptions);
+
+        if (payload is null || payload.EventId == Guid.Empty)
+        {
+            throw new InvalidOperationException(
+                $"Outbox message {message.Id} carries no integration event id.");
+        }
+
+        if (!await _integrationEvents.DeliverAsync(payload.EventId, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Delivery of integration event {payload.EventId} failed; the outbox will retry.");
         }
     }
 

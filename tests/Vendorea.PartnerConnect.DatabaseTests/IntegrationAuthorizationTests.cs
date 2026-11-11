@@ -41,6 +41,7 @@ public class IntegrationAuthorizationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _pg.TruncateAsync(
+            "IntegrationAccountDelegations",
             "IntegrationOAuthStates", "IntegrationCredentials", "IntegrationSyncStates",
             "IntegrationConnections", "IntegrationProviders",
             "AuditLogs", "Tenants", "Organizations");
@@ -285,31 +286,214 @@ public class IntegrationAuthorizationTests : IAsyncLifetime
         pendingRow.Status.Should().Be(IntegrationConnectionStatus.Revoked);
     }
 
-    // ---- 2.7 same account, two tenants ----
+    // ---- 2.7 one seller account, one tenant ----
 
     [Fact]
-    public async Task The_same_seller_account_may_be_connected_by_two_tenants()
+    public async Task A_second_tenant_cannot_claim_an_account_the_first_tenant_owns()
     {
         var h = Build();
         var a = await h.BeginAsync(_tenantId);
         var b = await h.BeginAsync(_otherTenantId);
 
         var first = await h.Service.CompleteAsync("AMAZON_SP", await h.IssueStateAsync(_tenantId, a), "c1", SellerA);
-        var second = await h.Service.CompleteAsync("AMAZON_SP", await h.IssueStateAsync(_otherTenantId, b), "c2", SellerA);
+        first.Success.Should().BeTrue();
 
+        var second = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_otherTenantId, b), "c2", SellerA);
+
+        // Vendorea is a software provider, not a merchant of record. A dealer's Amazon account —
+        // its orders, its customers, its proceeds — belongs to one Merchant360 tenant, and a
+        // second tenant authorising the same account must be refused rather than quietly handed
+        // a copy of someone else's business.
+        second.Success.Should().BeFalse();
+        second.Failure.Should().Be(IntegrationAuthorizationFailure.ConnectionUnavailable);
+
+        await using var db = _pg.CreateContext();
+        var connected = await db.IntegrationConnections
+            .Where(c => c.ExternalAccountId == SellerA
+                        && c.Status == IntegrationConnectionStatus.Connected)
+            .ToListAsync();
+
+        connected.Should().ContainSingle();
+        connected[0].TenantId.Should().Be(_tenantId);
+        connected[0].AccountOwnership.Should().Be(IntegrationAccountOwnership.Primary);
+
+        // The refused tenant is left with no credentials at all.
+        (await db.IntegrationCredentials.CountAsync(
+            c => c.IntegrationConnectionId == b)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_tenant_may_hold_several_seller_accounts()
+    {
+        var h = Build();
+
+        var first = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_tenantId, await h.BeginAsync(_tenantId)), "c1", SellerA);
+        var second = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_tenantId, await h.BeginAsync(_tenantId)), "c2", SellerB);
+
+        // One tenant, two Amazon accounts, is normal — a dealer may sell under more than one.
         first.Success.Should().BeTrue();
         second.Success.Should().BeTrue();
-        second.ReusedExisting.Should().BeFalse();
         first.ConnectionId.Should().NotBe(second.ConnectionId!.Value);
+    }
 
-        // Uniqueness is per tenant, not global: a reseller legitimately manages one Amazon account
-        // for a client who also holds it. The isolation that matters is that neither tenant can
-        // read the other's row.
+    [Fact]
+    public async Task A_delegated_tenant_may_connect_an_account_another_tenant_owns()
+    {
+        var h = Build();
+
+        await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_tenantId, await h.BeginAsync(_tenantId)), "c1", SellerA);
+
+        var grant = await h.Delegations.GrantAsync(
+            "AMAZON_SP", SellerA, _otherTenantId, "ops@vendorea.test", "Reseller manages this account");
+
+        grant.Success.Should().BeTrue();
+
+        var delegated = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_otherTenantId, await h.BeginAsync(_otherTenantId)),
+            "c2", SellerA);
+
+        delegated.Success.Should().BeTrue();
+
+        await using var db = _pg.CreateContext();
+        var rows = await db.IntegrationConnections
+            .Where(c => c.ExternalAccountId == SellerA
+                        && c.Status == IntegrationConnectionStatus.Connected)
+            .OrderBy(c => c.TenantId)
+            .ToListAsync();
+
+        rows.Should().HaveCount(2);
+        rows.Single(r => r.TenantId == _tenantId).AccountOwnership
+            .Should().Be(IntegrationAccountOwnership.Primary);
+
+        // The delegate holds the account on a different footing, recorded on the row. There is
+        // still exactly one owner.
+        rows.Single(r => r.TenantId == _otherTenantId).AccountOwnership
+            .Should().Be(IntegrationAccountOwnership.Delegated);
+    }
+
+    [Fact]
+    public async Task A_delegation_cannot_be_granted_for_an_account_nobody_owns()
+    {
+        var h = Build();
+
+        var grant = await h.Delegations.GrantAsync(
+            "AMAZON_SP", SellerA, _otherTenantId, "ops@vendorea.test", null);
+
+        // Pre-authorising would create an orphan grant that silently became meaningful the moment
+        // somebody else claimed the account.
+        grant.Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_delegation_must_name_who_granted_it()
+    {
+        var h = Build();
+        await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_tenantId, await h.BeginAsync(_tenantId)), "c1", SellerA);
+
+        var grant = await h.Delegations.GrantAsync("AMAZON_SP", SellerA, _otherTenantId, "  ", null);
+
+        // A delegated-access decision nobody is named for is an unexplained exception sitting in
+        // a table, not an authorization.
+        grant.Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Withdrawing_a_delegation_disconnects_the_delegate_and_destroys_its_credentials()
+    {
+        var h = Build();
+
+        await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_tenantId, await h.BeginAsync(_tenantId)), "c1", SellerA);
+
+        var grant = await h.Delegations.GrantAsync(
+            "AMAZON_SP", SellerA, _otherTenantId, "ops@vendorea.test", null);
+
+        var delegated = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_otherTenantId, await h.BeginAsync(_otherTenantId)),
+            "c2", SellerA);
+
+        await h.Delegations.RevokeAsync(grant.Delegation!.Id, "ops@vendorea.test");
+
+        await using var db = _pg.CreateContext();
+
+        // Revocation has to take effect, not merely be recorded: a withdrawn grant whose
+        // credentials still worked would be decoration.
+        var delegateRow = await db.IntegrationConnections.SingleAsync(c => c.Id == delegated.ConnectionId);
+        delegateRow.Status.Should().Be(IntegrationConnectionStatus.Revoked);
+        (await db.IntegrationCredentials.CountAsync(
+            c => c.IntegrationConnectionId == delegated.ConnectionId)).Should().Be(0);
+
+        // The owner is untouched.
+        var ownerRow = await db.IntegrationConnections
+            .SingleAsync(c => c.TenantId == _tenantId && c.ExternalAccountId == SellerA);
+        ownerRow.Status.Should().Be(IntegrationConnectionStatus.Connected);
+        (await db.IntegrationCredentials.CountAsync(
+            c => c.IntegrationConnectionId == ownerRow.Id)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_delegate_cannot_promote_itself_to_owner_by_reconnecting()
+    {
+        var h = Build();
+
+        await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_tenantId, await h.BeginAsync(_tenantId)), "c1", SellerA);
+        var grant = await h.Delegations.GrantAsync(
+            "AMAZON_SP", SellerA, _otherTenantId, "ops@vendorea.test", null);
+        grant.Success.Should().BeTrue();
+
+        await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_otherTenantId, await h.BeginAsync(_otherTenantId)),
+            "c2", SellerA);
+
+        // Re-consent from the delegate, which reuses its existing connection.
+        var again = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_otherTenantId, await h.BeginAsync(_otherTenantId)),
+            "c3", SellerA);
+
+        again.ReusedExisting.Should().BeTrue();
+
+        await using var db = _pg.CreateContext();
+        var delegateRow = await db.IntegrationConnections
+            .SingleAsync(c => c.TenantId == _otherTenantId
+                              && c.ExternalAccountId == SellerA
+                              && c.Status == IntegrationConnectionStatus.Connected);
+
+        // Reconnecting must not be a route to ownership.
+        delegateRow.AccountOwnership.Should().Be(IntegrationAccountOwnership.Delegated);
+    }
+
+    [Fact]
+    public async Task An_account_released_by_its_owner_may_be_claimed_by_another_tenant()
+    {
+        var h = Build();
+
+        var first = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_tenantId, await h.BeginAsync(_tenantId)), "c1", SellerA);
+        await h.Connections.DisconnectAsync(_tenantId, first.ConnectionId!.Value);
+
+        var second = await h.Service.CompleteAsync(
+            "AMAZON_SP", await h.IssueStateAsync(_otherTenantId, await h.BeginAsync(_otherTenantId)),
+            "c2", SellerA);
+
+        // A tenant that disconnected has released the account. The later claim is a transfer, not
+        // concurrent sharing — and the first tenant's history stays on its own revoked row.
+        second.Success.Should().BeTrue();
+
         await using var db = _pg.CreateContext();
         var rows = await db.IntegrationConnections
             .Where(c => c.ExternalAccountId == SellerA).ToListAsync();
+
         rows.Should().HaveCount(2);
-        rows.Select(r => r.TenantId).Should().BeEquivalentTo(new[] { _tenantId, _otherTenantId });
+        rows.Single(r => r.TenantId == _tenantId).Status
+            .Should().Be(IntegrationConnectionStatus.Revoked);
+        rows.Single(r => r.TenantId == _otherTenantId).AccountOwnership
+            .Should().Be(IntegrationAccountOwnership.Primary);
     }
 
     // ---- 2.8 account replacement ----
@@ -541,6 +725,7 @@ public class IntegrationAuthorizationTests : IAsyncLifetime
             new IntegrationConnectionRepository(db),
             new IntegrationProviderRepository(db),
             credentialStore,
+            new IntegrationAccountDelegationRepository(db),
             new AuditService(new AuditLogRepository(db), null!, NullLogger<AuditService>.Instance),
             Logger<IntegrationConnectionService>(recorder));
 
@@ -566,7 +751,15 @@ public class IntegrationAuthorizationTests : IAsyncLifetime
             connections, credentialStore, lwa, tokenCache,
             Logger<AmazonAccessTokenProvider>(recorder));
 
-        return new Harness(service, connections, states, tokens, lwa, db);
+        var delegations = new IntegrationAccountDelegationService(
+            new IntegrationAccountDelegationRepository(db),
+            new IntegrationConnectionRepository(db),
+            connections,
+            new IntegrationProviderRepository(db),
+            new AuditService(new AuditLogRepository(db), null!, NullLogger<AuditService>.Instance),
+            Logger<IntegrationAccountDelegationService>(recorder));
+
+        return new Harness(service, connections, states, tokens, lwa, delegations, db);
     }
 
     private static ILogger<T> Logger<T>(RecordingLoggerProvider? recorder)
@@ -578,6 +771,7 @@ public class IntegrationAuthorizationTests : IAsyncLifetime
         IIntegrationOAuthStateService States,
         IAmazonAccessTokenProvider Tokens,
         StubLwaClient Lwa,
+        IIntegrationAccountDelegationService Delegations,
         PartnerConnectDbContext Db)
     {
         public async Task<Guid> BeginAsync(int tenantId)

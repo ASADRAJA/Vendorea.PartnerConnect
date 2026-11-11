@@ -96,10 +96,14 @@ connection**. Needs 0.1 approved for the live claim; mock gates can pass before.
 | 3.10 | **`RawDocumentArchive` remediation (A2)** — writer, redaction, retention, purge | PC | L | — |
 | 3.11 | Sales-order read API + portal views | PC | M | 3.1 |
 | 3.12 | Tests — matrix 3.1–3.15 incl. load | PC | XL | — |
+| 3.13 | **Restricted Data Token flow** — `POST /tokens/2021-03-01/restrictedDataToken`, cached per connection by expiry, used in place of the LWA token for buyer/address reads | PC | M | 0.1 role approval |
 
 **Gate:** orders persist exactly once across poll/notification overlap; PII and status cases
-correct. **Capacity gate before activation** — the droplet shares PostgreSQL with M360 on
-8 GB with swap in use.
+correct. **Capacity gate: satisfied for the test environment** (assessed 2026-11-06, see
+`CAPACITY_ASSESSMENT_TEST_ENVIRONMENT.md`) — 4.8 GB RAM available, not swapping, 207 GB disk free,
+12 of 120 database connections in use, and Amazon's own 0.0056 req/s limit caps ingestion at
+2,000 orders/hour per connection. The earlier "8 GB with swap in use" wording mistook stale swap
+for memory pressure. Production is a separate sizing exercise against real volumes.
 
 ## Phase 4 — PC → M360 exchange *(the phase that makes it real)*
 
@@ -148,6 +152,12 @@ a duplicate. First phase that writes to a seller's live account — allowlisted 
 **This is where "Amazon selling" becomes complete** — Phases 1–5 are order operations only.
 
 ## Phase 7 — Amazon Business purchasing
+
+**Binding constraints before any design work** (see `VENDOREA_ROLE_AND_ACCOUNT_OWNERSHIP.md`):
+orders use the **dealer's own** authorized buying account, its configured purchasing group and
+its own payment arrangements. Vendorea is never the purchasing entity of record and stores no
+payment instrument. A shared buying account, a pooled payment method or a consolidated
+Amazon-to-Vendorea invoice is out of scope by definition, not by prioritisation.
 
 | # | Task | Owner | Cx | Depends |
 |---|---|---|---|---|

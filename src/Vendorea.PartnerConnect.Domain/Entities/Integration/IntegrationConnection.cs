@@ -15,6 +15,13 @@ namespace Vendorea.PartnerConnect.Domain.Entities.Integration;
 /// an account already connected for this tenant must reuse the existing row — a new row would
 /// lose the watermark, re-import every order, and defeat the uniqueness that keeps one Amazon
 /// order mapped to one Merchant360 sales order.
+///
+/// A seller account belongs to exactly one tenant. <see cref="AccountOwnership"/> and the
+/// filtered unique index behind it make that a schema invariant: a second tenant cannot claim an
+/// account another tenant already holds, and reaching one anyway requires an explicit
+/// <see cref="IntegrationAccountDelegation"/> that a person has to create. Vendorea is a software
+/// provider, not a merchant of record — every order, every credential and every proceeds
+/// arrangement belongs to the dealer whose account this is.
 /// </remarks>
 public class IntegrationConnection
 {
@@ -42,6 +49,20 @@ public class IntegrationConnection
     public string? MarketplaceIdsJson { get; set; }
 
     public IntegrationConnectionStatus Status { get; set; } = IntegrationConnectionStatus.Pending;
+
+    /// <summary>
+    /// Whether this tenant owns the external account or has been delegated access to it.
+    /// </summary>
+    /// <remarks>
+    /// Primary is the only value the authorization flow can assign on its own. Delegated requires
+    /// an active <see cref="IntegrationAccountDelegation"/> naming this tenant, which no OAuth
+    /// callback can create — a browser redirect must never be able to hand one dealer's Amazon
+    /// account to another dealer's Merchant360 tenant.
+    ///
+    /// The unique index covers Primary rows only, so the database guarantees one owner per seller
+    /// account while still permitting the deliberate exception.
+    /// </remarks>
+    public IntegrationAccountOwnership AccountOwnership { get; set; } = IntegrationAccountOwnership.Primary;
 
     /// <summary>
     /// What the provider actually granted — not what the provider could offer. A seller may
@@ -79,4 +100,20 @@ public enum IntegrationConnectionStatus
     Revoked,
     Suspended,
     Error
+}
+
+/// <summary>How a tenant comes to hold a connection for an external account.</summary>
+public enum IntegrationAccountOwnership
+{
+    /// <summary>
+    /// This tenant is the account's owner. At most one non-revoked Primary connection exists per
+    /// seller account, enforced by a filtered unique index rather than by convention.
+    /// </summary>
+    Primary,
+
+    /// <summary>
+    /// Access granted by an explicit delegation from the owning tenant. Never assigned
+    /// automatically.
+    /// </summary>
+    Delegated
 }
