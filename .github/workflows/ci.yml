@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A newer push supersedes an in-flight run on the same ref. The database suite spins up
+  # PostgreSQL containers, so leaving superseded runs going wastes a lot for no information.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  contracts:
+    name: Contract validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 150 checks across both OpenAPI specs, the event JSON Schema and every published example.
+      # This was agreed as a Phase 1 gate item and then only ever run by hand, which meant a
+      # contract could drift between one person running it and the next.
+      - name: Validate the contract package
+        run: python3 validate_contracts.py
+        working-directory: docs/amazon
+
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Vendorea.PartnerConnect.sln
+
+      - name: Build
+        run: dotnet build Vendorea.PartnerConnect.sln --configuration Release --no-restore
+
+      - name: Unit tests
+        run: >
+          dotnet test tests/Vendorea.PartnerConnect.UnitTests
+          --configuration Release --no-build
+          --logger "trx;LogFileName=unit.trx"
+          --results-directory artifacts/test-results
+
+      - name: Integration tests
+        run: >
+          dotnet test tests/Vendorea.PartnerConnect.IntegrationTests
+          --configuration Release --no-build
+          --logger "trx;LogFileName=integration.trx"
+          --results-directory artifacts/test-results
+
+      # Testcontainers starts a real PostgreSQL 18 per run. The hosted runners ship a working
+      # Docker daemon, so no service container is declared here — the fixture owns the lifecycle,
+      # and declaring one too would mean two databases and a confusing connection string.
+      - name: Database tests (real PostgreSQL via Testcontainers)
+        run: >
+          dotnet test tests/Vendorea.PartnerConnect.DatabaseTests
+          --configuration Release --no-build
+          --logger "trx;LogFileName=database.trx"
+          --results-directory artifacts/test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/test-results
+          if-no-files-found: warn
+
+  migrations:
+    name: Migrations are consistent with the model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 8.*
+
+      - name: Build
+        run: dotnet build src/Vendorea.PartnerConnect.API --configuration Release
+
+      # Catches the mistake that has bitten this repo more than once: an entity or configuration
+      # change committed without the migration that realises it. A clean model produces an empty
+      # diff; anything else means the schema and the code disagree.
+      - name: Check for model changes with no migration
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project src/Vendorea.PartnerConnect.Persistence \
+            --startup-project src/Vendorea.PartnerConnect.API \
+            --configuration Release \
+            --no-build
