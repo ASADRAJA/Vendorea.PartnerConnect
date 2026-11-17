@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Vendorea.PartnerConnect.Application.Interfaces;
 using Vendorea.PartnerConnect.Contracts.Interfaces;
 using Vendorea.PartnerConnect.Domain.Entities;
+using Vendorea.PartnerConnect.Domain.Pricing;
 using Vendorea.PartnerConnect.Storage.Interfaces;
 using Vendorea.PartnerConnect.Storage.Models;
 
@@ -526,26 +527,27 @@ public class PriceFeedService : IPriceFeedService
     }
 
     /// <summary>
-    /// The cost the dealer actually transacts at.
-    ///
-    /// SPR's file carries two costs per line: <c>NetCostNonCcp</c> (column 78) is the undiscounted
-    /// reference, and <c>PromoLevel1Cost</c> (column 87) is the price under whichever pricing
-    /// program applies to that item for this account. Despite the name these are not quantity
-    /// breaks - promo levels 1, 2 and 3 hold identical quantities (always 1) and identical costs on
-    /// every row of every file examined, so level 1 is read and the other two ignored.
-    ///
-    /// Where no program applies the two columns are equal, which is why the fallback is safe rather
-    /// than merely defensive: a zero promo means "no program", and the reference cost is then the
-    /// real price. Validated against SPR's own backend on 17 items spanning 8 pricing programs,
-    /// 5 units of measure and discounts from 0% to 94% - 16 matched to the cent, the 17th explained
-    /// by a stale monthly file.
-    ///
-    /// Not handled here: dealers on SPR's CCP-3/CCP-4 programs should fall back to columns 79/80
-    /// instead of 78. Every account seen so far carries identical values in all three, so the
-    /// distinction is invisible today - but it needs addressing before a CCP dealer is onboarded.
+    /// The cost the dealer actually transacts at — see <see cref="SprDealerCost"/> for the rule
+    /// and SPR's wording behind it.
     /// </summary>
+    /// <remarks>
+    /// This path already resolved the contract cost correctly; it now defers to the shared rule so
+    /// the automated feed path cannot drift from it again. The two had different answers for the
+    /// same item: this one read the contract cost, the parser read the programme cost.
+    ///
+    /// The CCP programme is still passed as non-CCP here, which preserves this path's existing
+    /// behaviour exactly. The tier lives on the partner's transport configuration and is not
+    /// resolved on the upload path; every account seen so far carries identical values in CSTP1,
+    /// CSTP3 and CSTP4, so the distinction is invisible today. It needs addressing before a CCP
+    /// dealer is onboarded, and that gap is now recorded in one place rather than two.
+    /// </remarks>
     private static decimal ResolveEffectiveCost(SprPriceRecord record) =>
-        record.PromoLevel1Cost > 0 ? record.PromoLevel1Cost : record.NetCostNonCcp;
+        SprDealerCost.Resolve(
+            contractCost: record.PromoLevel1Cost,
+            nonCcpCost: record.NetCostNonCcp,
+            ccp3Cost: record.NetCostCcp3,
+            ccp4Cost: record.NetCostCcp4,
+            program: SprCcpProgram.NonCcp);
 
     public async Task<PriceFeedActionResult> RequestPushAsync(int uploadId, CancellationToken cancellationToken = default)
     {

@@ -5,6 +5,8 @@ using Vendorea.PartnerConnect.Canonical.Enums;
 using Vendorea.PartnerConnect.Canonical.Models;
 using Vendorea.PartnerConnect.PartnerAdapters.SPR.Models;
 
+using Vendorea.PartnerConnect.Domain.Pricing;
+
 namespace Vendorea.PartnerConnect.PartnerAdapters.SPR.Parsers;
 
 /// <summary>
@@ -170,13 +172,15 @@ public class SprPriceFeedParser
         string sourceDocumentId,
         SprConfiguration config)
     {
-        // Determine which cost to use based on dealer's pricing tier
-        var dealerCost = config.PricingTier switch
-        {
-            SprPricingTier.Ccp3 => record.NetCostCcp3,
-            SprPricingTier.Ccp4 => record.NetCostCcp4,
-            _ => record.NetCostNonCcp
-        };
+        // The contract cost when SPR supplied one, otherwise the programme cost for the dealer's
+        // CCP tier. This used to read only the CSTP family, which is the fallback — so every item
+        // with a negotiated price was costed at programme rate, 6-39% high. See SprDealerCost.
+        var dealerCost = SprDealerCost.Resolve(
+            contractCost: record.PromoLevel1Cost,
+            nonCcpCost: record.NetCostNonCcp,
+            ccp3Cost: record.NetCostCcp3,
+            ccp4Cost: record.NetCostCcp4,
+            program: ToCcpProgram(config.PricingTier));
 
         return new PriceUpdate
         {
@@ -200,6 +204,21 @@ public class SprPriceFeedParser
             PriceBreaks = BuildPriceBreaks(record)
         };
     }
+
+    /// <summary>
+    /// Maps the adapter's configured tier onto the domain programme.
+    /// </summary>
+    /// <remarks>
+    /// Two enums for one concept, because the cost rule lives in the domain where both consumers
+    /// of it can reach it, and the tier is adapter configuration. Mapping here is cheaper than
+    /// making the domain depend on the adapter.
+    /// </remarks>
+    private static SprCcpProgram ToCcpProgram(SprPricingTier tier) => tier switch
+    {
+        SprPricingTier.Ccp3 => SprCcpProgram.Ccp3,
+        SprPricingTier.Ccp4 => SprCcpProgram.Ccp4,
+        _ => SprCcpProgram.NonCcp
+    };
 
     /// <summary>
     /// Builds price breaks from promo levels if available.
