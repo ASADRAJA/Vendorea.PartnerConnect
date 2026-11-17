@@ -26,6 +26,23 @@ public class PriceFeedBatch
     public string? ErrorSummary { get; set; }
 
     public PartnerDocument? PartnerDocument { get; set; }
+    /// <summary>
+    /// True when this batch records a poll that found no file, so there is nothing worth keeping.
+    /// </summary>
+    /// <remarks>
+    /// The feed worker polls on a timer whether or not the partner has delivered anything. A poll
+    /// that finds no file is not a batch — it completed, it processed nothing, and no document was
+    /// ever created. Persisting one produced 21,801 identical empty rows on the test environment,
+    /// one every five minutes, which is table growth and would have buried the real batches the
+    /// first time SPR delivered a file.
+    ///
+    /// A **failed** poll is deliberately not covered by this: a failure is a real event and worth
+    /// a row. Only "there was nothing there" is discarded.
+    /// </remarks>
+    public bool RecordsNoFile =>
+        Status == FeedBatchStatus.Completed
+        && TotalItems == 0
+        && PartnerDocumentId is null;
 }
 
 public enum FeedBatchStatus

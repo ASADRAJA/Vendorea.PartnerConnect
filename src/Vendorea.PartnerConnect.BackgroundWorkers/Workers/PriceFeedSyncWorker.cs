@@ -107,7 +107,7 @@ public class PriceFeedSyncWorker : BackgroundService
 
         await Task.WhenAll(tasks);
 
-        _logger.LogInformation("Price feed sync completed at {Time}", DateTimeOffset.UtcNow);
+        _logger.LogDebug("Price feed sync cycle completed at {Time}", DateTimeOffset.UtcNow);
     }
 
     private async Task ProcessPartnerPriceFeedAsync(
@@ -116,13 +116,25 @@ public class PriceFeedSyncWorker : BackgroundService
         IPriceFeedBatchRepository batchRepo,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
+        // Debug, not Information: this runs on a timer for every partner whether or not anything
+        // has been delivered, so at Information it is one line per partner per cycle for ever.
+        _logger.LogDebug(
             "Processing price feed for partner {TradingPartnerId} ({PartnerCode})",
             partner.Id, partner.Code);
 
         try
         {
             var batch = await feedService.ProcessPriceFeedAsync(partner.Id, cancellationToken);
+
+            if (batch.RecordsNoFile)
+            {
+                // Nothing was delivered. A poll that found no file is not a batch, and recording
+                // one every cycle buries the real batches and grows the table for no information.
+                _logger.LogDebug(
+                    "No price feed available for partner {TradingPartnerId} ({PartnerCode}); nothing recorded.",
+                    partner.Id, partner.Code);
+                return;
+            }
 
             // Save the batch result
             await batchRepo.AddAsync(batch, cancellationToken);
