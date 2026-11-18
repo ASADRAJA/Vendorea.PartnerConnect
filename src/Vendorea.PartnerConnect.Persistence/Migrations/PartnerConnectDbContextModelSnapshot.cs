@@ -3735,6 +3735,9 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<int?>("TenantPartnerAccountId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("TradingPartnerId")
                         .HasColumnType("integer");
 
@@ -3756,6 +3759,10 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                     b.HasIndex("TradingPartnerId");
 
                     b.HasIndex("UploadedAt");
+
+                    b.HasIndex("TenantPartnerAccountId", "UploadedAt")
+                        .HasDatabaseName("IX_PriceFeedUploads_AccountLatest")
+                        .HasFilter("\"TenantPartnerAccountId\" IS NOT NULL");
 
                     b.HasIndex("DealerId", "TradingPartnerId", "FileHash")
                         .IsUnique()
@@ -9438,11 +9445,18 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
 
             modelBuilder.Entity("Vendorea.PartnerConnect.Domain.Entities.PriceFeedUpload", b =>
                 {
+                    b.HasOne("Vendorea.PartnerConnect.Domain.Entities.TenantPartnerAccount", "TenantPartnerAccount")
+                        .WithMany()
+                        .HasForeignKey("TenantPartnerAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Vendorea.PartnerConnect.Domain.Entities.TradingPartner", "TradingPartner")
                         .WithMany()
                         .HasForeignKey("TradingPartnerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("TenantPartnerAccount");
 
                     b.Navigation("TradingPartner");
                 });

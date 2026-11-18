@@ -19,6 +19,31 @@ public class PriceFeedUpload
     public int TradingPartnerId { get; set; }
 
     /// <summary>
+    /// Which of the dealer's partner accounts this price file belongs to.
+    /// </summary>
+    /// <remarks>
+    /// A dealer may hold several accounts with one partner — SPR calls these colon accounts,
+    /// distinguished by the digits after the period (<c>0033822.01</c>, <c>0033822.55</c>) — and
+    /// **each can have its own price file with its own negotiated costs**. Without this, "the
+    /// latest upload for this dealer" is ambiguous the moment a second account exists: loading
+    /// account <c>.55</c>'s file would make account <c>.01</c>'s prices disappear and <c>.55</c>'s
+    /// apply to everything.
+    ///
+    /// The account dimension lives here and nowhere else. Price records reach it through
+    /// <c>PriceFeedUploadId</c>, and reads already resolve the latest upload first and then filter
+    /// records by it — so putting the account on the record too would duplicate the truth for no
+    /// gain.
+    ///
+    /// Nullable because every existing upload predates colon-account support. A null means
+    /// "recorded before the account was captured", which is honest; it does not mean the default
+    /// account, and nothing should silently treat it as one.
+    /// </remarks>
+    public int? TenantPartnerAccountId { get; set; }
+
+    /// <summary>The account this file belongs to, where one was recorded.</summary>
+    public TenantPartnerAccount? TenantPartnerAccount { get; set; }
+
+    /// <summary>
     /// Navigation property to the trading partner.
     /// </summary>
     public TradingPartner? TradingPartner { get; set; }

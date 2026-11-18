@@ -54,6 +54,20 @@ public class PriceFeedUploadConfiguration : IEntityTypeConfiguration<PriceFeedUp
         // Composite index for dealer + partner queries
         builder.HasIndex(e => new { e.DealerId, e.TradingPartnerId, e.UploadedAt });
 
+        // The read that matters once a dealer holds several accounts: the latest upload for one
+        // account. Today's "latest for this dealer" query becomes "latest for this account", and
+        // this is the index behind it.
+        builder.HasIndex(e => new { e.TenantPartnerAccountId, e.UploadedAt })
+            .HasDatabaseName("IX_PriceFeedUploads_AccountLatest")
+            .HasFilter("\"TenantPartnerAccountId\" IS NOT NULL");
+
+        // Restrict, not Cascade. Removing an account must not silently delete its price history
+        // — and the price records hanging off these uploads would go with it.
+        builder.HasOne(e => e.TenantPartnerAccount)
+            .WithMany()
+            .HasForeignKey(e => e.TenantPartnerAccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Prevent the same file content from being imported *successfully* more than once
         // per dealer/partner. Filtered so that failed/empty attempts (any other status) do
         // not occupy the unique slot and can therefore be retried.
