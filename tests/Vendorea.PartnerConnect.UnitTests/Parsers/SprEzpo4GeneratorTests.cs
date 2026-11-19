@@ -226,12 +226,27 @@ public class SprEzpo4GeneratorTests
     }
 
     [Fact]
-    public void SprConfiguration_XmlExchangeDefaultsTo50022_OtherFlowsUnchanged()
+    public void SprConfiguration_DefaultsBothSftpFlowsTo50022()
     {
+        // Both flows connect to the same host with the same credentials, and gist.sprich.com
+        // answers on 50022 only - port 22 there does not answer at all. This test asserted
+        // SftpPort == 22 while the price feed was timing out on every poll, which is how a
+        // green test suite coexisted with 86 days of failed batches: it pinned the defect.
         var config = new SprConfiguration();
-        // 50022 is scoped to the SPR XML order-exchange transport only.
+
         config.SprXmlSftpPort.Should().Be(50022);
-        // General SPR SFTP flows (price/inventory feeds) keep the standard default.
-        config.SftpPort.Should().Be(22);
+        config.SftpPort.Should().Be(50022);
+    }
+
+    [Fact]
+    public void SprConfiguration_SftpPortIsOverridablePerPartner()
+    {
+        // The default is right for SPR today, but deployed configuration sets it explicitly
+        // rather than relying on the default, so the override has to keep working.
+        var config = SprConfiguration.FromJson(
+            """{"SftpHost":"gist.sprich.com","SftpPort":2222,"SprXmlSftpPort":50022}""");
+
+        config.SftpPort.Should().Be(2222);
+        config.SprXmlSftpPort.Should().Be(50022);
     }
 }

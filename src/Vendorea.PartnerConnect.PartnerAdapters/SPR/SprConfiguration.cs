@@ -14,10 +14,25 @@ public class SprConfiguration
     public string SftpHost { get; set; } = string.Empty;
 
     /// <summary>
-    /// SFTP port for the general SPR file flows (price feed, inventory feed). Default 22.
-    /// The SPR XML order-exchange transport uses <see cref="SprXmlSftpPort"/> instead.
+    /// SFTP port for the general SPR file flows (price feed, inventory feed).
     /// </summary>
-    public int SftpPort { get; set; } = 22;
+    /// <remarks>
+    /// 50022, not 22. This defaulted to 22 for months and every price-feed poll timed out
+    /// against it — 21,802 failed batches over 86 days, each one "Connection failed to establish
+    /// within 30000 milliseconds".
+    ///
+    /// The reason it was wrong is worth keeping: when the XML order exchange was found to need
+    /// 50022, the non-standard port was scoped to that flow alone "so other SPR SFTP flows are
+    /// unaffected". But both flows build their connection from the same <see cref="SftpHost"/>,
+    /// the same <see cref="SftpUsername"/> and the same password — they are one SFTP server, and
+    /// gist.sprich.com answers on 50022 only. Port 22 there refuses to answer at all. So scoping
+    /// the port to one flow did not leave the other unaffected; it left it unable to connect.
+    ///
+    /// <see cref="SprXmlSftpPort"/> is kept separate rather than merged because it is already
+    /// set explicitly in deployed configuration, and a port is in principle per-flow even though
+    /// for SPR it is not. If SPR ever splits the two, the seam is still here.
+    /// </remarks>
+    public int SftpPort { get; set; } = 50022;
 
     /// <summary>
     /// SFTP username.

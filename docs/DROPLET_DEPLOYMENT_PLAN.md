@@ -304,16 +304,15 @@ after Phase 1. Backups of both env files are at `/root/env-backup-pc-api.env.202
 
 Stated so the post-deploy state is not mistaken for a clean one.
 
-- **The SPR SFTP connection is still broken.** `gist.sprich.com:22` times out; port `50022`
-  answers as "SFTP Server". The fix is `"SftpPort": 50022` in
-  `TradingPartners.TransportConfigJson` (and arguably the code default), and it is **not** in this
-  payload. Until it lands, `PriceFeedSyncWorker` keeps failing every cycle.
-- **The 22,338 empty `PriceFeedBatch` rows keep accumulating.** They are `Status = Failed` with
-  `Connection failed to establish within 30000 milliseconds`, not no-op polls. The `RecordsNoFile`
-  guard in this payload requires `Completed`, so it correctly does not suppress them — they are
-  the record of an integration that has been down for 86 days. The earlier proposed `DELETE`
-  matched 0 rows, which is the right outcome; a `DELETE` written on `TotalItems = 0` alone would
-  have destroyed that evidence.
+- ~~**The SPR SFTP connection is still broken.**~~ **Fixed 2026-11-19, after this deployment** —
+  see `docs/SPR_SFTP_PORT_AND_PATH.md`. The port was only half of it; the price-feed path was
+  wrong too.
+- **The 22,344 empty `PriceFeedBatch` rows remain**, but they have **stopped growing** as of
+  2026-11-19 05:00 UTC. They are `Status = Failed` with `Connection failed to establish within
+  30000 milliseconds`, not no-op polls, so the `RecordsNoFile` guard correctly never suppressed
+  them — they are the record of an integration that was down for 86 days, and they are worth
+  keeping as that record. The earlier proposed `DELETE` matched 0 rows, which was the right
+  outcome; a `DELETE` written on `TotalItems = 0` alone would have destroyed the evidence.
 - **The SFTP feed path still discards what it parses.** It counts `parseResult.Items.Count` and
   persists nothing, and `FeedProcessingService` fabricates the counts it reports. Fixing the port
   without fixing this yields successful batches that store no prices.
