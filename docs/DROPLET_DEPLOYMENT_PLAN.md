@@ -107,11 +107,17 @@ Run from the Mac. `deploy.sh` lives in the Merchant360 repo and finds this repo 
 The nightly set is up to 24 hours old. Take a point-in-time dump so rollback does not lose a
 day:
 
+`/var/backups/merchant360` is `0700 root`, so `pg_dump --file` run as the `postgres` user cannot
+create a file in it — it fails with `Permission denied`. Redirect stdout as root instead, which is
+what `backup.sh:47` does and why:
+
 ```bash
-ssh root@164.90.153.14 \
-  'sudo -u postgres pg_dump -Fc -d partnerconnect \
-     -f /var/backups/merchant360/pre-deploy-$(date -u +%Y%m%d-%H%M%S).dump && \
-   ls -la /var/backups/merchant360/pre-deploy-*.dump'
+ssh root@164.90.153.14 'set -e
+TS=$(date -u +%Y%m%d-%H%M%S)
+sudo -u postgres pg_dump --format=custom --compress=6 partnerconnect \
+  > /var/backups/merchant360/pre-deploy-$TS.dump
+chmod 600 /var/backups/merchant360/pre-deploy-$TS.dump
+sha256sum /var/backups/merchant360/pre-deploy-$TS.dump'
 ```
 
 This writes a new file; it does not modify or delete any retained set.
@@ -330,3 +336,58 @@ operational approval"* — none of §3 runs until that approval is given.
 
 It does **not** rotate any credential, delete or modify any retained backup, or replace the backup
 process.
+
+---
+
+## 8. Execution record — 2026-11-19
+
+Executed on approval. Every step of §3 ran in order; §6 remains accurate.
+
+**Rollback point**, both artefacts stamped `20261119-044105`:
+
+- `/var/backups/merchant360/pre-deploy-20261119-044105.dump` — 206,455,696 bytes,
+  sha256 `04af34225cbfa28a747e90702e330e58d683b6407ac8a059fd84b0ac9f04b75c`
+- `/root/pc-rollback-20261119-044105.tar.gz` — 26,608,768 bytes, the four `/opt/merchant360`
+  directories as they were
+
+**Migrations.** The generated script was read before it ran: 416 lines, 12 `CREATE TABLE`, 14
+`INSERT`, and **two `DROP INDEX`**. The drops were checked rather than assumed — both remove an
+index created earlier in the same script (line 69 → 249, line 215 → 281) on a table the same
+script creates, so nothing pre-existing was dropped. The only pre-existing tables touched were
+`PriceFeedUploads` (nullable column, filtered index, FK) and `ScheduledJobs` (two seed inserts,
+`ON CONFLICT DO NOTHING`). All 10 applied; EF reported `Done.`
+
+**Post-migration state, before binaries** — schema at `AddPriceFeedUploadAccount`; `ScheduledJobs`
+5 rows, `spr-inventory` still enabled; `AMAZON_SP` enabled, **`AMAZON_BUSINESS` disabled** (the
+hand-edited `IsEnabled` column survived, confirmed in the generated SQL as well as the table);
+4 `PriceFeedUploads` rows, 0 with an account id. `health.sh` green with the *old* binaries still
+serving, confirming the additive-schema premise in practice.
+
+**Binaries.** `deploy.sh 164.90.153.14 pc-api pc-workers pc-adminportal pc-customerportal`, exit
+0. Both DLLs now stamped `2026-11-19 04:43`. All four `active`.
+
+**Verification.**
+
+| Check | Result |
+|---|---|
+| `systemctl is-active` ×4 | `active active active active` |
+| `pc-api /health` | `200` |
+| Encryption key, first exercise since being set | No `EncryptionKey` / `CredentialEncryption` line in the logs — accepted |
+| `Sales-order polling is disabled.` | Present, `04:43:50` |
+| `IFeedProcessingService` occurrences | **0** (was every 5 minutes) |
+| Warnings/errors, all four units, since deploy | **none** |
+| `health.sh` | green; 14/120 connections; 4,645 MB available, slightly better than before |
+| `IntegrationConnections` / `SalesOrders` | 0 / 0 — nothing activated |
+
+`m360 gateway 000` in `health.sh` is expected and unrelated: it is deliberately not deployed.
+
+**One command in this plan was wrong as written** and is corrected above: Step 0's `pg_dump -f`
+into a `0700 root` directory fails as the `postgres` user. It was caught on the first run, before
+anything had changed.
+
+**Still outstanding, unchanged by this deployment:** `PriceFeedBatches` stands at 22,341 with the
+newest at `04:38:50`, i.e. pre-deploy; the SPR SFTP port is still 22, so failed batches resume
+accumulating on the next cycle. §6 lists the rest.
+
+**Step 6 remains**: after 04:15 UTC, confirm the four new jobs ran and no-opped —
+`SELECT "JobKey", "LastRunAt", "LastRunStatus", "LastRunDetail" FROM "ScheduledJobs"`.
