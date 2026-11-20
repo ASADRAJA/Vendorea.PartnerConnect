@@ -116,7 +116,10 @@
                                         <td>@tenant.PartnerAccountCount</td>
                                         <td>@Tz.Format(tenant.CreatedAt, "d")</td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline-info" @onclick="() => ShowAccountsModal(tenant)" title="Partner Accounts">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowDetailsModal(tenant)" title="Tenant details">
+                                                Details
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info ms-1" @onclick="() => ShowAccountsModal(tenant)" title="Partner Accounts">
                                                 <span class="oi oi-key"></span>
                                             </button>
                                             <AuthorizeView Policy="RequireOperator" Context="auth">
@@ -203,6 +206,89 @@
     </div>
 }
 
+@* Tenant Details Modal *@
+@if (showDetailsModal && selectedTenant != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@selectedTenant.Name <small class="text-muted">(@selectedTenant.Code)</small></h5>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-muted text-uppercase small">Identity</h6>
+                            <dl class="row mb-3">
+                                <dt class="col-sm-5">Organization</dt>
+                                <dd class="col-sm-7">@(selectedTenant.OrganizationName ?? "-")</dd>
+                                <dt class="col-sm-5">Code</dt>
+                                <dd class="col-sm-7">@selectedTenant.Code</dd>
+                                <dt class="col-sm-5">External ID</dt>
+                                <dd class="col-sm-7">@(selectedTenant.ExternalId ?? "-")</dd>
+                                <dt class="col-sm-5">Status</dt>
+                                <dd class="col-sm-7">
+                                    <span class="badge @(selectedTenant.Status == "Active" ? "bg-success" : "bg-secondary")">@selectedTenant.Status</span>
+                                    @if (!selectedTenant.IsEffectivelyActive && selectedTenant.Status == "Active")
+                                    {
+                                        <span class="badge bg-warning text-dark ms-1" title="The parent organization is not Active">Org @selectedTenant.OrganizationStatus</span>
+                                    }
+                                </dd>
+                                <dt class="col-sm-5">Default tenant</dt>
+                                <dd class="col-sm-7">@(selectedTenant.IsDefault ? "Yes" : "No")</dd>
+                            </dl>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted text-uppercase small">Contact</h6>
+                            <dl class="row mb-3">
+                                <dt class="col-sm-5">Name</dt>
+                                <dd class="col-sm-7">@(selectedTenant.ContactName ?? "-")</dd>
+                                <dt class="col-sm-5">Email</dt>
+                                <dd class="col-sm-7">@(selectedTenant.ContactEmail ?? "-")</dd>
+                                <dt class="col-sm-5">Phone</dt>
+                                <dd class="col-sm-7">@(selectedTenant.ContactPhone ?? "-")</dd>
+                            </dl>
+                            <h6 class="text-muted text-uppercase small">Record</h6>
+                            <dl class="row mb-0">
+                                <dt class="col-sm-5">Partner accounts</dt>
+                                <dd class="col-sm-7">@selectedTenant.PartnerAccountCount</dd>
+                                <dt class="col-sm-5">Created</dt>
+                                <dd class="col-sm-7">@Tz.Format(selectedTenant.CreatedAt, "g")</dd>
+                                <dt class="col-sm-5">Updated</dt>
+                                <dd class="col-sm-7">@(selectedTenant.UpdatedAt.HasValue ? Tz.Format(selectedTenant.UpdatedAt.Value, "g") : "-")</dd>
+                            </dl>
+                        </div>
+                    </div>
+
+                    <h6 class="text-muted text-uppercase small">Order processing</h6>
+                    @if (selectedTenant.IsAutomaticOrderProcessing)
+                    {
+                        <div class="alert alert-warning mb-0">
+                            <strong>Automatic.</strong> Orders for this tenant are acknowledged on arrival and
+                            sent to the partner without an admin step.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-secondary mb-0">
+                            <strong>Manual.</strong> An admin acknowledges each order and then transmits it to the partner.
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Close</button>
+                    <AuthorizeView Policy="RequireOperator" Context="auth">
+                        <button type="button" class="btn btn-primary" @onclick="() => ShowEditFromDetails(selectedTenant)">
+                            Edit
+                        </button>
+                    </AuthorizeView>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @* Edit Tenant Modal *@
 @if (showEditModal && selectedTenant != null)
 {
@@ -230,6 +316,26 @@
                     <div class="mb-3">
                         <label class="form-label">External ID</label>
                         <input type="text" class="form-control" @bind="updateRequest.ExternalId" placeholder="e.g., M360 Tenant ID" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Order Processing</label>
+                        <select class="form-select" @bind="updateRequest.OrderProcessingMode">
+                            <option value="Manual">Manual</option>
+                            <option value="Automatic">Automatic</option>
+                        </select>
+                        @if (updateRequest.OrderProcessingMode == "Automatic")
+                        {
+                            <div class="alert alert-warning mt-2 mb-0 py-2 small">
+                                Orders for this tenant will be acknowledged and sent to the partner
+                                with no admin review. Nobody sees the order before the partner does.
+                            </div>
+                        }
+                        else
+                        {
+                            <small class="text-muted">
+                                An admin acknowledges each order and then transmits it. This is the default.
+                            </small>
+                        }
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -378,6 +484,7 @@
 
     // Modals
     private bool showCreateModal = false;
+    private bool showDetailsModal = false;
     private bool showEditModal = false;
     private bool showAccountsModal = false;
     private bool showAddAccountModal = false;
@@ -452,11 +559,30 @@
         showCreateModal = true;
     }
 
+    private void ShowDetailsModal(TenantDto tenant)
+    {
+        selectedTenant = tenant;
+        showDetailsModal = true;
+    }
+
     private void ShowEditModal(TenantDto tenant)
     {
         selectedTenant = tenant;
-        updateRequest = new UpdateTenantRequest { Name = tenant.Name, ExternalId = tenant.ExternalId };
+        // Seeded from the tenant's current mode, so saving the form without touching the select
+        // cannot change how its orders are dispatched.
+        updateRequest = new UpdateTenantRequest
+        {
+            Name = tenant.Name,
+            ExternalId = tenant.ExternalId,
+            OrderProcessingMode = tenant.OrderProcessingMode
+        };
         showEditModal = true;
+    }
+
+    private void ShowEditFromDetails(TenantDto tenant)
+    {
+        showDetailsModal = false;
+        ShowEditModal(tenant);
     }
 
     private async Task ShowAccountsModal(TenantDto tenant)
@@ -499,6 +625,7 @@
     private void CloseModals()
     {
         showCreateModal = false;
+        showDetailsModal = false;
         showEditModal = false;
         showAccountsModal = false;
         showAddAccountModal = false;

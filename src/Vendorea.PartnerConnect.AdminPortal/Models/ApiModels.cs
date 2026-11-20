@@ -690,9 +690,21 @@ public class TenantDto
     public bool IsDefault { get; set; }
     public int PartnerAccountCount { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string? ContactFirstName { get; set; }
+    public string? ContactLastName { get; set; }
+    public string? ContactPhone { get; set; }
+    public string OrderProcessingMode { get; set; } = "Manual";
+    public DateTime? UpdatedAt { get; set; }
 
     /// <summary>A tenant is only effectively active if it is Active AND its organization is Active.</summary>
     public bool IsEffectivelyActive => Status == "Active" && OrganizationStatus == "Active";
+
+    /// <summary>Orders for this tenant go to the supplier without an admin step.</summary>
+    public bool IsAutomaticOrderProcessing => OrderProcessingMode == "Automatic";
+
+    public string? ContactName =>
+        string.Join(" ", new[] { ContactFirstName, ContactLastName }
+            .Where(n => !string.IsNullOrWhiteSpace(n))) is { Length: > 0 } name ? name : null;
 }
 
 public class TenantListResult
@@ -716,6 +728,7 @@ public class UpdateTenantRequest
 {
     public string Name { get; set; } = string.Empty;
     public string? ExternalId { get; set; }
+    public string? OrderProcessingMode { get; set; }
 }
 
 // Tenant Partner Account Models

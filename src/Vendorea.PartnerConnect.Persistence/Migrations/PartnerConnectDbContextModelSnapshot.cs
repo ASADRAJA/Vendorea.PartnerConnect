@@ -8346,6 +8346,13 @@ namespace Vendorea.PartnerConnect.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("OrderProcessingMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Manual");
+
                     b.Property<int>("OrganizationId")
                         .HasColumnType("integer");
 

@@ -17,6 +17,7 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
     private readonly ITenantRepository _tenantRepository;
     private readonly ITenantPartnerAccountRepository _accountRepository;
     private readonly IPartnerOrderResolutionService _resolutionService;
+    private readonly IOrderAutoProcessingService _autoProcessing;
     private readonly ILogger<SupplierOrderIntakeService> _logger;
 
     public SupplierOrderIntakeService(
@@ -25,6 +26,7 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
         ITenantRepository tenantRepository,
         ITenantPartnerAccountRepository accountRepository,
         IPartnerOrderResolutionService resolutionService,
+        IOrderAutoProcessingService autoProcessing,
         ILogger<SupplierOrderIntakeService> logger)
     {
         _orderRepository = orderRepository;
@@ -32,6 +34,7 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
         _tenantRepository = tenantRepository;
         _accountRepository = accountRepository;
         _resolutionService = resolutionService;
+        _autoProcessing = autoProcessing;
         _logger = logger;
     }
 
@@ -189,6 +192,11 @@ public class SupplierOrderIntakeService : ISupplierOrderIntakeService
         _logger.LogInformation(
             "Created order OrderId={OrderId} for CorrelationId={CorrelationId}, Partner={PartnerCode}",
             order.Id, correlationId, requirementsResult.Configuration!.PartnerCode);
+
+        // Step 10: acknowledge and queue dispatch if the tenant is set to Automatic. This is the
+        // path real orders arrive on, so it is the one the setting exists for. It cannot fail the
+        // submission - Merchant360 is about to be told the order was accepted, and it was.
+        await _autoProcessing.TryAutoProcessAsync(order, cancellationToken);
 
         // Collect all warnings
         var allWarnings = new List<string>();

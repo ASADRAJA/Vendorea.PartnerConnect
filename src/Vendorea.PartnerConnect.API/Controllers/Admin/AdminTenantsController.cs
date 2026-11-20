@@ -138,9 +138,35 @@ public class AdminTenantsController : ControllerBase
         tenant.Name = request.Name;
         tenant.ExternalId = request.ExternalId;
 
+        var previousMode = tenant.OrderProcessingMode;
+        if (!string.IsNullOrWhiteSpace(request.OrderProcessingMode))
+        {
+            if (!TryParseOrderProcessingMode(request.OrderProcessingMode, out var mode))
+            {
+                return BadRequest(new
+                {
+                    error = $"Order processing mode must be one of: {string.Join(", ", Enum.GetNames<OrderProcessingMode>())}"
+                });
+            }
+
+            tenant.OrderProcessingMode = mode;
+        }
+
+        tenant.UpdatedAt = DateTime.UtcNow;
         await _tenantRepository.UpdateAsync(tenant, cancellationToken);
 
         _logger.LogInformation("Updated tenant {TenantId}", id);
+
+        // Logged separately, and at Information with both values, because this is the setting that
+        // decides whether a purchase order reaches a real supplier without anyone looking at it.
+        // When an order turns out to have gone out unreviewed, this line is the record of who
+        // enabled that and when.
+        if (tenant.OrderProcessingMode != previousMode)
+        {
+            _logger.LogInformation(
+                "Tenant {TenantId} order processing changed from {PreviousMode} to {NewMode}",
+                id, previousMode, tenant.OrderProcessingMode);
+        }
 
         return NoContent();
     }
@@ -335,6 +361,30 @@ public class AdminTenantsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Parses an order-processing mode by name only.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <c>Enum.TryParse</c>, which also accepts the underlying numeric value:
+    /// it parses "1" as Automatic and "0" as Manual. A client that coerced a boolean or an index
+    /// into the field would therefore switch a tenant to unreviewed dispatch and get a 204 back.
+    /// Names are the contract; anything else is rejected so the caller finds out.
+    /// </remarks>
+    private static bool TryParseOrderProcessingMode(string value, out OrderProcessingMode mode)
+    {
+        foreach (var candidate in Enum.GetValues<OrderProcessingMode>())
+        {
+            if (string.Equals(candidate.ToString(), value.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                mode = candidate;
+                return true;
+            }
+        }
+
+        mode = default;
+        return false;
+    }
+
     private static TenantDto MapToDto(Tenant tenant, int accountCount)
     {
         return new TenantDto
@@ -350,7 +400,12 @@ public class AdminTenantsController : ControllerBase
             OrganizationStatus = tenant.Organization?.Status.ToString() ?? string.Empty,
             IsDefault = tenant.IsDefault,
             PartnerAccountCount = accountCount,
-            CreatedAt = tenant.CreatedAt
+            CreatedAt = tenant.CreatedAt,
+            ContactFirstName = tenant.ContactFirstName,
+            ContactLastName = tenant.ContactLastName,
+            ContactPhone = tenant.ContactPhone,
+            OrderProcessingMode = tenant.OrderProcessingMode.ToString(),
+            UpdatedAt = tenant.UpdatedAt
         };
     }
 }
@@ -390,6 +445,17 @@ public class TenantDto
     public bool IsDefault { get; set; }
     public int PartnerAccountCount { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    // --- detail-view fields ---
+
+    public string? ContactFirstName { get; set; }
+    public string? ContactLastName { get; set; }
+    public string? ContactPhone { get; set; }
+
+    /// <summary>"Manual" or "Automatic" — whether orders wait for an admin before dispatch.</summary>
+    public string OrderProcessingMode { get; set; } = nameof(Domain.Entities.OrderProcessingMode.Manual);
+
+    public DateTime? UpdatedAt { get; set; }
 }
 
 public class TenantListResult
@@ -413,6 +479,13 @@ public class UpdateTenantRequest
 {
     public string Name { get; set; } = string.Empty;
     public string? ExternalId { get; set; }
+
+    /// <summary>
+    /// "Manual" or "Automatic". Omitted or empty leaves the tenant's current mode alone, so a
+    /// client that does not know about this field cannot switch a tenant to Automatic by
+    /// accident — which is the direction that matters.
+    /// </summary>
+    public string? OrderProcessingMode { get; set; }
 }
 
 public class TenantPartnerAccountDto

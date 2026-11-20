@@ -44,6 +44,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IQuarantineService, QuarantineService>();
         services.AddScoped<IOutboxService, OutboxService>();
         services.AddScoped<IOutboxMessageProcessor, DefaultOutboxMessageProcessor>();
+        // Resolved lazily: the outbound order service transitively depends on the outbox, so
+        // injecting it directly into the outbox processor is a startup-time circular dependency.
+        services.AddScoped<Func<ISprOutboundOrderService?>>(
+            sp => () => sp.GetService<ISprOutboundOrderService>());
         services.AddScoped<IAuditService, AuditService>();
         services.AddSingleton<ICredentialProtector, Security.AesCredentialProtector>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
@@ -56,6 +60,7 @@ public static class ServiceCollectionExtensions
         // Multi-Tenant and Order Services
         services.AddScoped<ITenantManagementService, TenantManagementService>();
         services.AddScoped<IOrderService, OrderService>();
+        services.AddScoped<IOrderAutoProcessingService, OrderAutoProcessingService>();
 
         // Integration Order Intake Services
         services.AddScoped<ISupplierOrderIntakeService, SupplierOrderIntakeService>();

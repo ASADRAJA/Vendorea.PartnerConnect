@@ -371,6 +371,7 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMerchant360Client _merchant360Client;
     private readonly IIntegrationEventDeliveryService? _integrationEvents;
+    private readonly Func<ISprOutboundOrderService?>? _outboundOrders;
     private readonly SprSimulationOptions _simulation;
     private readonly ILogger<DefaultOutboxMessageProcessor> _logger;
 
@@ -386,11 +387,13 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
         IMerchant360Client merchant360Client,
         Microsoft.Extensions.Options.IOptions<SprSimulationOptions> simulationOptions,
         ILogger<DefaultOutboxMessageProcessor> logger,
-        IIntegrationEventDeliveryService? integrationEvents = null)
+        IIntegrationEventDeliveryService? integrationEvents = null,
+        Func<ISprOutboundOrderService?>? outboundOrders = null)
     {
         _httpClientFactory = httpClientFactory;
         _merchant360Client = merchant360Client;
         _integrationEvents = integrationEvents;
+        _outboundOrders = outboundOrders;
         _simulation = simulationOptions.Value;
         _logger = logger;
     }
@@ -442,6 +445,10 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
 
             case SalesOrderEventPublisher.OutboxMessageType:
                 await DeliverIntegrationEventAsync(message, cancellationToken);
+                break;
+
+            case OrderAutoProcessingMessageTypes.Transmit:
+                await TransmitAutomaticOrderAsync(message, cancellationToken);
                 break;
 
             default:
@@ -594,5 +601,75 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
             message.Id);
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Dispatches an automatically-processed order to the supplier.
+    /// </summary>
+    /// <remarks>
+    /// Whether this throws is the whole design. The outbox retries a message whose handler throws
+    /// and retires one that returns, so the two kinds of failure have to be told apart:
+    ///
+    /// A bad order — generation or strict XSD validation failed, the order vanished, or it has
+    /// moved to a status that cannot be transmitted — will fail identically on every retry. It is
+    /// logged at Error and the message is retired, because burning the retry budget changes
+    /// nothing and buries the one line that says what is wrong. The order keeps its Acknowledged
+    /// status and an admin can act on it.
+    ///
+    /// An unreachable supplier is transient and throws, so the outbox backs off and tries again.
+    /// This is the case that matters: it is what stops a temporary SFTP outage from silently
+    /// dropping orders, which is the risk Automatic introduces.
+    /// </remarks>
+    private async Task TransmitAutomaticOrderAsync(
+        OutboxMessage message, CancellationToken cancellationToken)
+    {
+        if (CaptureInsteadOfDeliver(message)) return;
+
+        // Resolved here rather than injected, because the outbound order service needs the SPR XML
+        // document service, which needs the outbox - so taking it in the constructor is a circular
+        // dependency that fails at startup, not at use. Deferring the resolution to the one handler
+        // that needs it breaks the cycle without the processor knowing about the graph.
+        var outboundOrders = _outboundOrders?.Invoke();
+
+        if (outboundOrders is null)
+        {
+            // Not registered in this host. Throwing would retry forever against a process that
+            // can never serve it, so this is retired with a warning instead.
+            _logger.LogWarning(
+                "No outbound order service is registered; cannot transmit automatic order for outbox message {MessageId}",
+                message.Id);
+            return;
+        }
+
+        var payload = JsonSerializer.Deserialize<OrderAutoTransmitPayload>(
+            message.Payload, _deserializeOptions);
+
+        if (payload is null || payload.OrderId == 0)
+        {
+            _logger.LogError(
+                "Outbox message {MessageId} carries no order id; cannot transmit", message.Id);
+            return;
+        }
+
+        var result = await outboundOrders.TransmitOrderAsync(payload.OrderId, cancellationToken);
+
+        if (result.Success)
+        {
+            _logger.LogInformation(
+                "Transmitted order {OrderId} automatically (document {DocumentId})",
+                payload.OrderId, result.DocumentId);
+            return;
+        }
+
+        if (result.NotFound || result.InvalidState || result.ValidationFailed)
+        {
+            _logger.LogError(
+                "Automatic transmission of order {OrderId} failed permanently and will not be retried: {Error} {Errors}",
+                payload.OrderId, result.ErrorMessage, string.Join("; ", result.Errors));
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Automatic transmission of order {payload.OrderId} failed: {result.ErrorMessage}");
     }
 }

@@ -41,6 +41,16 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasMaxLength(100)
             .HasColumnType("citext");
 
+        // Stored as text, with a database default, so a row written by anything that does not know
+        // about this column still comes out Manual rather than empty. The CLR default is Manual
+        // too — they have to agree, or existing tenants would silently change behaviour on the
+        // first save.
+        builder.Property(e => e.OrderProcessingMode)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired()
+            .HasDefaultValue(OrderProcessingMode.Manual);
+
         // Unique constraint: Code must be unique within organization
         builder.HasIndex(e => new { e.OrganizationId, e.Code })
             .IsUnique();

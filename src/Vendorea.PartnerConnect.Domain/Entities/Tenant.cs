@@ -63,6 +63,16 @@ public class Tenant
     /// </summary>
     public string? ExternalId { get; set; }
 
+    /// <summary>
+    /// Whether this tenant's submitted orders wait for an admin, or go to the supplier on their own.
+    /// </summary>
+    /// <remarks>
+    /// Manual is the default, and deliberately so: Automatic removes the only human gate between
+    /// an order arriving and a purchase order reaching a real supplier. A tenant has to be opted
+    /// in by an operator, never by omission.
+    /// </remarks>
+    public OrderProcessingMode OrderProcessingMode { get; set; } = OrderProcessingMode.Manual;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
@@ -91,4 +101,20 @@ public enum TenantStatus
     /// Inactive/disabled.
     /// </summary>
     Inactive
+}
+
+/// <summary>
+/// How a tenant's submitted orders reach the supplier.
+/// </summary>
+public enum OrderProcessingMode
+{
+    /// <summary>
+    /// An admin acknowledges the order and then transmits it. Today's behaviour, and the default.
+    /// </summary>
+    Manual,
+
+    /// <summary>
+    /// The order is acknowledged on arrival and its transmission is queued, with no admin step.
+    /// </summary>
+    Automatic
 }

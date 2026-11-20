@@ -9,15 +9,18 @@ public class OrderService : IOrderService
 {
     private readonly IOrderRepository _orderRepository;
     private readonly ITenantManagementService _tenantManagementService;
+    private readonly IOrderAutoProcessingService _autoProcessing;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
         IOrderRepository orderRepository,
         ITenantManagementService tenantManagementService,
+        IOrderAutoProcessingService autoProcessing,
         ILogger<OrderService> logger)
     {
         _orderRepository = orderRepository;
         _tenantManagementService = tenantManagementService;
+        _autoProcessing = autoProcessing;
         _logger = logger;
     }
 
@@ -109,6 +112,11 @@ public class OrderService : IOrderService
         _logger.LogInformation(
             "Created order {OrderId} (PO: {PoNumber}) for tenant {TenantId} with {LineCount} lines, total: {Total}",
             order.Id, order.PoNumber, order.TenantId, order.Lines.Count, order.TotalAmount);
+
+        // 7. Acknowledge and queue dispatch if the tenant is set to Automatic. This never throws
+        // and never fails the creation: the order is already saved and the caller is about to be
+        // told so.
+        await _autoProcessing.TryAutoProcessAsync(order, cancellationToken);
 
         return OrderResult.Succeeded(order);
     }

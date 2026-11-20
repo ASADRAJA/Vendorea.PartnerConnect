@@ -17,6 +17,7 @@ public class SupplierOrderIntakeServiceTests
     private readonly Mock<ITenantPartnerAccountRepository> _accountRepoMock;
     private readonly Mock<IPartnerOrderResolutionService> _resolutionServiceMock;
     private readonly Mock<ILogger<SupplierOrderIntakeService>> _loggerMock;
+    private readonly Mock<IOrderAutoProcessingService> _autoProcessingMock;
     private readonly SupplierOrderIntakeService _service;
 
     public SupplierOrderIntakeServiceTests()
@@ -26,6 +27,7 @@ public class SupplierOrderIntakeServiceTests
         _tenantRepoMock = new Mock<ITenantRepository>();
         _accountRepoMock = new Mock<ITenantPartnerAccountRepository>();
         _resolutionServiceMock = new Mock<IPartnerOrderResolutionService>();
+        _autoProcessingMock = new Mock<IOrderAutoProcessingService>();
         _loggerMock = new Mock<ILogger<SupplierOrderIntakeService>>();
 
         _service = new SupplierOrderIntakeService(
@@ -34,6 +36,7 @@ public class SupplierOrderIntakeServiceTests
             _tenantRepoMock.Object,
             _accountRepoMock.Object,
             _resolutionServiceMock.Object,
+            _autoProcessingMock.Object,
             _loggerMock.Object);
     }
 
