@@ -315,7 +315,11 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">External ID</label>
-                        <input type="text" class="form-control" @bind="updateRequest.ExternalId" placeholder="e.g., M360 Tenant ID" />
+                        <input type="text" class="form-control" value="@(selectedTenant.ExternalId ?? "-")" disabled />
+                        <small class="text-muted">
+                            The Merchant360 merchant id. Orders, prices and callbacks are routed by it,
+                            so it cannot be changed here.
+                        </small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Order Processing</label>
@@ -568,12 +572,14 @@
     private void ShowEditModal(TenantDto tenant)
     {
         selectedTenant = tenant;
-        // Seeded from the tenant's current mode, so saving the form without touching the select
-        // cannot change how its orders are dispatched.
+        // Mode is seeded from the tenant's current value, so saving the form without touching the
+        // select cannot change how its orders are dispatched.
+        //
+        // ExternalId is deliberately not sent. It is the Merchant360 merchant id and is read-only;
+        // leaving it unset means the server keeps what it has.
         updateRequest = new UpdateTenantRequest
         {
             Name = tenant.Name,
-            ExternalId = tenant.ExternalId,
             OrderProcessingMode = tenant.OrderProcessingMode
         };
         showEditModal = true;

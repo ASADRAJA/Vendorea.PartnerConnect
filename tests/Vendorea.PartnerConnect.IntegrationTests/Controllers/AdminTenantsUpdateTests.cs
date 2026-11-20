@@ -10,16 +10,21 @@ using Xunit;
 namespace Vendorea.PartnerConnect.IntegrationTests.Controllers;
 
 /// <summary>
-/// The tenant Order Processing setting as the admin API sees it.
+/// What PUT /api/admin/tenants/{id} may and may not change.
 /// </summary>
 /// <remarks>
-/// The guarantee worth pinning is the asymmetry: an omitted mode must leave the tenant alone.
-/// Every existing caller of PUT /api/admin/tenants/{id} — and the Merchant360-side tooling that
-/// syncs tenant names — sends a body with no OrderProcessingMode in it. If an absent field were
-/// read as the enum's default, those callers would be silently writing Manual on every update,
-/// and worse, a future reordering of the enum would make absence mean Automatic.
+/// Both fields here turn on the same asymmetry: an omitted value must leave the tenant alone.
+/// Callers of this endpoint send partial bodies — a rename carries neither the order-processing
+/// mode nor the external id — so reading absence as a default writes over settings nobody
+/// touched. For the mode that would mean silently writing Manual on every rename, and a future
+/// reordering of the enum would make absence mean Automatic. For the external id it was not
+/// hypothetical: the assignment was unconditional, so a rename unlinked the tenant from
+/// Merchant360.
+///
+/// Neither failure announced itself, which is why both are pinned here rather than left to the
+/// portal happening to send the right body.
 /// </remarks>
-public class AdminTenantsOrderProcessingTests
+public class AdminTenantsUpdateTests
 {
     private readonly Mock<ITenantRepository> _tenants = new();
 
@@ -30,11 +35,11 @@ public class AdminTenantsOrderProcessingTests
         new Mock<ITradingPartnerRepository>().Object,
         NullLogger<AdminTenantsController>.Instance);
 
-    private Tenant Existing(OrderProcessingMode mode)
+    private Tenant Existing(OrderProcessingMode mode, string? externalId = "7001")
     {
         var tenant = new Tenant
         {
-            Id = 5, Code = "D1", Name = "Dealer", OrderProcessingMode = mode
+            Id = 5, Code = "D1", Name = "Dealer", OrderProcessingMode = mode, ExternalId = externalId
         };
         _tenants.Setup(t => t.GetByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(tenant);
         return tenant;
@@ -132,5 +137,89 @@ public class AdminTenantsOrderProcessingTests
             99, new UpdateTenantRequest { Name = "Dealer" }, default);
 
         result.Should().BeOfType<NotFoundResult>();
+    }
+
+    // ---- external id: the Merchant360 merchant id ----
+
+    [Fact]
+    public async Task An_omitted_external_id_does_not_unlink_the_tenant()
+    {
+        // The bug this replaces: ExternalId was assigned unconditionally from a nullable field, so
+        // a rename with no externalId in the body silently set it to null. Nothing failed - price
+        // pushes then reported the tenant "isn't linked to a Merchant360 merchant" and the
+        // order-status, shipment and invoice callbacks skipped with a warning.
+        var tenant = Existing(OrderProcessingMode.Manual);
+
+        var result = await CreateController().UpdateTenant(
+            5, new UpdateTenantRequest { Name = "Renamed" }, default);
+
+        result.Should().BeOfType<NoContentResult>();
+        tenant.ExternalId.Should().Be("7001");
+        tenant.Name.Should().Be("Renamed");
+    }
+
+    [Fact]
+    public async Task An_empty_external_id_does_not_unlink_the_tenant()
+    {
+        var tenant = Existing(OrderProcessingMode.Manual);
+
+        await CreateController().UpdateTenant(
+            5, new UpdateTenantRequest { Name = "Dealer", ExternalId = "   " }, default);
+
+        tenant.ExternalId.Should().Be("7001");
+    }
+
+    [Fact]
+    public async Task Resending_the_same_external_id_is_accepted()
+    {
+        // Any caller still echoing the current value back must keep working.
+        var tenant = Existing(OrderProcessingMode.Manual);
+
+        var result = await CreateController().UpdateTenant(
+            5, new UpdateTenantRequest { Name = "Dealer", ExternalId = "7001" }, default);
+
+        result.Should().BeOfType<NoContentResult>();
+        tenant.ExternalId.Should().Be("7001");
+    }
+
+    [Fact]
+    public async Task Changing_an_existing_external_id_is_refused_rather_than_ignored()
+    {
+        // Refused, not silently dropped: re-pointing a tenant would route another merchant's
+        // shipments and invoices here, because every PC -> M360 flow resolves this at send time.
+        var tenant = Existing(OrderProcessingMode.Manual);
+
+        var result = await CreateController().UpdateTenant(
+            5, new UpdateTenantRequest { Name = "Dealer", ExternalId = "9999" }, default);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        tenant.ExternalId.Should().Be("7001");
+        _tenants.Verify(t => t.UpdateAsync(It.IsAny<Tenant>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task A_tenant_that_was_never_linked_can_be_given_an_external_id()
+    {
+        // Linking is not re-pointing: there is nothing in flight to misroute, and without this the
+        // only remedy for a tenant created without one is hand-written SQL.
+        var tenant = Existing(OrderProcessingMode.Manual, externalId: null);
+
+        var result = await CreateController().UpdateTenant(
+            5, new UpdateTenantRequest { Name = "Dealer", ExternalId = "7001" }, default);
+
+        result.Should().BeOfType<NoContentResult>();
+        tenant.ExternalId.Should().Be("7001");
+    }
+
+    [Fact]
+    public async Task A_name_only_update_still_saves_the_name()
+    {
+        var tenant = Existing(OrderProcessingMode.Automatic);
+
+        await CreateController().UpdateTenant(5, new UpdateTenantRequest { Name = "New Name" }, default);
+
+        tenant.Name.Should().Be("New Name");
+        tenant.ExternalId.Should().Be("7001");
+        tenant.OrderProcessingMode.Should().Be(OrderProcessingMode.Automatic);
     }
 }

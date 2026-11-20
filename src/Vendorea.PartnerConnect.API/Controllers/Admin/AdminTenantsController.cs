@@ -136,7 +136,41 @@ public class AdminTenantsController : ControllerBase
             return NotFound();
 
         tenant.Name = request.Name;
-        tenant.ExternalId = request.ExternalId;
+
+        // External id is the Merchant360 merchant id, and it is resolved at send time by every
+        // PC -> M360 flow: price pushes, inventory snapshots, and the order-status, shipment and
+        // invoice callbacks. Order intake matches on it too. So it is not an editable attribute of
+        // a tenant, it is the tenant's identity in the other system.
+        //
+        // This used to be `tenant.ExternalId = request.ExternalId` unconditionally. Because the
+        // field is nullable, any caller that sent a body without it - a rename, say - silently
+        // unlinked the tenant from Merchant360, and all five of those flows then skipped with a
+        // warning rather than failing. Blank now means keep.
+        //
+        // Setting one that was never there is a link and is allowed. Replacing one that exists is
+        // refused rather than ignored, so a caller that tries is told instead of believing it
+        // worked: re-pointing a tenant mid-flight would deliver another merchant's shipments and
+        // invoices to this one.
+        if (!string.IsNullOrWhiteSpace(request.ExternalId))
+        {
+            var requested = request.ExternalId.Trim();
+
+            if (string.IsNullOrWhiteSpace(tenant.ExternalId))
+            {
+                tenant.ExternalId = requested;
+                _logger.LogInformation(
+                    "Tenant {TenantId} linked to Merchant360 merchant {ExternalId}", id, requested);
+            }
+            else if (!string.Equals(tenant.ExternalId, requested, StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new
+                {
+                    error = "External ID cannot be changed. It is the Merchant360 merchant id this " +
+                            "tenant's orders, prices and callbacks are routed by.",
+                    current = tenant.ExternalId
+                });
+            }
+        }
 
         var previousMode = tenant.OrderProcessingMode;
         if (!string.IsNullOrWhiteSpace(request.OrderProcessingMode))
@@ -478,6 +512,12 @@ public class CreateTenantRequest
 public class UpdateTenantRequest
 {
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The Merchant360 merchant id. Read-only once set: blank keeps the current value, the same
+    /// value is a no-op, a value for a tenant that has none links it, and a different value is
+    /// rejected. See UpdateTenant for why.
+    /// </summary>
     public string? ExternalId { get; set; }
 
     /// <summary>
