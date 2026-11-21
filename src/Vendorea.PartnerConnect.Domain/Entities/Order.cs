@@ -245,6 +245,46 @@ public class Order
     public TenantPartnerAccount? TenantPartnerAccount { get; set; }
     public ICollection<OrderLine> Lines { get; set; } = new List<OrderLine>();
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();
+
+    /// <summary>
+    /// Whether this order may be transmitted to the supplier.
+    /// </summary>
+    /// <remarks>
+    /// The rule lives here because two places need it and used to each keep their own copy: the
+    /// API, to tell the portal whether to offer the button, and the dispatch service, to refuse
+    /// the call whatever the portal shows.
+    ///
+    /// What makes this worth guarding is that a resend is not idempotent. The outbound filename
+    /// carries a timestamp, so a second send does not replace the first - SPR receives a second
+    /// file carrying the same CustomerPONo, which is a duplicate purchase order at a real
+    /// supplier.
+    ///
+    /// Status alone cannot decide it. Acknowledged means two opposite things: an admin
+    /// acknowledged the order and it has not been sent, or SPR acknowledged it and it has.
+    /// <see cref="AcknowledgmentDocumentId"/> is what separates them - it is set only when a
+    /// POACK is applied.
+    ///
+    /// Failed stays transmittable on purpose: an ERROR ack means SPR did not process the order,
+    /// and a transport failure leaves the status untouched so it can be retried.
+    /// </remarks>
+    public bool CanTransmit => TransmitBlockedReason is null;
+
+    /// <summary>
+    /// Why <see cref="CanTransmit"/> is false, or null when it is true. Shown to whoever is
+    /// looking at the order, so it says what happened rather than naming a status.
+    /// </summary>
+    public string? TransmitBlockedReason => Status switch
+    {
+        OrderStatus.Cancelled => "The order is cancelled.",
+        OrderStatus.Completed => "The order is complete.",
+        OrderStatus.Shipped => "The order has shipped.",
+        OrderStatus.Delivered => "The order has been delivered.",
+        OrderStatus.PartiallyShipped => "The order has already shipped in part.",
+        OrderStatus.Processing => "Already sent to the supplier and awaiting their acknowledgement.",
+        OrderStatus.Acknowledged when AcknowledgmentDocumentId.HasValue =>
+            "The supplier has acknowledged this order.",
+        _ => null
+    };
 }
 
 /// <summary>

@@ -42,7 +42,7 @@ public class OrderAutoTransmitDispatchTests
     };
 
     private void TransmitReturns(SprTransmitResult result) =>
-        _outbound.Setup(o => o.TransmitOrderAsync(42, It.IsAny<CancellationToken>()))
+        _outbound.Setup(o => o.TransmitOrderAsync(42, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(result);
 
     // ---- transient: must throw, so the outbox retries ----
@@ -114,7 +114,8 @@ public class OrderAutoTransmitDispatchTests
         var act = async () => await Processor().ProcessAsync(Message());
 
         await act.Should().NotThrowAsync();
-        _outbound.Verify(o => o.TransmitOrderAsync(42, It.IsAny<CancellationToken>()), Times.Once);
+        _outbound.Verify(o => o.TransmitOrderAsync(42, false, It.IsAny<CancellationToken>()), Times.Once,
+            "automatic dispatch must obey the duplicate guard; it never forces");
     }
 
     // ---- degenerate inputs ----
@@ -142,7 +143,7 @@ public class OrderAutoTransmitDispatchTests
         var act = async () => await Processor().ProcessAsync(Message(orderId: 0));
 
         await act.Should().NotThrowAsync();
-        _outbound.Verify(o => o.TransmitOrderAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _outbound.Verify(o => o.TransmitOrderAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -160,6 +161,6 @@ public class OrderAutoTransmitDispatchTests
 
         await processor.ProcessAsync(Message());
 
-        _outbound.Verify(o => o.TransmitOrderAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _outbound.Verify(o => o.TransmitOrderAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

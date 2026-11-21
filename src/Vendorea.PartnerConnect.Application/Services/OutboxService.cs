@@ -651,7 +651,10 @@ public class DefaultOutboxMessageProcessor : IOutboxMessageProcessor
             return;
         }
 
-        var result = await outboundOrders.TransmitOrderAsync(payload.OrderId, cancellationToken);
+        // Never forced. Automatic dispatch must obey the same duplicate guard as the button; a
+        // retried outbox message on an order SPR has already acknowledged must not send it again.
+        var result = await outboundOrders.TransmitOrderAsync(
+            payload.OrderId, force: false, cancellationToken);
 
         if (result.Success)
         {

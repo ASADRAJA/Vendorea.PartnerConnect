@@ -140,9 +140,10 @@ public class AdminOrdersController : ControllerBase
     /// and is also the manual retry path; it is intentionally separate from acknowledge.
     /// </summary>
     [HttpPost("{id:int}/transmit")]
-    public async Task<IActionResult> TransmitOrder(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> TransmitOrder(
+        int id, CancellationToken cancellationToken, [FromQuery] bool force = false)
     {
-        var result = await _outboundOrderService.TransmitOrderAsync(id, cancellationToken);
+        var result = await _outboundOrderService.TransmitOrderAsync(id, force, cancellationToken);
 
         if (result.NotFound)
             return NotFound();
@@ -216,6 +217,8 @@ public class AdminOrdersController : ControllerBase
             ShippingAmount = order.ShippingAmount,
             TotalAmount = order.TotalAmount,
             LineCount = order.Lines?.Count ?? 0,
+            CanTransmit = order.CanTransmit,
+            TransmitBlockedReason = order.TransmitBlockedReason,
             OrderDate = order.OrderDate,
             SubmittedAt = order.SubmittedAt,
             AcknowledgedAt = order.AcknowledgedAt
@@ -242,6 +245,8 @@ public class AdminOrdersController : ControllerBase
             ShippingAmount = order.ShippingAmount,
             TotalAmount = order.TotalAmount,
             LineCount = order.Lines?.Count ?? 0,
+            CanTransmit = order.CanTransmit,
+            TransmitBlockedReason = order.TransmitBlockedReason,
             OrderDate = order.OrderDate,
             SubmittedAt = order.SubmittedAt,
             AcknowledgedAt = order.AcknowledgedAt,
@@ -338,6 +343,12 @@ public class OrderDto
     public decimal ShippingAmount { get; set; }
     public decimal TotalAmount { get; set; }
     public int LineCount { get; set; }
+
+    /// <summary>Whether the order may be sent to the supplier. The rule lives on the entity.</summary>
+    public bool CanTransmit { get; set; }
+
+    /// <summary>Why it may not be, for the operator to read. Null when it may.</summary>
+    public string? TransmitBlockedReason { get; set; }
     public DateTime OrderDate { get; set; }
     public DateTime? SubmittedAt { get; set; }
     public DateTime? AcknowledgedAt { get; set; }

@@ -135,10 +135,18 @@
                                                         <span class="oi oi-check"></span>
                                                     </button>
                                                 }
-                                                @if (CanTransmit(order.Status))
+                                                @if (order.CanTransmit)
                                                 {
                                                     <button class="btn btn-sm btn-primary me-1" @onclick="() => TransmitOrder(order.Id)" disabled="@transmitting" title="Transmit to SPR (generate EZPO4 + SFTP send)">
                                                         <span class="oi oi-data-transfer-upload"></span> SPR
+                                                    </button>
+                                                }
+                                                else if (CanForceResend(order.Status))
+                                                {
+                                                    @* Sent but unanswered. A resend is a second purchase order at SPR, so it
+                                                       is a separate, confirmed action rather than the same button left live. *@
+                                                    <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => ShowResendModal(order)" disabled="@transmitting" title="@order.TransmitBlockedReason Resend only if SPR never received the first file.">
+                                                        <span class="oi oi-loop-circular"></span> Resend
                                                     </button>
                                                 }
                                                 @if (CanCancel(order.Status))
@@ -420,6 +428,39 @@
     </div>
 }
 
+@* Force Resend Modal *@
+@if (resendOrder != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title">Resend @resendOrder.PoNumber to SPR?</h5>
+                    <button type="button" class="btn-close" @onclick="CloseResendModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>@resendOrder.TransmitBlockedReason</p>
+                    <div class="alert alert-warning mb-3">
+                        <strong>This creates a second purchase order at SPR.</strong>
+                        The file name carries a timestamp, so a resend does not replace the first one —
+                        SPR receives another document with the same PO number and treats it as a new order.
+                    </div>
+                    <p class="mb-0">
+                        Resend only if you have established that SPR never received the first file.
+                        If they simply have not answered yet, wait.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseResendModal">Cancel</button>
+                    <button type="button" class="btn btn-warning" @onclick="ConfirmResend" disabled="@transmitting">
+                        Resend anyway
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private OrderListResult orderResult = new();
     private List<OrganizationDto> organizations = new();
@@ -567,13 +608,28 @@
     private string? transmitMessage;
     private bool transmitOk;
 
-    private async Task TransmitOrder(int orderId)
+    private OrderDto? resendOrder;
+
+    private void ShowResendModal(OrderDto order) => resendOrder = order;
+
+    private void CloseResendModal() => resendOrder = null;
+
+    private async Task ConfirmResend()
+    {
+        if (resendOrder == null) return;
+
+        var orderId = resendOrder.Id;
+        resendOrder = null;
+        await TransmitOrder(orderId, force: true);
+    }
+
+    private async Task TransmitOrder(int orderId, bool force = false)
     {
         transmitting = true;
         transmitMessage = null;
         try
         {
-            var (ok, message) = await Api.TransmitOrderAsync(orderId);
+            var (ok, message) = await Api.TransmitOrderAsync(orderId, force);
             transmitOk = ok;
             transmitMessage = message ?? (ok ? "Transmitted to SPR." : "Transmit failed.");
         }
@@ -619,9 +675,14 @@
     private static bool CanCancel(string status) =>
         status == "Draft" || status == "Submitted" || status == "Acknowledged";
 
-    // Transmittable = anything not already terminal/shipped (mirrors the API's NonTransmittableStatuses).
-    private static bool CanTransmit(string status) =>
-        status is not ("Cancelled" or "Completed" or "Shipped" or "Delivered");
+    // Whether to offer a forced resend. Transmittability itself is no longer decided here - the
+    // API sends OrderDto.CanTransmit, so the rule lives in one place instead of being mirrored by
+    // a comment that could drift.
+    //
+    // Only Processing qualifies: the EZPO4 went to SPR and no acknowledgement came back, which is
+    // the one case where the file may genuinely never have arrived. An order SPR has already
+    // acknowledged is not offered a resend at all.
+    private static bool CanForceResend(string status) => status == "Processing";
 
     private static string GetStatusBadgeClass(string status) => status switch
     {

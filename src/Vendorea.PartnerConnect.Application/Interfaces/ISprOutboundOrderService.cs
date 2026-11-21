@@ -10,7 +10,17 @@ namespace Vendorea.PartnerConnect.Application.Interfaces;
 /// </summary>
 public interface ISprOutboundOrderService
 {
-    Task<SprTransmitResult> TransmitOrderAsync(int orderId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Generates, validates and sends the order to SPR.
+    /// </summary>
+    /// <param name="force">
+    /// Sends an order the status rules would refuse. A resend is not idempotent - the outbound
+    /// filename is timestamped, so SPR receives a second file with the same CustomerPONo and
+    /// treats it as another purchase order. Only for the case where a file was written but SPR
+    /// never answered, and only on a deliberate action by someone who has been told that.
+    /// </param>
+    Task<SprTransmitResult> TransmitOrderAsync(
+        int orderId, bool force = false, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

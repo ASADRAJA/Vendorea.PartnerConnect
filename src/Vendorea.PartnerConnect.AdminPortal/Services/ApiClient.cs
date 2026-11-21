@@ -1267,11 +1267,12 @@ public class ApiClient
     }
 
     /// <summary>Transmits an order to SPR (generate EZPO4 → XSD validate → SFTP send). Temporary manual dispatch.</summary>
-    public async Task<(bool Success, string? Message)> TransmitOrderAsync(int id)
+    public async Task<(bool Success, string? Message)> TransmitOrderAsync(int id, bool force = false)
     {
         try
         {
-            var response = await _httpClient.PostAsync($"/api/admin/orders/{id}/transmit", null);
+            var url = $"/api/admin/orders/{id}/transmit" + (force ? "?force=true" : string.Empty);
+            var response = await _httpClient.PostAsync(url, null);
             var body = await response.Content.ReadAsStringAsync();
             if (response.IsSuccessStatusCode)
                 return (true, "Transmitted to SPR — order moved to Processing.");

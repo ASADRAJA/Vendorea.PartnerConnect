@@ -10,11 +10,6 @@ namespace Vendorea.PartnerConnect.Infrastructure.SprContent;
 /// </summary>
 public class SprOutboundOrderService : ISprOutboundOrderService
 {
-    private static readonly OrderStatus[] NonTransmittableStatuses =
-    {
-        OrderStatus.Cancelled, OrderStatus.Completed, OrderStatus.Shipped, OrderStatus.Delivered
-    };
-
     private readonly IOrderRepository _orderRepository;
     private readonly ITradingPartnerRepository _partnerRepository;
     private readonly ISprXmlDocumentProcessingService _processingService;
@@ -32,19 +27,34 @@ public class SprOutboundOrderService : ISprOutboundOrderService
         _logger = logger;
     }
 
-    public async Task<SprTransmitResult> TransmitOrderAsync(int orderId, CancellationToken cancellationToken = default)
+    public async Task<SprTransmitResult> TransmitOrderAsync(
+        int orderId, bool force = false, CancellationToken cancellationToken = default)
     {
         var order = await _orderRepository.GetByIdWithFullDetailsAsync(orderId, cancellationToken);
         if (order == null)
             return SprTransmitResult.NotFoundResult();
 
-        if (NonTransmittableStatuses.Contains(order.Status))
+        // Order.CanTransmit owns the rule; this is not a copy of it. The endpoint has to apply it
+        // too, because hiding the button only stops the portal - the duplicate is created by the
+        // call, not by the click.
+        if (!order.CanTransmit && !force)
         {
             return new SprTransmitResult
             {
                 InvalidState = true,
-                ErrorMessage = $"Order in status {order.Status} cannot be transmitted to SPR"
+                ErrorMessage = order.TransmitBlockedReason
+                    ?? $"Order in status {order.Status} cannot be transmitted to SPR"
             };
+        }
+
+        if (force && !order.CanTransmit)
+        {
+            // Logged at Warning with the reason that was overridden: if a duplicate PO turns up
+            // at SPR, this line is the record of who sent it and what they overrode.
+            _logger.LogWarning(
+                "Forced transmit of order {OrderId} (PO {PoNumber}) in status {Status}: {Reason} " +
+                "A second EZPO4 with the same CustomerPONo is a duplicate order at SPR.",
+                order.Id, order.PoNumber, order.Status, order.TransmitBlockedReason);
         }
 
         var partner = await ResolveSprPartnerAsync(order, cancellationToken);

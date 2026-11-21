@@ -755,6 +755,12 @@ public class CreateTenantPartnerAccountRequest
 // Order Models
 public class OrderDto
 {
+    /// <summary>Whether the order may be sent to the supplier. Decided by the API, not here.</summary>
+    public bool CanTransmit { get; set; }
+
+    /// <summary>Why it may not be. Null when it may.</summary>
+    public string? TransmitBlockedReason { get; set; }
+
     public int Id { get; set; }
     public int OrganizationId { get; set; }
     public string? OrganizationName { get; set; }
