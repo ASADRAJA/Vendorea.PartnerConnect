@@ -84,6 +84,8 @@ public class SprEzpo4Generator : ISprEzpo4Generator
             result.XmlContent = xml;
             result.Success = true;
 
+            LogAsciiFolding(order);
+
             _logger.LogInformation(
                 "Generated EZPO4 XML for PO {PoNumber} (CustomerPONo) with {LineCount} lines",
                 order.PoNumber, order.Lines.Count);
@@ -133,6 +135,17 @@ public class SprEzpo4Generator : ISprEzpo4Generator
                 errors.Add("Ship-to State is required");
             if (string.IsNullOrWhiteSpace(order.ShipTo.PostalCode))
                 errors.Add("Ship-to PostalCode is required (ZipCode)");
+
+            // A value that is entirely non-ASCII - a name written only in CJK or Cyrillic -
+            // survives the checks above but folds to nothing, and these attributes are
+            // use="required" in SPR's schema. Caught here so the order fails locally, naming the
+            // field, instead of being sent with an empty required attribute and coming back three
+            // minutes later as "XML Schema Validation Failed".
+            AddIfFoldsToNothing(errors, order.ShipTo.Name, "Ship-to name", "PersonInfoShipTo/@FirstName");
+            AddIfFoldsToNothing(errors, order.ShipTo.AddressLine1, "Ship-to AddressLine1", "PersonInfoShipTo/@AddressLine1");
+            AddIfFoldsToNothing(errors, order.ShipTo.City, "Ship-to City", "PersonInfoShipTo/@City");
+            AddIfFoldsToNothing(errors, order.ShipTo.State, "Ship-to State", "PersonInfoShipTo/@State");
+            AddIfFoldsToNothing(errors, order.ShipTo.PostalCode, "Ship-to PostalCode", "PersonInfoShipTo/@ZipCode");
         }
 
         foreach (var line in order.Lines)
@@ -403,12 +416,79 @@ public class SprEzpo4Generator : ISprEzpo4Generator
         };
     }
 
+    /// <summary>
+    /// Reports any text we had to change to get the order past SPR's ASCII-only intake.
+    /// </summary>
+    /// <remarks>
+    /// Folding alters data a customer entered — a ship-to name, an address — so it must not be
+    /// silent. Logged at Warning with both forms, because when someone asks why the label does
+    /// not match what they typed, this line is the answer.
+    /// </remarks>
+    private void LogAsciiFolding(PurchaseOrder order)
+    {
+        var fields = new List<(string Label, string? Value)>
+        {
+            ("ShipTo.Name", order.ShipTo?.Name),
+            ("ShipTo.AddressLine1", order.ShipTo?.AddressLine1),
+            ("ShipTo.AddressLine2", order.ShipTo?.AddressLine2),
+            ("ShipTo.City", order.ShipTo?.City),
+            ("ShipTo.State", order.ShipTo?.State),
+            ("ShipTo.Country", order.ShipTo?.Country),
+            ("Attn", order.Attn),
+            ("Notes", order.Notes)
+        };
+
+        foreach (var (label, value) in fields)
+        {
+            if (string.IsNullOrEmpty(value))
+                continue;
+
+            var folded = SprAsciiText.Fold(value);
+            if (folded == value)
+                continue;
+
+            _logger.LogWarning(
+                "PO {PoNumber}: {Field} normalised to ASCII for SPR. Sent {Folded}, submitted {Original}",
+                order.PoNumber, label, folded, value);
+        }
+    }
+
+    /// <summary>
+    /// Records an error when a required value holds nothing SPR can accept.
+    /// </summary>
+    private static void AddIfFoldsToNothing(
+        List<string> errors, string? value, string fieldLabel, string xmlPath)
+    {
+        if (!SprAsciiText.FoldsToNothing(value))
+            return;
+
+        errors.Add(
+            $"{fieldLabel} contains no characters SPR can accept ({xmlPath}). SPR's EZPO4 intake " +
+            "is ASCII-only, and this value folds to empty. Correct the value at source.");
+    }
+
+    /// <summary>
+    /// Every free-text value sent to SPR passes through here: folded to ASCII, then cut to the
+    /// field's width.
+    /// </summary>
+    /// <remarks>
+    /// Folding happens first, deliberately. Folding can change a value's length — an ellipsis
+    /// becomes three characters — so truncating first would apply the limit to a string we never
+    /// send and could still overflow the field afterwards. This way the limit always applies to
+    /// the bytes SPR actually receives.
+    ///
+    /// This is the single choke point: all 31 free-text attributes in this generator go through
+    /// it. The attributes that do not are literals, codes and formatted decimals, which are ASCII
+    /// by construction. See <see cref="SprAsciiText"/> for why the fold is needed at all.
+    /// </remarks>
     private static string Truncate(string value, int maxLength)
     {
         if (string.IsNullOrEmpty(value))
             return value;
 
-        return value.Length <= maxLength ? value : value.Substring(0, maxLength);
+        var folded = SprAsciiText.Fold(value);
+
+        return folded.Length <= maxLength ? folded : folded.Substring(0, maxLength);
     }
 
     /// <summary>

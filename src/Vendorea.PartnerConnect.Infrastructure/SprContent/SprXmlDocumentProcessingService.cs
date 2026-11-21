@@ -267,9 +267,24 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
                 {
                     string xmlContent;
                     await using (var stream = await client.DownloadFileAsync(remotePath, cancellationToken))
-                    using (var reader = new StreamReader(stream, Encoding.UTF8))
                     {
-                        xmlContent = await reader.ReadToEndAsync(cancellationToken);
+                        // Read the bytes and choose the character set, rather than asserting one.
+                        // This was a StreamReader over Encoding.UTF8, which does not throw on
+                        // undecodable bytes - it substitutes U+FFFD. SPR's documents are
+                        // Windows-1252, so every non-ASCII character in an acknowledgement, ASN
+                        // or invoice was being destroyed on the way in, with nothing logged.
+                        using var buffer = new MemoryStream();
+                        await stream.CopyToAsync(buffer, cancellationToken);
+                        var raw = buffer.ToArray();
+
+                        xmlContent = SprTextDecoder.Decode(raw);
+
+                        if (!SprTextDecoder.IsValidUtf8(raw))
+                        {
+                            _logger.LogDebug(
+                                "Inbound SPR document {FileName} is not UTF-8; decoded as Windows-1252",
+                                file.Name);
+                        }
                     }
 
                     var processResult = await ProcessInboundDocumentAsync(
