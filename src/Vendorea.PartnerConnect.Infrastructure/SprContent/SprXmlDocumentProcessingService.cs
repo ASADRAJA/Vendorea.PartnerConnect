@@ -711,8 +711,10 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
 
         // Inbound docs may arrive without a known dealer/tenant (dealerId == 0); fall back to a
         // tenant-agnostic PO lookup so correlation still works.
-        var order = (await _orderRepository.GetByPoNumberAsync(dealerId, poack.PoNumber, cancellationToken)).FirstOrDefault()
-            ?? (await _orderRepository.FindByPoNumberAsync(poack.PoNumber, cancellationToken)).FirstOrDefault();
+        // With lines: the acknowledgement carries a per-line outcome, and applying it is the
+        // whole point of receiving one.
+        var order = (await _orderRepository.GetByPoNumberWithLinesAsync(dealerId, poack.PoNumber, cancellationToken)).FirstOrDefault()
+            ?? (await _orderRepository.FindByPoNumberWithLinesAsync(poack.PoNumber, cancellationToken)).FirstOrDefault();
         if (order == null)
         {
             _logger.LogWarning(
@@ -746,6 +748,8 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
             m360StatusCode = "SPR_POACK";
         }
 
+        ApplyAckToOrderLines(order, poack);
+
         order.AcknowledgmentDocumentId = document.Id;
         if (!string.IsNullOrWhiteSpace(poack.PartnerOrderNumber))
         {
@@ -767,6 +771,99 @@ public class SprXmlDocumentProcessingService : ISprXmlDocumentProcessingService
 
         await SurfaceAckToM360Async(order, poack, m360StatusType, m360StatusCode, cancellationToken);
     }
+
+    /// <summary>
+    /// Writes SPR's per-line acknowledgement onto the order's lines.
+    /// </summary>
+    /// <remarks>
+    /// The parser has always produced a full PoAckLine per line - status, acknowledged and
+    /// backordered quantities, expected ship date, and the AckDesc text - and the only thing
+    /// anything did with that list was read its Count. OrderLine.AcknowledgmentCode,
+    /// AcknowledgmentMessage, AcknowledgedQuantity, BackorderedQuantity and EstimatedShipDate
+    /// existed in the entity, the EF configuration and every migration, and nothing ever wrote
+    /// one. Lines stayed Pending for the life of an order however SPR answered.
+    ///
+    /// That hid more than refusals: a backorder, a substitution or an expected ship date was
+    /// discarded just as quietly.
+    /// </remarks>
+    private void ApplyAckToOrderLines(Order order, SprPoAck poack)
+    {
+        if (poack.Lines.Count == 0 || order.Lines.Count == 0)
+            return;
+
+        foreach (var ackLine in poack.Lines)
+        {
+            var orderLine = MatchOrderLine(order, ackLine);
+            if (orderLine == null)
+            {
+                _logger.LogWarning(
+                    "POACK for PO {PoNumber} has a line (sku {Sku}, line {LineNumber}) matching no line on order {OrderId}",
+                    poack.PoNumber, ackLine.PartnerSku, ackLine.LineNumber, order.Id);
+                continue;
+            }
+
+            orderLine.Status = MapAckLineStatus(ackLine.Status, orderLine.Status);
+            orderLine.AcknowledgedQuantity = ackLine.QuantityAcknowledged;
+            orderLine.BackorderedQuantity = ackLine.QuantityBackordered;
+            orderLine.AcknowledgmentCode = Truncate(ackLine.Status.ToString(), 20);
+            orderLine.AcknowledgmentMessage = Truncate(ackLine.Notes, 500);
+            orderLine.EstimatedShipDate = ackLine.ExpectedShipDate ?? orderLine.EstimatedShipDate;
+            orderLine.UpdatedAt = DateTime.UtcNow;
+
+            if (ackLine.Status == PoAckLineStatus.Error)
+            {
+                _logger.LogWarning(
+                    "SPR refused line {LineNumber} ({Sku}) on PO {PoNumber}: {Reason}",
+                    orderLine.LineNumber, orderLine.Sku, poack.PoNumber,
+                    ackLine.Notes ?? "no reason given");
+            }
+        }
+    }
+
+    /// <summary>Matches an acknowledgement line to an order line by PO line number, then SKU.</summary>
+    private static OrderLine? MatchOrderLine(Order order, PoAckLine ackLine)
+    {
+        var byLineNumber = order.Lines.FirstOrDefault(l => l.LineNumber == ackLine.LineNumber);
+        if (byLineNumber != null)
+            return byLineNumber;
+
+        if (string.IsNullOrWhiteSpace(ackLine.PartnerSku))
+            return null;
+
+        return order.Lines.FirstOrDefault(l =>
+                   string.Equals(l.VendorSku, ackLine.PartnerSku, StringComparison.OrdinalIgnoreCase))
+               ?? order.Lines.FirstOrDefault(l =>
+                   string.Equals(l.Sku, ackLine.PartnerSku, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Maps SPR's line outcome onto the order line.
+    /// </summary>
+    /// <remarks>
+    /// A line already Shipped is left alone: an acknowledgement that arrives after an ASN must
+    /// not walk the line backwards.
+    /// </remarks>
+    private static OrderLineStatus MapAckLineStatus(PoAckLineStatus ackStatus, OrderLineStatus current)
+    {
+        if (current == OrderLineStatus.Shipped)
+            return current;
+
+        return ackStatus switch
+        {
+            PoAckLineStatus.Accepted => OrderLineStatus.Acknowledged,
+            PoAckLineStatus.Substituted => OrderLineStatus.Acknowledged,
+            PoAckLineStatus.Backordered => OrderLineStatus.Backordered,
+            PoAckLineStatus.Cancelled => OrderLineStatus.Cancelled,
+            PoAckLineStatus.Rejected => OrderLineStatus.Rejected,
+            PoAckLineStatus.Error => OrderLineStatus.Rejected,
+            _ => current
+        };
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+        => string.IsNullOrEmpty(value) || value.Length <= maxLength
+            ? value
+            : value.Substring(0, maxLength);
 
     private async Task SurfaceAckToM360Async(
         Order order,

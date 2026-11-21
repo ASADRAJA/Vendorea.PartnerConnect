@@ -132,5 +132,15 @@ public enum OrderLineStatus
     /// <summary>
     /// Cancelled.
     /// </summary>
-    Cancelled
+    Cancelled,
+
+    /// <summary>
+    /// The supplier refused the line and it will not ship.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Cancelled"/>, which says somebody withdrew the line. This says
+    /// the supplier would not take it - a bad stock number, a discontinued item - and the reason
+    /// is on AcknowledgmentMessage. Stored as a string, so adding it needs no migration.
+    /// </remarks>
+    Rejected
 }

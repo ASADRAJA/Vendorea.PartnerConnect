@@ -242,21 +242,47 @@ public class SprPoackParser : ISprPoackParser
                 .Select(s => s!)
                 .ToList();
 
+            // Every line refused means nothing will ship, whatever the header says. SPR
+            // acknowledged WPO-20261121-0003 with PoAckStatus="A" while its only line came back
+            // AckStatus="I" AckDesc="BAD STOCK #", and the order read as a clean acknowledgement
+            // all the way through to Merchant360.
+            //
+            // Asking the parsed line status rather than re-testing the raw code is the point:
+            // ParseLineStatus already treats 'E', 'I', 'Q' and 'U' as errors, and this check used
+            // to look only for a literal "E" - so the file disagreed with itself about what an
+            // error was.
+            var allLinesInError = lines.Count > 0
+                && lines.All(l => l.Status == PoAckLineStatus.Error);
+
             var isError = string.Equals(headerAckStatus, "E", StringComparison.OrdinalIgnoreCase)
                 || lineAckCodes.Contains("E")
-                || ParseOverallStatus(statusCode) == PoAckStatus.Error;
+                || ParseOverallStatus(statusCode) == PoAckStatus.Error
+                || allLinesInError;
 
             var status = isError ? PoAckStatus.Error : ParseOverallStatus(statusCode);
             if (!isError && status == PoAckStatus.Pending && lines.Count > 0)
             {
                 status = DetermineOverallStatus(lines);
             }
+            else if (!isError && lines.Any(l => l.Status == PoAckLineStatus.Error))
+            {
+                // Some lines refused, not all. The header's "accepted" is true of the document
+                // and false of the order, so the lines win: this is a partial acceptance, and
+                // whoever looks at it needs to see that something was refused.
+                status = PoAckStatus.PartiallyAccepted;
+            }
+
+            // Built whenever SPR said something about a line, not only on a full error ack. A
+            // partially-refused order still has a reason worth surfacing.
+            var refusalSummary = lineAckDescs.Count > 0
+                ? string.Join("; ", lineAckDescs.Distinct())
+                : null;
 
             var errorMessage = isError
-                ? (lineAckDescs.Count > 0 ? string.Join("; ", lineAckDescs.Distinct()) : null)
+                ? refusalSummary
                     ?? notes
                     ?? "SPR could not process the order (ERROR acknowledgement)"
-                : null;
+                : status == PoAckStatus.PartiallyAccepted ? refusalSummary : null;
 
             return new PurchaseOrderAcknowledgment
             {
@@ -411,6 +437,14 @@ public class SprPoackParser : ISprPoackParser
     {
         if (lines.All(l => l.Status == PoAckLineStatus.Accepted))
             return PoAckStatus.Accepted;
+
+        // Error had no branch here, so a list of refused lines fell through every case and came
+        // back Pending - an order nothing would ever ship, reported as still being worked on.
+        if (lines.All(l => l.Status == PoAckLineStatus.Error))
+            return PoAckStatus.Error;
+
+        if (lines.Any(l => l.Status == PoAckLineStatus.Error))
+            return PoAckStatus.PartiallyAccepted;
 
         if (lines.All(l => l.Status == PoAckLineStatus.Rejected || l.Status == PoAckLineStatus.Cancelled))
             return PoAckStatus.Rejected;
