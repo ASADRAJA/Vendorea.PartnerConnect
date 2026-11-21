@@ -259,6 +259,16 @@
                                         <h6>Ship To</h6>
                                         <address>
                                             <strong>@orderDetail.ShipTo.Name</strong><br>
+                                            @* The attention line is part of the addressee as the
+                                               warehouse prints it, so it belongs here rather than
+                                               in its own field. It used to be folded into the
+                                               ship-to name upstream, which is why this block
+                                               never needed it. *@
+                                            @if (!string.IsNullOrWhiteSpace(orderDetail.Attn))
+                                            {
+                                                <span>Attn: @orderDetail.Attn</span>
+                                                <br>
+                                            }
                                             @orderDetail.ShipTo.Line1<br>
                                             @if (!string.IsNullOrEmpty(orderDetail.ShipTo.Line2))
                                             {

@@ -778,6 +778,9 @@ public class OrderDto
 
 public class OrderDetailDto : OrderDto
 {
+    /// <summary>Attention line for the shipping label (SPR DealerAttn).</summary>
+    public string? Attn { get; set; }
+
     public DateTime? RequestedShipDate { get; set; }
     public DateTime? RequestedDeliveryDate { get; set; }
     public string? ShippingMethod { get; set; }

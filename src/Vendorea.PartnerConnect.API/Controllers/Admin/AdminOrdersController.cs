@@ -249,6 +249,7 @@ public class AdminOrdersController : ControllerBase
             RequestedDeliveryDate = order.RequestedDeliveryDate,
             ShippingMethod = order.ShippingMethod,
             Notes = order.Notes,
+            Attn = order.Attn,
             Lines = order.Lines?.Select(l => new OrderLineDto
             {
                 Id = l.Id,
@@ -348,6 +349,17 @@ public class OrderDetailDto : OrderDto
     public DateTime? RequestedDeliveryDate { get; set; }
     public string? ShippingMethod { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Attention line for the shipping label, sent to SPR as EXTNSprOrderHeader/@DealerAttn.
+    /// </summary>
+    /// <remarks>
+    /// Shown with the ship-to address rather than on its own: it is part of the addressee as the
+    /// warehouse prints it. Until Merchant360 began sending this as its own field it was folded
+    /// into the ship-to name, which is why it had never needed displaying.
+    /// </remarks>
+    public string? Attn { get; set; }
+
     public AddressDto? ShipTo { get; set; }
     public AddressDto? BillTo { get; set; }
     public List<OrderLineDto> Lines { get; set; } = new();
