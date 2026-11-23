@@ -297,16 +297,44 @@ using (var scope = app.Services.CreateScope())
             u.Role == Vendorea.PartnerConnect.Domain.Entities.AdminPortalRole.Admin && u.IsActive);
         if (!hasAdmin)
         {
-            dbContext.AdminPortalUsers.Add(new Vendorea.PartnerConnect.Domain.Entities.AdminPortalUser
+            var username = builder.Configuration["AdminBootstrap:Username"];
+            var password = builder.Configuration["AdminBootstrap:Password"];
+
+            // Outside Development the credentials MUST be supplied. The old hard-coded
+            // pcadmin / 12345678 is a publicly-known login - never seed it into a shared or
+            // production environment. The API still starts; the admin portal simply has no
+            // login until AdminBootstrap:Username/Password are set and it is restarted. In
+            // Development we keep the zero-config default for convenience.
+            if (string.IsNullOrWhiteSpace(password))
             {
-                Username = "pcadmin",
-                DisplayName = "Portal Administrator",
-                Role = Vendorea.PartnerConnect.Domain.Entities.AdminPortalRole.Admin,
-                IsActive = true,
-                PasswordHash = Vendorea.PartnerConnect.Infrastructure.Security.PortalPasswordHasher.Hash("12345678")
-            });
-            dbContext.SaveChanges();
-            Log.Information("Seeded default Admin Portal user 'pcadmin'");
+                if (app.Environment.IsDevelopment())
+                {
+                    username ??= "pcadmin";
+                    password = "12345678";
+                }
+                else
+                {
+                    Log.Error(
+                        "No active Admin Portal user exists and AdminBootstrap:Password is not configured. " +
+                        "Refusing to seed a default admin outside Development. Set AdminBootstrap:Username and " +
+                        "AdminBootstrap:Password (a strong password) and restart to create the first admin.");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(password))
+            {
+                username ??= "pcadmin";
+                dbContext.AdminPortalUsers.Add(new Vendorea.PartnerConnect.Domain.Entities.AdminPortalUser
+                {
+                    Username = username,
+                    DisplayName = "Portal Administrator",
+                    Role = Vendorea.PartnerConnect.Domain.Entities.AdminPortalRole.Admin,
+                    IsActive = true,
+                    PasswordHash = Vendorea.PartnerConnect.Infrastructure.Security.PortalPasswordHasher.Hash(password)
+                });
+                dbContext.SaveChanges();
+                Log.Information("Seeded Admin Portal user '{Username}'", username);
+            }
         }
     }
     catch (Exception ex)
